@@ -1,4 +1,4 @@
-<!-- artifact-hardened: Approved With Known Risks @ 09721b5 on 2026-11-01 via three-pass-v1. Evidence: GitHub-hosted CI on pull request #41 (FreeXStudio-Platform/credmgr): all 17 checks green at ee08394, including security.yml (cargo audit, cargo deny, semgrep, isolation suite, endpoint matrix 55/55 operations, desktop bridge) and CodeQL for Rust, JavaScript/TypeScript, Python and Actions with no open alert on the PR; build.yml run 41243452910, all 7 jobs green (macOS 15, Ubuntu 22.04, Windows; Rust 1.78.0 and stable); desktop unit tests 706 passed at 930c502; Playwright 672 and 681 passed in the two lanes that were combined at 930c502 (not re-run together); strict public export PASS, 860 files, literal blocklist not loaded; by-hand click-through of the rebuilt app on a throwaway vault (unlock, lock, auto-lock, graph, tree, search, reveal, copy, add entry, settings, integrity, doctor, audit, backup, capture switch, searchable help); final adversarial audit v2/docs/release-verification/AUDIT_2026-10-31.md (the P0 and both P1 fixed); known risks K-1 to K-20 in v2/docs/PHASE8_AUDIT_REPORT.md sections 4 and 7, each with bound, owner and resolution. Known risks that bear on this document: K-14 the idle lock and a real sleep or screen lock were not exercised by hand on this build; K-19 a seed in an unrecognised shape is not protected until its owner types it; K-20 the licence text has not been reviewed by counsel. K-12 (CI had not run) is closed. Not signed or notarised; Windows and Linux built in CI but not run. Not a claim about anything after 09721b5. -->
+<!-- artifact-hardened: Approved With Known Risks @ af0709a on 2026-11-01 via three-pass-v1. Evidence: GitHub-hosted CI on pull request #41 (FreeXStudio-Platform/credmgr): all 17 checks green at ee08394, including security.yml (cargo audit, cargo deny, semgrep, isolation suite, endpoint matrix 55/55 operations, desktop bridge) and CodeQL for Rust, JavaScript/TypeScript, Python and Actions with no open alert on the PR; build.yml run 41243452910, all 7 jobs green (macOS 15, Ubuntu 22.04, Windows; Rust 1.78.0 and stable); desktop unit tests 706 passed at 930c502; Playwright 672 and 681 passed in the two lanes that were combined at 930c502 (not re-run together); strict public export PASS, 860 files, literal blocklist not loaded; by-hand click-through of the rebuilt app on a throwaway vault (unlock, lock, auto-lock, graph, tree, search, reveal, copy, add entry, settings, integrity, doctor, audit, backup, capture switch, searchable help); final adversarial audit v2/docs/release-verification/AUDIT_2026-10-31.md (the P0 and both P1 fixed); known risks K-1 to K-20 in v2/docs/PHASE8_AUDIT_REPORT.md sections 4 and 7, each with bound, owner and resolution. Known risks that bear on this document: K-14 the idle lock and a real sleep or screen lock were not exercised by hand on this build; K-19 a seed in an unrecognised shape is not protected until its owner types it; K-20 the licence text has not been reviewed by counsel. K-12 (CI had not run) is closed. Not signed or notarised; Windows and Linux built in CI but not run. Not a claim about anything after af0709a. -->
 
 # Changelog — CredMgr V2 "Vault Next"
 
@@ -17,6 +17,24 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 >
 > **Updated 2026-10-31:** the UI is built, hosted in the desktop app and wired to the broker (see
 > `[2.0.0-beta.1]`); the backend gained ops, policy enforcement and a field model after the closure described above.
+
+---
+
+## Timeline — what was added when, and what is coming
+
+Newest first. Dates are when the work landed; no date after today is a promise. Each row links to the version section below.
+
+| When | Version | What landed |
+|---|---|---|
+| 2026-11-01 | `2.0.0-beta.1` (public repository) | The repository is public as a single neutral commit; first release built from it. Source-available licence (ADR-096). First hosted CI and CodeQL runs on all three platforms. |
+| 2026-10-31 | `2.0.0-beta.1` | Screen-capture protection switch in Settings; searchable in-app Help; `HELP.md`; the LLM capabilities manifest; V1 copy tool and the hygiene design. |
+| 2026-10 | `2.0.0-beta.1` | The desktop app wired to the real broker (zero mock screens); multi-field entries; sealing and restore; agent approvals, including while locked; two-factor with recovery; concealed clipboard; names and second factor per node; the final adversarial audit (one P0 and two P1 fixed). |
+| 2026-09-24 | `2.0.0-alpha.6` | The first packaged release: the daemon opens its own vault; command line, broker and MCP server in one tarball. |
+| 2026-08-17 | `2.0.0-alpha.3` to `alpha.5` | Maintenance operations and undo; the session and login mechanism (ADR-056); the documentation pipeline. |
+| 2026-08-16 | `2.0.0-alpha.2` | Phase 8 adversarial audit. |
+| 2026-08-05 to 08-10 | `2.0.0-alpha.1` | The Rust backend: core, keystore, store, broker, CLI, MCP (Phases 0 to 5 and 7). |
+
+**Coming next, in order and without dates.** `2.0.0-rc.1`: Touch ID and presence checks, Developer ID signing and notarisation, the doctor's duplicate and wallet-bundling scan (`docs/25_VAULT_HYGIENE.md`), the V1 copy folded into the app. `2.0.0`: the first stable release, with Windows and Linux. `2.1.0`: cross-device sync as ciphertext, and agents that use a credential without its value reaching the model. `2.2`: a signed, machine-bound, expiring licence (a failed licence never locks your vault). `2.3`: the first paid tier. **Future versions, platforms and devices may not be free; releases already published keep the licence they came with.** If CredMgr is useful to you, please keep using it, tell us what breaks, and consider a donation (`DONATE.md`): it is what lets us keep building it.
 
 ---
 
@@ -220,7 +238,7 @@ The first version stamped into the binaries and packaged (`scripts/release.sh`, 
 
 ---
 
-## [2.0.0-beta.1] — 2026-09-24 through 2026-10-31 · since 2.0.0-alpha.6 · built, not yet tagged or published
+## [2.0.0-beta.1] — 2026-09-24 through 2026-10-31 · since 2.0.0-alpha.6 · public repository 2026-11-01; tagged `v2.0.0-beta.1`
 
 The first beta. **Unsigned and Software-tier — read `RELEASE.md` → "What this beta does not do" and Known limitations first.**
 Worked from the Claude Design project's `BACKEND_HANDOFF_NOTES.md` (reported back in `BACKEND_REPORT.md`), from the
