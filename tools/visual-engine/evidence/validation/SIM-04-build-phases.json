@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-04-build-phases",
+  "selected_visual": "graph",
+  "preset": "build-phase-dag",
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "3239fbf845047e914f3c6d0a34999d29d7d6d9d96bc2410e43aa68a0cb315587",
+  "option_sha256": "996109a1f7a28976130f30ca231c838f5798c2590515ff84746453b230ab8c17",
+  "job_sha256": "829ffb27212dbe3df47241fab0789717e77730f781efacf4681d0016aa4d2681",
+  "render_ms": 17,
+  "warnings": []
+}

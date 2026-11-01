@@ -1,0 +1,283 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 4,
+      "figures": 0,
+      "sections": 9,
+      "tables": 7
+    },
+    "figures": [],
+    "references": {
+      "adrs": [
+        "ADR-019",
+        "ADR-059"
+      ],
+      "code": [
+        "docs/AGENT_CONTRACT.md",
+        "crates/cli/src/main.rs",
+        "crates/mcp/src/tools.rs",
+        "crates/brokerd/src/peer.rs",
+        "crates/brokerd/tests/isolation.rs"
+      ],
+      "documents": [
+        {
+          "doc": "13_TEST_PLAN.md"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "5.2"
+        },
+        {
+          "doc": "21_RELEASE_AND_INTEGRITY.md"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "3.4"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "3"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "3.1"
+        },
+        {
+          "doc": "21_RELEASE_AND_INTEGRITY.md",
+          "section": "2"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "2"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "4.6"
+        },
+        {
+          "doc": "00_README_START_HERE.md",
+          "section": "6"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-the-airlock",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "13_TEST_PLAN.md"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "5.2"
+            },
+            {
+              "doc": "21_RELEASE_AND_INTEGRITY.md"
+            }
+          ]
+        },
+        "title": "1. The airlock"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "2-security-levels-the-user-s-choice",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "2. Security levels \u2014 the user's choice"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "3-installation-wired-agent-simulated-end-to-end",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "3. Installation \u2192 wired agent, simulated end to end"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "4-1-what-connect-will-do-planned",
+            "level": 3,
+            "title": "4.1 What \"Connect\" will do \u2014 **`planned`**"
+          },
+          {
+            "id": "4-2-client-detection-matrix",
+            "level": 3,
+            "title": "4.2 Client detection matrix"
+          },
+          {
+            "id": "4-3-credmgr-md-the-file-that-teaches-any-agent-with-no-mcp-at-all",
+            "level": 3,
+            "title": "4.3 `CREDMGR.md` \u2014 the file that teaches any agent, with no MCP at all"
+          }
+        ],
+        "id": "4-auto-configuring-mcp",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "3.4"
+            }
+          ]
+        },
+        "title": "4. Auto-configuring MCP"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "5-1-what-it-is",
+            "level": 3,
+            "title": "5.1 What it is"
+          },
+          {
+            "id": "5-2-the-prompt-generated-filled-from-the-live-vault",
+            "level": 3,
+            "title": "5.2 The prompt (generated; `{{\u2026}}` filled from the live vault)"
+          },
+          {
+            "id": "5-3-one-click-delivery",
+            "level": 3,
+            "title": "5.3 One-click delivery"
+          }
+        ],
+        "id": "5-the-vault-protocol-prompt",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/cli/src/main.rs"
+          ],
+          "documents": []
+        },
+        "title": "5. The Vault Protocol prompt"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "6-the-agent-facing-contract-in-the-repo",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "docs/AGENT_CONTRACT.md"
+          ],
+          "documents": []
+        },
+        "title": "6. The agent-facing contract, in the repo"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-new-risks-from-this-surface",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "7. New risks from this surface"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-connections",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "3"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "3.1"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "3.4"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "5.2"
+            },
+            {
+              "doc": "21_RELEASE_AND_INTEGRITY.md",
+              "section": "2"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "2"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "4.6"
+            },
+            {
+              "doc": "00_README_START_HERE.md",
+              "section": "6"
+            }
+          ]
+        },
+        "title": "8. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "9-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-019",
+            "ADR-059"
+          ],
+          "code": [
+            "crates/mcp/src/tools.rs",
+            "crates/brokerd/src/peer.rs",
+            "crates/brokerd/tests/isolation.rs"
+          ],
+          "documents": []
+        },
+        "title": "9. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-017",
+    "last_reviewed": "2026-08-18",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Airlock and LLM access",
+    "variants": []
+  }
+}

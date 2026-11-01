@@ -1,0 +1,88 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-08-08",
+  "engines": [
+    {
+      "id": "docgen",
+      "path": "tools/docgen/",
+      "role": "AUTHORITATIVE document/diagram engine",
+      "families": [
+        "flowchart",
+        "state",
+        "system-map",
+        "dependency",
+        "sequence",
+        "sankey(document)",
+        "bar",
+        "radar",
+        "pie",
+        "timeline",
+        "heatmap",
+        "layered-2.5D",
+        "isometric3d",
+        "geo-map",
+        "motion(SMIL)"
+      ],
+      "formats": [
+        "self-contained HTML",
+        "SVG",
+        "PDF(weasyprint)",
+        "JSON"
+      ],
+      "tokens": "KEEP via assets/tokens.json",
+      "decision": "KEEP_EXISTING (authority unchanged)"
+    },
+    {
+      "id": "visual-engine-echarts",
+      "path": "tools/visual-engine/",
+      "role": "data-chart engine (this package)",
+      "families": [
+        "bar*",
+        "line*",
+        "area*",
+        "pie|donut",
+        "scatter|bubble",
+        "heatmap|matrix",
+        "sankey",
+        "funnel",
+        "graph",
+        "tree|treemap|sunburst",
+        "boxplot",
+        "radar",
+        "timeline",
+        "scorecard"
+      ],
+      "formats": [
+        "SVG(SSR, canonical)",
+        "PNG(resvg)",
+        "interactive self-contained HTML"
+      ],
+      "tokens": "KEEP via theme-adapter from docgen tokens.json",
+      "decision": "ADD_ECHARTS (fulfils DOCUMENT_REWRITE_PROTOCOL.md planned dependency)"
+    },
+    {
+      "id": "recharts-frontend",
+      "path": "frontend/src/components/dashboard/",
+      "role": "app UI charts",
+      "decision": "KEEP_EXISTING — product UI; migration to visual-engine NOT planned (bundle + interactivity model differ)"
+    },
+    {
+      "id": "mermaid-docs",
+      "path": "docs/ (62 files, 281 fences)",
+      "role": "markdown-stage diagrams",
+      "decision": "KEEP_EXISTING — rendered by GitHub/IDE; converted to docgen/ECharts at final doc stage per DOCUMENT_REWRITE_PROTOCOL.md"
+    },
+    {
+      "id": "graphify",
+      "path": "tools/graphify/",
+      "role": "local interactive code-graph dashboard (vendored force-graph@1)",
+      "decision": "KEEP_EXISTING — navigation tool, outside the design system, manual-only"
+    },
+    {
+      "id": "reports-pdf",
+      "path": "src/reports/pdf_exporter.py",
+      "role": "product audit-report PDF (Jinja2+WeasyPrint)",
+      "decision": "KEEP_EXISTING — chartless today; future charts would embed visual-engine SVG (backlog note, not wired)"
+    }
+  ]
+}

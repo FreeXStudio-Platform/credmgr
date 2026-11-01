@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "credmgr.chart-use-case/v1",
+  "title": "Chart use-case catalog entry",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "family",
+    "reader_questions",
+    "data_shape",
+    "when_to_use",
+    "when_not_to_use",
+    "recommended_engine",
+    "sources",
+    "last_verified"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "family": {
+      "type": "string"
+    },
+    "reader_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "data_shape": {
+      "type": "string"
+    },
+    "when_to_use": {
+      "type": "string"
+    },
+    "when_not_to_use": {
+      "type": "string"
+    },
+    "common_misreading": {
+      "type": "string"
+    },
+    "recommended_engine": {
+      "type": "string"
+    },
+    "supported_alternatives": {
+      "type": "array"
+    },
+    "interaction_value": {
+      "type": "string"
+    },
+    "static_value": {
+      "type": "string"
+    },
+    "accessibility_concerns": {
+      "type": "array"
+    },
+    "performance_notes": {
+      "type": "string"
+    },
+    "reskin_capability": {
+      "type": "string"
+    },
+    "project_examples": {
+      "type": "array"
+    },
+    "sources": {
+      "type": "array"
+    },
+    "last_verified": {
+      "type": "string"
+    },
+    "review_due": {
+      "type": "string"
+    }
+  }
+}

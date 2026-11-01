@@ -1,0 +1,24 @@
+{
+  "kind": "echarts",
+  "id": "login-funnel",
+  "caption": "Every step that can complete does; there is no drop-off on the documented path. Rendered by tools/visual-engine (ECharts, funnel preset login-funnel) from the job at tools/visual-engine/renders/golden/SIM-03-login-funnel.job.json — reproducible byte-for-byte.",
+  "job": {
+    "visual_id": "SIM-03-login-funnel",
+    "classification": "public",
+    "theme": "project-theme",
+    "reader_question": "Where would a login sequence be interrupted, if at all?",
+    "text_summary": "Every step that can complete does: passphrase verification, the optional gate challenge, and token minting all succeed on the documented path (ADR-056) — there is no drop-off in the real flow, only in a wrong passphrase/code, which is a separate error path, not attrition.",
+    "selected_visual": "funnel",
+    "preset": "login-funnel",
+    "title": "vault.unlock -> session token, by step",
+    "data": {
+      "items": [
+        { "name": "vault.unlock called", "value": 100 },
+        { "name": "passphrase verified", "value": 100 },
+        { "name": "gate challenge issued (if enrolled)", "value": 100 },
+        { "name": "vault.gate_verify succeeds", "value": 100 },
+        { "name": "session token minted", "value": 100 }
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+<sc-if value="{{dlgPending}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S20 Pending tray" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-pending-title" style="width:620px;max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><span id="dlg-pending-title" class="t-h3" style="font-family:var(--f-mono)">Held for review</span><button class="k-btn" onClick="{{refreshPendingTray}}" style="padding:2px 8px;font-size:var(--fs-xs)">Refresh</button></div>
+    <div class="t-body-sm">Entries written while the vault or their node was locked wait here instead of the manifest. Accepting one writes it to its node; discarding removes it. Values are never shown on this screen.</div>
+    <div style="display:flex;flex-direction:column;border:1px solid var(--faint);border-radius:var(--r-sm)">
+      <sc-for list="{{pendingRows}}" as="p" hint-placeholder-count="2">
+        <div data-pending-row="true" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px 10px 10px;border-bottom:1px solid var(--hair);border-left:{{p.sensBorder}}">
+          <div style="min-width:0;display:flex;flex-direction:column;gap:2px">
+            <div style="display:flex;gap:8px;align-items:baseline;font-family:var(--f-mono)"><span style="color:var(--mute);font-size:var(--fs-xs);white-space:nowrap;flex:none">{{p.node}} /</span><span style="min-width:0;font-size:var(--fs-base);font-weight:var(--fw-label);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{p.name}}</span></div>
+            <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">{{p.fieldCount}} · {{p.type}} · {{p.sens}} · {{p.when}}</div>
+            <sc-if value="{{p.nodeLocked}}" hint-placeholder-val="{{false}}"><div class="t-caption" style="color:var(--warn)">this node is locked — unlock it to accept or discard</div></sc-if>
+          </div>
+          <div style="display:flex;gap:8px"><button class="k-btn" onClick="{{p.discard}}" disabled="{{p.disabled}}">Discard</button><button class="k-btn" data-variant="primary" onClick="{{p.accept}}" disabled="{{p.disabled}}">Accept</button></div>
+        </div>
+      </sc-for>
+      <sc-if value="{{pendingEmpty}}" hint-placeholder-val="{{true}}"><div class="k-empty">Nothing is waiting. Entries written while the vault or their node is locked appear here.</div></sc-if>
+    </div>
+    <div style="display:flex;justify-content:flex-end"><button class="k-btn" onClick="{{closeDialog}}">Close</button></div>
+  </div>
+</div>
+</sc-if>

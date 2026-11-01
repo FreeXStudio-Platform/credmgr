@@ -1,0 +1,17 @@
+{
+  "id": "tier-entitlement-matrix",
+  "visual": "heatmap",
+  "family": "matrix",
+  "summary": "Tier × entitlement matrix",
+  "canonical_reader_question": "What does each pricing tier include?",
+  "required_fields": [
+    "data.rows",
+    "data.cols",
+    "data.matrix"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "1 included, 0 excluded, 0.5 limited; commercial surface — classification public requires sanitized source",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

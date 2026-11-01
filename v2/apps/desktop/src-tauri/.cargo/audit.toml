@@ -1,0 +1,25 @@
+# cargo-audit policy for the desktop shell (its own workspace, ADR-035).
+#
+#   cargo audit --deny warnings          (from this directory)
+#
+# Two advisories are acknowledged, both warnings (neither is a vulnerability
+# with a known exploit), both reached ONLY on Linux, through Tauri's GTK 3
+# bindings. Verified with `cargo tree -e normal,build --target <triple> -i
+# <crate>`: absent from aarch64-apple-darwin, x86_64-apple-darwin and
+# x86_64-pc-windows-msvc, present on x86_64-unknown-linux-gnu. The beta ships on
+# macOS. If a Linux build is ever released these two must be re-read first, which
+# is why they are named here with their reason rather than silenced wholesale.
+#
+# Each is an upstream (Tauri / gtk-rs) matter; the fix is the gtk-rs move to GTK 4
+# or Tauri leaving GTK 3, neither of which this repository can make.
+[advisories]
+ignore = [
+    # glib 0.18.5: unsound `Iterator`/`DoubleEndedIterator` impls for
+    # `glib::VariantStrIter`. Fixed in glib 0.20; Tauri's wry/tao still pin the
+    # gtk-rs 0.18 line. https://rustsec.org/advisories/RUSTSEC-2024-0429
+    "RUSTSEC-2024-0429",
+    # proc-macro-error 1.0.4: unmaintained; a proc-macro used at *build* time by
+    # gtk3-macros / glib-macros, so it never runs in the shipped binary.
+    # https://rustsec.org/advisories/RUSTSEC-2024-0370
+    "RUSTSEC-2024-0370",
+]

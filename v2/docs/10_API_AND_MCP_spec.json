@@ -1,0 +1,133 @@
+{
+  "kind": "sequence",
+  "id": "broker-request-lifecycle",
+  "title": "credmgrd request lifecycle: six ordered stages before dispatch",
+  "caption": "Every request passes the same five checks, in this order, before ops::dispatch runs the one step that is operation-specific: peer-uid gate, frame parse, scope resolution (+anomaly), activity touch, auth backoff. Three of those checks can end a request before dispatch ever runs — a non-owning uid closes the connection silently, malformed JSON gets an immediate error reply, and a backoff lockout returns rate_limited — this trace is the path where none of them do. crates/brokerd/src/server.rs (serve_connection, handle_request, peer_is_owner), crates/brokerd/src/scope.rs (resolve_scope), crates/brokerd/src/auth_backoff.rs (remaining_lockout).",
+  "width": 800,
+  "height": 760,
+  "actors": [
+    { "id": "client", "label": "Client" },
+    { "id": "server", "label": "Server" },
+    { "id": "dispatch", "label": "Dispatch" },
+    { "id": "state", "label": "State" },
+    { "id": "ops", "label": "Ops" }
+  ],
+  "messages": [
+    {
+      "src": "client",
+      "dst": "server",
+      "label": "connect (Unix socket); peer-uid gate: uid == owner (peer_is_owner, once per connection)",
+      "order": 1,
+      "style": "solid"
+    },
+    {
+      "src": "client",
+      "dst": "server",
+      "label": "{\"id\":\"1\",\"op\":\"entry.reveal\",\"token\":\"cmt_…\",\"params\":{\"node\":\"northwind\",\"entry\":\"e_4f2a\"}}\\n",
+      "order": 2,
+      "style": "solid"
+    },
+    {
+      "src": "server",
+      "dst": "dispatch",
+      "label": "line parsed to Request -> handle_request(peer_info, &request)",
+      "order": 3,
+      "style": "solid"
+    },
+    {
+      "src": "dispatch",
+      "dst": "state",
+      "label": "resolve_scope(peer_info, token)",
+      "order": 4,
+      "style": "solid"
+    },
+    {
+      "src": "state",
+      "dst": "dispatch",
+      "label": "(scope, anomaly) — anomaly is recorded, never blocks the request",
+      "order": 5,
+      "style": "solid"
+    },
+    {
+      "src": "dispatch",
+      "dst": "state",
+      "label": "touch_activity(scope.node_id, now)  [ADR-043]",
+      "order": 6,
+      "style": "solid"
+    },
+    {
+      "src": "dispatch",
+      "dst": "state",
+      "label": "auth_backoff.remaining_lockout(uid)  [vault.unlock / vault.gate_verify only]",
+      "order": 7,
+      "style": "solid"
+    },
+    {
+      "src": "state",
+      "dst": "dispatch",
+      "label": "None -> not locked out, dispatch proceeds",
+      "order": 8,
+      "style": "solid"
+    },
+    {
+      "src": "dispatch",
+      "dst": "ops",
+      "label": "dispatch(state, &scope, now, \"entry.reveal\", &params) — the one op-specific step",
+      "order": 9,
+      "style": "solid"
+    },
+    {
+      "src": "ops",
+      "dst": "dispatch",
+      "label": "Ok(value)",
+      "order": 10,
+      "style": "solid"
+    },
+    {
+      "src": "dispatch",
+      "dst": "server",
+      "label": "(Ok(value), audit_id) — record_decision already appended the log entry",
+      "order": 11,
+      "style": "solid"
+    },
+    {
+      "src": "server",
+      "dst": "client",
+      "label": "{\"id\":\"1\",\"ok\":true,\"value\":{…},\"audit\":\"a_7c31\"}\\n",
+      "order": 12,
+      "style": "solid"
+    }
+  ],
+  "data_sources": [
+    {
+      "kind": "cited",
+      "ref": "crates/brokerd/src/server.rs (serve_connection: peer::identify_peer + peer_is_owner before the reader is built, then the read_line/parse loop; handle_request: the resolve_scope/touch_activity/auth_backoff/dispatch order; record_anomaly; record_decision)",
+      "retrieved": "2026-08-23"
+    },
+    {
+      "kind": "cited",
+      "ref": "crates/brokerd/src/scope.rs (resolve_scope: token lookup, workdir match, or global/list-only fallback — never itself an error path)",
+      "retrieved": "2026-08-23"
+    },
+    {
+      "kind": "cited",
+      "ref": "crates/brokerd/src/state.rs (touch_activity)",
+      "retrieved": "2026-08-23"
+    },
+    {
+      "kind": "cited",
+      "ref": "crates/brokerd/src/auth_backoff.rs (remaining_lockout, record_success, record_failure)",
+      "retrieved": "2026-08-23"
+    },
+    {
+      "kind": "cited",
+      "ref": "crates/brokerd/src/ops.rs (dispatch signature and the entry.reveal arm)",
+      "retrieved": "2026-08-23"
+    },
+    {
+      "kind": "cited",
+      "ref": "crates/brokerd/src/protocol.rs (to_wire; the {id, op, token?, params} / {id, ok, value|error, audit} envelope, per 10_API_AND_MCP.md §1.2)",
+      "retrieved": "2026-08-23"
+    }
+  ]
+}

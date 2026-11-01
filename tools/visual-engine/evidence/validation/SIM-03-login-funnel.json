@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-03-login-funnel",
+  "selected_visual": "funnel",
+  "preset": "login-funnel",
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "3c7958128499fde7fc24924909c6b3c9ca0b8e046c791d2bde43099ad634086e",
+  "option_sha256": "af2979087eb0663902b7a3581c13df34075c78679d0e9c8cab6fe4f110831f5b",
+  "job_sha256": "b3ee188d4d8a835d889fd4430bf1028e879648acbe6c1094d91daf288ec4c96f",
+  "render_ms": 8,
+  "warnings": []
+}

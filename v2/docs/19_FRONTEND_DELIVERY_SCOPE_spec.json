@@ -1,0 +1,86 @@
+[
+  {
+    "kind": "sequence",
+    "id": "desktop-login-sequence",
+    "title": "Login to entry_reveal: where the session token actually lives",
+    "caption": "vault_unlock can fail with two_factor_required before any token exists; only vault_gate_verify mints one. The bridge strips it from the response and holds it in Rust — the webview learns only that it is authenticated, and the token reappears only bridge-side, attached to later calls like entry_reveal.",
+    "width": 720,
+    "height": 790,
+    "actors": [
+      { "id": "webview", "label": "Webview" },
+      { "id": "bridge", "label": "Bridge (Rust)" },
+      { "id": "credmgrd", "label": "credmgrd" }
+    ],
+    "messages": [
+      { "src": "webview", "dst": "bridge", "label": "invoke(\"vault_unlock\", { passphrase })", "order": 1, "style": "solid" },
+      { "src": "bridge", "dst": "credmgrd", "label": "vault.unlock { passphrase } — no token attached", "order": 2, "style": "solid" },
+      { "src": "credmgrd", "dst": "bridge", "label": "two_factor_required { challenge: \"totp\" }", "order": 3, "style": "dashed" },
+      { "src": "bridge", "dst": "webview", "label": "Err(code: \"two_factor_required\") — no token minted", "order": 4, "style": "dashed" },
+      { "src": "webview", "dst": "bridge", "label": "invoke(\"vault_gate_verify\", { code })", "order": 5, "style": "solid" },
+      { "src": "bridge", "dst": "credmgrd", "label": "vault.gate_verify { code } — still no token attached", "order": 6, "style": "solid" },
+      { "src": "credmgrd", "dst": "bridge", "label": "{ locked: false, token: \"cmt_…\" }", "order": 7, "style": "dashed" },
+      { "src": "bridge", "dst": "webview", "label": "AuthState { authenticated: true } — token captured, held in Rust", "order": 8, "style": "dashed" },
+      { "src": "webview", "dst": "bridge", "label": "invoke(\"entry_reveal\", { node, entry })", "order": 9, "style": "solid" },
+      { "src": "bridge", "dst": "credmgrd", "label": "entry.reveal { node, entry } — token attached by dispatch_at", "order": 10, "style": "solid" },
+      { "src": "credmgrd", "dst": "bridge", "label": "{ node, entry, value }", "order": 11, "style": "dashed" },
+      { "src": "bridge", "dst": "webview", "label": "{ node, entry, value } — plaintext only, never the token", "order": 12, "style": "dashed" }
+    ],
+    "legend": [
+      { "kind": "line", "key": "solid", "label": "a call — the webview invoking a Tauri command, or the bridge relaying it to credmgrd" },
+      { "kind": "line", "key": "dashed", "label": "the response, returning up the same path" }
+    ],
+    "data_sources": [
+      { "kind": "cited", "ref": "apps/desktop/src-tauri/src/commands.rs (vault_unlock_at, vault_gate_verify_at, entry_reveal, dispatch_at)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "apps/desktop/src-tauri/src/session.rs (Session::capture_token, Session::token, Session::set)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "apps/desktop/src-tauri/tests/bridge_wire.rs::the_session_token_is_captured_attached_and_never_returned", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "apps/desktop/src-tauri/tests/bridge_wire.rs::two_factor_required_reaches_the_ui_as_the_brokers_own_code_and_mints_nothing", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "v2/docs/14_DECISIONS.md ADR-057 decision 1 (token custody in the bridge)", "retrieved": "2026-08-23" }
+    ]
+  },
+  {
+    "kind": "flowchart",
+    "id": "route-coverage-by-mode",
+    "title": "Twenty-two routes, two bundles",
+    "caption": "Fourteen routes ship in both bundles; eight are Pro-only. /settings/llm is shown as Pro-only — the union of both source documents — because the route table and the mode matrix disagree, and that disagreement is shown rather than resolved.",
+    "width": 1950,
+    "height": 820,
+    "motion": false,
+    "nodes": [
+      { "id": "root", "type": "source", "label": "Desktop delivery — 22 routes", "x": 835, "y": 70, "w": 260, "h": 56 },
+      { "id": "shared_header", "type": "process", "label": "Both bundles — 14 routes", "x": 385, "y": 250, "w": 230, "h": 56, "note": "ship in Lite and Pro" },
+      { "id": "pro_header", "type": "process", "label": "Pro-only — 8 routes", "x": 1335, "y": 250, "w": 190, "h": 56, "note": "ship only when Pro is selected" },
+      { "id": "shared_core", "type": "process", "label": "Primary + node views (4)", "x": 35, "y": 470, "w": 230, "h": 56,
+        "note": "/ · /node/:id · /node/:id/entry/:eid · /orphan" },
+      { "id": "shared_settings", "type": "process", "label": "Settings — shared (8)", "x": 395, "y": 470, "w": 210, "h": 56,
+        "note": "security, appearance, backup, mode, about, donate, privacy, licenses" },
+      { "id": "shared_flow", "type": "process", "label": "Session flow (2)", "x": 765, "y": 470, "w": 170, "h": 56,
+        "note": "/locked · /onboarding/:step" },
+      { "id": "pro_settings", "type": "process", "label": "Settings — Pro (6)", "x": 1060, "y": 470, "w": 180, "h": 56,
+        "note": "nodes · grants · agents · maintenance · audit · advanced" },
+      { "id": "pro_ops", "type": "process", "label": "/operations (1)", "x": 1350, "y": 470, "w": 160, "h": 56,
+        "note": "the Operations panel" },
+      { "id": "pro_llm", "type": "fallback", "label": "/settings/llm — disputed", "x": 1605, "y": 470, "w": 230, "h": 56,
+        "note": "Disputed: route table says Pro-only; mode matrix omits it. Union kept — not resolved (§10)." }
+    ],
+    "edges": [
+      { "src": "root", "dst": "shared_header", "main": true },
+      { "src": "root", "dst": "pro_header", "main": true },
+      { "src": "shared_header", "dst": "shared_core" },
+      { "src": "shared_header", "dst": "shared_settings" },
+      { "src": "shared_header", "dst": "shared_flow" },
+      { "src": "pro_header", "dst": "pro_settings" },
+      { "src": "pro_header", "dst": "pro_ops" },
+      { "src": "pro_header", "dst": "pro_llm", "style": "dashed" }
+    ],
+    "legend": [
+      { "kind": "node", "key": "source", "label": "the whole desktop delivery" },
+      { "kind": "node", "key": "process", "label": "a route group both source documents agree on" },
+      { "kind": "node", "key": "fallback", "label": "disputed — union kept, not resolved by this figure" }
+    ],
+    "data_sources": [
+      { "kind": "cited", "ref": "v2/docs/18_ENDPOINT_INDEX.md §5 (the route table — 22 rows, 7 Pro-only settings paths including /settings/llm)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "v2/docs/09_UI_UX_SPEC.md §5 (the Lite/Pro mode matrix — six Pro-only settings sections, /settings/llm not named)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "v2/docs/19_FRONTEND_DELIVERY_SCOPE.md §10 item 1 (the disagreement named and left open, not resolved)", "retrieved": "2026-08-23" }
+    ]
+  }
+]

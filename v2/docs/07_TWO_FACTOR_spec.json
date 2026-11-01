@@ -1,0 +1,37 @@
+{
+  "kind": "sequence",
+  "id": "gate-unlock-sequence",
+  "title": "Gate 2FA: a stolen passphrase without the authenticator",
+  "caption": "The gate sits between unwrapping the root key and deriving any node key: a correct passphrase plus a wrong code leaves one parked, zeroise-on-drop root key and an empty hot set, expiring in 120 seconds — no node credential is ever reachable. crates/brokerd/src/state.rs (unlock, PendingGateUnlock, gate_verify), crates/brokerd/src/ops.rs (dispatch), crates/brokerd/src/protocol.rs (wire error shapes).",
+  "width": 720,
+  "height": 700,
+  "actors": [
+    { "id": "client", "label": "Client" },
+    { "id": "dispatch", "label": "Dispatch" },
+    { "id": "state", "label": "State" },
+    { "id": "keystore", "label": "Keystore" }
+  ],
+  "messages": [
+    { "src": "client", "dst": "dispatch", "label": "vault.unlock {}", "order": 1, "style": "solid" },
+    { "src": "dispatch", "dst": "state", "label": "state.unlock(now)", "order": 2, "style": "solid" },
+    { "src": "state", "dst": "keystore", "label": "unwrap_root(wrapped_root)", "order": 3, "style": "solid" },
+    { "src": "keystore", "dst": "state", "label": "root key (RK) returned", "order": 4, "style": "solid" },
+    { "src": "state", "dst": "keystore", "label": "load gate keystore file (planned, not built)", "order": 5, "style": "dashed" },
+    { "src": "state", "dst": "dispatch", "label": "gate confirmed -> park RK (+120s)", "order": 6, "style": "solid" },
+    { "src": "dispatch", "dst": "client", "label": "two_factor_required (scope: global, expiresIn: 120)", "order": 7, "style": "solid" },
+    { "src": "client", "dst": "dispatch", "label": "vault.gate_verify { code: wrong }", "order": 8, "style": "solid" },
+    { "src": "dispatch", "dst": "state", "label": "state.gate_verify(\"global\", code, now)", "order": 9, "style": "solid" },
+    { "src": "state", "dst": "dispatch", "label": "WrongCode -> RK stays parked, hot set untouched", "order": 10, "style": "solid" },
+    { "src": "dispatch", "dst": "client", "label": "gate_verification_failed -> hot set still empty", "order": 11, "style": "solid" }
+  ],
+  "legend": [
+    { "kind": "line", "key": "solid", "label": "built — a real call/return over the wire or in-process, today" },
+    { "kind": "line", "key": "dashed", "label": "planned — §3 target design step 2, not built (no code path loads a gate keystore file)" }
+  ],
+  "data_sources": [
+    { "kind": "cited", "ref": "crates/brokerd/src/state.rs (unlock, PendingGateUnlock, GATE_UNLOCK_TTL_SECONDS=120, gate_verify, consume_gate_code, install_hot_keys_from_root)", "retrieved": "2026-08-23" },
+    { "kind": "cited", "ref": "crates/brokerd/src/ops.rs (dispatch: \"vault.unlock\", \"vault.gate_verify\" arms, mint_session_token)", "retrieved": "2026-08-23" },
+    { "kind": "cited", "ref": "crates/brokerd/src/protocol.rs (to_wire: two_factor_required, gate_verification_failed envelopes)", "retrieved": "2026-08-23" },
+    { "kind": "cited", "ref": "v2/docs/07_TWO_FACTOR.md §3 (the five-step design order this sequence draws from)", "retrieved": "2026-08-23" }
+  ]
+}

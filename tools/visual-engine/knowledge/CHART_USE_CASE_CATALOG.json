@@ -1,0 +1,519 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-08-08",
+  "schema": "../schemas/chart-use-case.schema.json",
+  "entries": [
+    {
+      "id": "line",
+      "name": "Line chart",
+      "family": "time",
+      "reader_questions": [
+        "How does a measure change over time?"
+      ],
+      "data_shape": "time series (table: t + measures)",
+      "when_to_use": "continuous temporal trend; up to ~6 series",
+      "when_not_to_use": "categorical comparison; sparse irregular events",
+      "common_misreading": "interpolation across missing intervals read as data",
+      "recommended_engine": "echarts:line",
+      "supported_alternatives": [
+        "area",
+        "line_step"
+      ],
+      "interaction_value": "tooltip/zoom on dense series",
+      "static_value": "high — canonical for docs",
+      "accessibility_concerns": [
+        "label every series or legend",
+        "state aggregation window"
+      ],
+      "performance_notes": "canvas beyond ~10k points",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "queue-latency preset",
+        "golden-signal trends"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "Apache ECharts docs (echarts.apache.org)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "bar_horizontal",
+      "name": "Horizontal bar",
+      "family": "comparison",
+      "reader_questions": [
+        "How do named categories compare?"
+      ],
+      "data_shape": "table: category + measure(s)",
+      "when_to_use": "named-category comparison, long labels; the strong default",
+      "when_not_to_use": "time series; parts of a whole with many slices",
+      "common_misreading": "truncated axis exaggerates differences (zero-baseline law)",
+      "recommended_engine": "echarts:bar_horizontal",
+      "supported_alternatives": [
+        "bar",
+        "bar_grouped",
+        "bar_stacked"
+      ],
+      "interaction_value": "sorting/filtering",
+      "static_value": "high",
+      "accessibility_concerns": [
+        "zero baseline enforced (docgen law)",
+        "sort meaningfully"
+      ],
+      "performance_notes": "fine to thousands of rows",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "release-readiness-scorecard",
+        "step counts"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "from Data to Viz (data-to-viz.com)",
+        "tools/docgen RULEBOOK + VISUAL_LIBRARY (project-internal)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "heatmap",
+      "name": "Heatmap / matrix",
+      "family": "matrix",
+      "reader_questions": [
+        "Where is intensity concentrated across two categorical dimensions?"
+      ],
+      "data_shape": "matrix: rows × cols + intensity",
+      "when_to_use": "two categorical dims + one intensity measure; coverage/status matrices",
+      "when_not_to_use": "precise value comparison (table better); >50k cells",
+      "common_misreading": "color scale read as linear when it is not; missing cells read as zero",
+      "recommended_engine": "echarts:heatmap",
+      "supported_alternatives": [
+        "matrix table (NO_CHART)",
+        "bar small-multiples"
+      ],
+      "interaction_value": "cell tooltip",
+      "static_value": "high",
+      "accessibility_concerns": [
+        "scale legend mandatory (docgen law)",
+        "value labels on for ≤~200 cells",
+        "missing = null rendered distinctly, never 0"
+      ],
+      "performance_notes": "canvas for very dense matrices",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "crate-test-coverage-heatmap",
+        "ci-gate-status",
+        "tier-entitlement-matrix"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "Apache ECharts docs (echarts.apache.org)",
+        "tools/docgen RULEBOOK + VISUAL_LIBRARY (project-internal)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "pie",
+      "name": "Pie / donut",
+      "family": "composition",
+      "reader_questions": [
+        "What are the parts of this whole (few parts)?"
+      ],
+      "data_shape": "items: name+value",
+      "when_to_use": "≤6 positive parts summing to a meaningful whole",
+      "when_not_to_use": "ranking; trends; >6 categories (docgen hard cap)",
+      "common_misreading": "angles misjudged — humans compare length better than angle",
+      "recommended_engine": "echarts:pie",
+      "supported_alternatives": [
+        "bar_horizontal",
+        "treemap"
+      ],
+      "interaction_value": "low",
+      "static_value": "high",
+      "accessibility_concerns": [
+        "label slices directly, not color-only"
+      ],
+      "performance_notes": "trivial",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "severity mix in dashboards (mirrors frontend severity-pie-chart)"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "from Data to Viz (data-to-viz.com)",
+        "tools/docgen RULEBOOK + VISUAL_LIBRARY (project-internal)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "scatter",
+      "name": "Scatter / bubble",
+      "family": "relationship",
+      "reader_questions": [
+        "Do two measures relate? Where are outliers?"
+      ],
+      "data_shape": "table: x,y(,size)",
+      "when_to_use": "correlation, clusters, outliers",
+      "when_not_to_use": "implying causation; <10 points (table better)",
+      "common_misreading": "correlation read as causation",
+      "recommended_engine": "echarts:scatter",
+      "supported_alternatives": [
+        "bubble",
+        "heatmap (dense)"
+      ],
+      "interaction_value": "brushing/tooltip",
+      "static_value": "high",
+      "accessibility_concerns": [
+        "annotate outliers in text_summary"
+      ],
+      "performance_notes": "canvas beyond ~5k points",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "finding-severity-confidence"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "from Data to Viz (data-to-viz.com)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "sankey",
+      "name": "Sankey flow",
+      "family": "flow",
+      "reader_questions": [
+        "How does quantity flow and split between stages?"
+      ],
+      "data_shape": "nodes + links with conserved positive values",
+      "when_to_use": "real quantitative flow with conservation meaning",
+      "when_not_to_use": "sequential attrition (funnel); flows that do not reconcile",
+      "common_misreading": "band width read as exact when values are estimates",
+      "recommended_engine": "echarts:sankey",
+      "supported_alternatives": [
+        "funnel",
+        "bar"
+      ],
+      "interaction_value": "adjacency focus",
+      "static_value": "medium — label totals",
+      "accessibility_concerns": [
+        "values must reconcile (spec law §37.15)"
+      ],
+      "performance_notes": "fine to ~500 links",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "knowledge-promotion-flow",
+        "backup-restore-flow",
+        "finding-state flow (only when counts reconcile)"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "Apache ECharts docs (echarts.apache.org)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "funnel",
+      "name": "Funnel",
+      "family": "flow",
+      "reader_questions": [
+        "Where does a sequential process lose volume?"
+      ],
+      "data_shape": "items: ordered stages, non-increasing counts",
+      "when_to_use": "sequential attrition",
+      "when_not_to_use": "non-sequential categories; flows that split",
+      "common_misreading": "stage width read as rate rather than absolute count",
+      "recommended_engine": "echarts:funnel",
+      "supported_alternatives": [
+        "bar_horizontal"
+      ],
+      "interaction_value": "low",
+      "static_value": "high",
+      "accessibility_concerns": [
+        "print absolute counts on stages"
+      ],
+      "performance_notes": "trivial",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "usage-funnel",
+        "login-funnel"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "graph",
+      "name": "Node-link graph",
+      "family": "network",
+      "reader_questions": [
+        "What is the topology? What depends on what?"
+      ],
+      "data_shape": "nodes + directed links",
+      "when_to_use": "manageable topology ≤~150 nodes with meaningful edges",
+      "when_not_to_use": "dense networks (hairball — use adjacency matrix)",
+      "common_misreading": "spatial position read as meaningful when layout is arbitrary",
+      "recommended_engine": "echarts:graph (circular/preset layout — force is non-deterministic)",
+      "supported_alternatives": [
+        "heatmap adjacency",
+        "docgen dependency_graph for document-grade"
+      ],
+      "interaction_value": "exploration/roam (interactive HTML only)",
+      "static_value": "medium",
+      "accessibility_concerns": [
+        "deterministic layouts only in SSR"
+      ],
+      "performance_notes": "specialist engine beyond ~1.5k nodes",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "blueprint-link-graph",
+        "service-topology"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "from Data to Viz (data-to-viz.com)",
+        "Apache ECharts docs (echarts.apache.org)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "tree",
+      "name": "Tree / treemap / sunburst",
+      "family": "hierarchy",
+      "reader_questions": [
+        "What is the structure / size composition of a hierarchy?"
+      ],
+      "data_shape": "tree: root with children(+value)",
+      "when_to_use": "strict hierarchies; size-weighted composition (treemap)",
+      "when_not_to_use": "non-hierarchical data; >3 levels in sunburst for print",
+      "common_misreading": "treemap area misread when values are near-equal",
+      "recommended_engine": "echarts:tree|treemap|sunburst",
+      "supported_alternatives": [
+        "indented table"
+      ],
+      "interaction_value": "drill-down (interactive only)",
+      "static_value": "medium",
+      "accessibility_concerns": [
+        "label major nodes; depth cue not color-only"
+      ],
+      "performance_notes": "fine",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "op taxonomy; docs estate composition"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "from Data to Viz (data-to-viz.com)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "boxplot",
+      "name": "Box plot",
+      "family": "distribution",
+      "reader_questions": [
+        "How is a measure distributed per category?"
+      ],
+      "data_shape": "categories + precomputed [min,q1,med,q3,max]",
+      "when_to_use": "distribution comparison with quartiles the audience understands",
+      "when_not_to_use": "audiences unfamiliar with quartiles (use dot/strip); tiny samples",
+      "common_misreading": "whiskers read as full range when they are 1.5×IQR — we require explicit five-number input",
+      "recommended_engine": "echarts:boxplot",
+      "supported_alternatives": [
+        "strip/beeswarm (NO preset yet)",
+        "histogram"
+      ],
+      "interaction_value": "low",
+      "static_value": "high",
+      "accessibility_concerns": [
+        "explain five-number basis in caption",
+        "engine does NO statistics — quartiles are computed upstream and cited"
+      ],
+      "performance_notes": "trivial",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "op-performance"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "from Data to Viz (data-to-viz.com)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "radar",
+      "name": "Radar",
+      "family": "comparison",
+      "reader_questions": [
+        "How do a few profiles compare across ≥3 shared axes?"
+      ],
+      "data_shape": "axes(≥3,max) + series values",
+      "when_to_use": "2-3 profiles over 3-8 comparable axes",
+      "when_not_to_use": "precise comparison (bars better); many series",
+      "common_misreading": "area read as magnitude — it scales quadratically",
+      "recommended_engine": "echarts:radar",
+      "supported_alternatives": [
+        "grouped bar",
+        "small multiples"
+      ],
+      "interaction_value": "low",
+      "static_value": "medium",
+      "accessibility_concerns": [
+        "≥3 axes (docgen law)",
+        "label axes with units"
+      ],
+      "performance_notes": "trivial",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "capability profiles current-vs-target"
+      ],
+      "sources": [
+        "from Data to Viz (data-to-viz.com)",
+        "tools/docgen RULEBOOK + VISUAL_LIBRARY (project-internal)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "timeline",
+      "name": "Event timeline",
+      "family": "time",
+      "reader_questions": [
+        "What happened in what order?"
+      ],
+      "data_shape": "events: name+date",
+      "when_to_use": "milestones, incidents, releases",
+      "when_not_to_use": "continuous measures (line)",
+      "common_misreading": "spacing read as duration on category-spaced variants — we use a true time axis",
+      "recommended_engine": "echarts:timeline (scatter-on-time)",
+      "supported_alternatives": [
+        "docgen render_timeline for document-grade"
+      ],
+      "interaction_value": "tooltip",
+      "static_value": "high",
+      "accessibility_concerns": [
+        "absolute dates on labels or caption"
+      ],
+      "performance_notes": "fine to ~100 events",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "incident-timeline",
+        "workflow-sequence"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "tools/docgen RULEBOOK + VISUAL_LIBRARY (project-internal)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "area_stacked",
+      "name": "Stacked area",
+      "family": "time",
+      "reader_questions": [
+        "How does composition change over time?"
+      ],
+      "data_shape": "time series, multiple non-negative parts",
+      "when_to_use": "composition-over-time with few parts",
+      "when_not_to_use": "negative values; many crossing series (read impossible)",
+      "common_misreading": "middle-band trends misread because baselines shift",
+      "recommended_engine": "echarts:area_stacked",
+      "supported_alternatives": [
+        "line small-multiples",
+        "theme river (not implemented)"
+      ],
+      "interaction_value": "tooltip",
+      "static_value": "medium",
+      "accessibility_concerns": [
+        "order series by size; label directly"
+      ],
+      "performance_notes": "fine",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "credit-consumption composition"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "from Data to Viz (data-to-viz.com)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "scorecard",
+      "name": "Status scorecard",
+      "family": "status",
+      "reader_questions": [
+        "Which criteria are met / unmet / unknown?"
+      ],
+      "data_shape": "table: criterion + status counts",
+      "when_to_use": "release gates, journey scoreboards (J1-J10)",
+      "when_not_to_use": "anything needing a percentage (T-R3 bans aggregate scores)",
+      "common_misreading": "green-tinted totals read as done when items are unproven — statuses stay per-item",
+      "recommended_engine": "echarts:scorecard (bar_horizontal + semantic colors)",
+      "supported_alternatives": [
+        "heatmap status matrix",
+        "table"
+      ],
+      "interaction_value": "low",
+      "static_value": "high",
+      "accessibility_concerns": [
+        "status glyph + label, never color-only (T-R9-adjacent)"
+      ],
+      "performance_notes": "trivial",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "release-readiness-scorecard",
+        "ci-gate-status"
+      ],
+      "sources": [
+        "tools/docgen RULEBOOK + VISUAL_LIBRARY (project-internal)"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    },
+    {
+      "id": "no_chart",
+      "name": "NO_CHART",
+      "family": "meta",
+      "reader_questions": [
+        "Is a visual warranted at all?"
+      ],
+      "data_shape": "any",
+      "when_to_use": "exact values primary (table); 1-2 numbers (metric card/prose); procedural logic (docgen diagram); false precision risk; decorative request",
+      "when_not_to_use": "—",
+      "common_misreading": "—",
+      "recommended_engine": "none — return no_chart_reason",
+      "supported_alternatives": [
+        "table",
+        "prose",
+        "docgen diagram"
+      ],
+      "interaction_value": "—",
+      "static_value": "—",
+      "accessibility_concerns": [
+        "a decision to not chart is recorded, not silent"
+      ],
+      "performance_notes": "—",
+      "reskin_capability": "full (theme adapter; semantics locked by reskin law)",
+      "project_examples": [
+        "§18 of the implementation directive"
+      ],
+      "sources": [
+        "FT Visual Vocabulary (ft.com/vocabulary via github.com/Financial-Times/chart-doctor)",
+        "spec §18"
+      ],
+      "last_verified": "2026-08-08",
+      "review_due": "2027-02-08"
+    }
+  ]
+}

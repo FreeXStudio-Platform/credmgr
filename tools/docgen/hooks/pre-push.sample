@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# CredMgr doc-system: LOCAL pre-push gate (Stage 0 — free, fast, runs on every push).
+#
+# CI cost-control (~/.claude/rules/ci-cost-control.md, docs/ci/CI_TRIGGER_POLICY.md): the cheap
+# doc-system gate runs HERE, on your machine, not on GitHub-hosted minutes. The GitHub workflow
+# (.github/workflows/docgen-gate.yml) is workflow_dispatch-only — an operator-driven backstop,
+# never auto-on-push. This hook is what actually catches a leak/hash-gate failure before it ships.
+#
+# Install:
+#     cp tools/docgen/hooks/pre-push.sample .git/hooks/pre-push
+#     chmod +x .git/hooks/pre-push
+# (or wire into an existing multi-hook runner). Exit non-zero blocks the push.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Prefer the project's virtualenv python if present, else fall back to python3.
+if [ -x ".venv/bin/python" ]; then
+  PY=".venv/bin/python"
+else
+  PY="python3"
+fi
+
+# 1) Confidential/secret-doc placement guard (index-level).
+"$PY" -m tools.docgen.hooks.staged_content_scanner
+
+# 2) Rulebook hash-gate + doc-system validation (--strict: advisory findings block too).
+"$PY" -m tools.docgen.validate_doc_system --strict
+
+# 3) Structural check — header validity + DOC_MANIFEST drift + gate re-run.
+"$PY" -m tools.docgen.cli check --strict

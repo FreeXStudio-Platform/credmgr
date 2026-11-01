@@ -1,0 +1,121 @@
+{
+  "kind": "flowchart",
+  "id": "security-chain",
+  "title": "The security chain, document by document",
+  "caption": "Each document depends on the one before it -- real edges from each document's own Connections table, not a hand-drawn impression of how they relate.",
+  "width": 2030,
+  "height": 460,
+  "motion": true,
+  "nodes": [
+    {
+      "id": "crypto-keys",
+      "type": "source",
+      "label": "04 · Crypto & Keys",
+      "x": 70,
+      "y": 100,
+      "w": 170,
+      "h": 70,
+      "note": "Root key + per-node keys"
+    },
+    {
+      "id": "access-graph",
+      "type": "process",
+      "label": "06 · Access Graph",
+      "x": 500,
+      "y": 100,
+      "w": 170,
+      "h": 70,
+      "note": "R0-R8 grant resolution"
+    },
+    {
+      "id": "two-factor",
+      "type": "gate",
+      "label": "07 · Two-Factor",
+      "x": 930,
+      "y": 100,
+      "w": 170,
+      "h": 70,
+      "note": "Gates key entry into memory",
+      "highlight": true
+    },
+    {
+      "id": "threat-model",
+      "type": "decision",
+      "label": "05 · Threat Model",
+      "x": 1360,
+      "y": 100,
+      "w": 170,
+      "h": 70,
+      "note": "Names AR-1...AR-6, accepted risk"
+    },
+    {
+      "id": "airlock-llm",
+      "type": "output",
+      "label": "17 · Airlock & LLM",
+      "x": 1790,
+      "y": 100,
+      "w": 170,
+      "h": 70,
+      "note": "A-1: no outbound network, ever"
+    }
+  ],
+  "edges": [
+    {
+      "src": "crypto-keys",
+      "dst": "access-graph",
+      "label": "makes denial cryptographic",
+      "style": "solid",
+      "main": true
+    },
+    {
+      "src": "access-graph",
+      "dst": "two-factor",
+      "label": "defines gated operations",
+      "style": "solid",
+      "main": true
+    },
+    {
+      "src": "two-factor",
+      "dst": "threat-model",
+      "label": "bounds AR-2",
+      "style": "solid",
+      "main": true
+    },
+    {
+      "src": "threat-model",
+      "dst": "airlock-llm",
+      "label": "adversaries A1/A2/A6",
+      "style": "solid",
+      "main": true
+    }
+  ],
+  "legend": [
+    {
+      "kind": "line",
+      "key": "solid",
+      "label": "Cited dependency, from the source document's own Connections table"
+    }
+  ],
+  "data_sources": [
+    {
+      "kind": "cited",
+      "ref": "04_CRYPTO_AND_KEYS.md §10 Connections (feeds 06_ACCESS_GRAPH.md §1)",
+      "retrieved": "2026-08-23"
+    },
+    {
+      "kind": "cited",
+      "ref": "06_ACCESS_GRAPH.md §11 Connections (feeds 07_TWO_FACTOR.md §2)",
+      "retrieved": "2026-08-23"
+    },
+    {
+      "kind": "cited",
+      "ref": "07_TWO_FACTOR.md §9 Connections (feeds 05_THREAT_MODEL.md §7)",
+      "retrieved": "2026-08-23"
+    },
+    {
+      "kind": "cited",
+      "ref": "05_THREAT_MODEL.md §10 Connections (feeds 17_AIRLOCK_AND_LLM.md §1)",
+      "retrieved": "2026-08-23"
+    }
+  ]
+}

@@ -1,0 +1,547 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 2,
+      "figures": 0,
+      "sections": 9,
+      "tables": 3
+    },
+    "figures": [],
+    "references": {
+      "adrs": [
+        "ADR-052",
+        "ADR-057",
+        "ADR-059",
+        "ADR-062",
+        "ADR-071",
+        "ADR-078",
+        "ADR-072",
+        "ADR-005",
+        "ADR-006",
+        "ADR-007",
+        "ADR-053",
+        "ADR-079",
+        "ADR-023",
+        "ADR-004",
+        "ADR-075",
+        "ADR-011",
+        "ADR-012",
+        "ADR-047",
+        "ADR-073",
+        "ADR-076",
+        "ADR-021",
+        "ADR-058",
+        "ADR-060"
+      ],
+      "code": [
+        "crates/brokerd/src/ops.rs",
+        "crates/store/src/backup.rs",
+        "crates/core/src/registry.rs",
+        "crates/brokerd/tests/isolation.rs",
+        "apps/desktop/src-tauri/src/session.rs",
+        "crates/cli/tests/success_criteria.rs",
+        "crates/brokerd/tests/durable_vault.rs",
+        "crates/core/src/access.rs",
+        "crates/store/src/paths.rs"
+      ],
+      "documents": [
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1.2"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "5.2"
+        },
+        {
+          "doc": "00_README_START_HERE.md",
+          "section": "4.2"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "3"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "1"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "5.1"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "10.3"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "8"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "4"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "2.1"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "6"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "3"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "5"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "4"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "1"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "6"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "5"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1.5"
+        },
+        {
+          "doc": "17_AIRLOCK_AND_LLM.md",
+          "section": "1"
+        },
+        {
+          "doc": "11_MIGRATION.md"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md",
+          "section": "3.1"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md",
+          "section": "4"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "5"
+        },
+        {
+          "doc": "00_README_START_HERE.md",
+          "section": "7"
+        },
+        {
+          "doc": "02_ARCHITECTURE.md",
+          "section": "1"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "9"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md",
+          "section": "9"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-the-one-sentence-change",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "1. The one-sentence change"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "2-1-removal-built-seals-for-seven-days-before-it-stops-being-reversible",
+            "level": 3,
+            "title": "2.1 Removal \u2014 **`built`**: seals for seven days before it stops being reversible"
+          },
+          {
+            "id": "2-2-unsealing-after-day-seven-planned-today-sealed-data-answers-to-no-one-not-only-to-no-agent-the-cold-key-exists-nothing-opens-it",
+            "level": 3,
+            "title": "2.2 Unsealing after day seven \u2014 **`planned`**: today, sealed data answers to no one, not only to no agent (the cold key exists; nothing opens it)"
+          }
+        ],
+        "id": "2-the-model-built-with-two-exceptions-marked-below",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-005",
+            "ADR-006",
+            "ADR-007",
+            "ADR-053",
+            "ADR-079",
+            "ADR-057",
+            "ADR-071"
+          ],
+          "code": [
+            "crates/core/src/registry.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/tests/isolation.rs",
+            "apps/desktop/src-tauri/src/session.rs",
+            "crates/cli/tests/success_criteria.rs"
+          ],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "3"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "5.1"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "5.2"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "10.3"
+            }
+          ]
+        },
+        "title": "2. The model \u2014 **`built`**, with two exceptions marked below"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "3-it-is-a-privacy-vault-not-only-a-credential-vault-partial",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-072",
+            "ADR-023"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/tests/durable_vault.rs",
+            "crates/core/src/registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "8"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "4"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "2.1"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "6"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "3"
+            }
+          ]
+        },
+        "title": "3. It is a privacy vault, not only a credential vault \u2014 **`partial`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-what-isolation-honestly-means-here",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "5"
+            }
+          ]
+        },
+        "title": "4. What \"isolation\" honestly means here"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-decisions-i-made-where-the-brief-was-silent",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-005",
+            "ADR-006",
+            "ADR-004",
+            "ADR-075"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "6"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "4"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "5. Decisions I made where the brief was silent"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "6-what-is-being-simplified-away",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-011",
+            "ADR-012",
+            "ADR-047",
+            "ADR-072"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "08_FIELD_MODEL.md"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "6"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "5"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.5"
+            },
+            {
+              "doc": "17_AIRLOCK_AND_LLM.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "6. What is being simplified away"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-success-criteria",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-057",
+            "ADR-062",
+            "ADR-071",
+            "ADR-073",
+            "ADR-076",
+            "ADR-078",
+            "ADR-075",
+            "ADR-021",
+            "ADR-047"
+          ],
+          "code": [
+            "crates/cli/tests/success_criteria.rs"
+          ],
+          "documents": [
+            {
+              "doc": "11_MIGRATION.md"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md",
+              "section": "3.1"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md",
+              "section": "4"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "5"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "4"
+            }
+          ]
+        },
+        "title": "7. Success criteria"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-072",
+            "ADR-004",
+            "ADR-005",
+            "ADR-006",
+            "ADR-007",
+            "ADR-011",
+            "ADR-012",
+            "ADR-023",
+            "ADR-053",
+            "ADR-057",
+            "ADR-058",
+            "ADR-059",
+            "ADR-060"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "00_README_START_HERE.md",
+              "section": "7"
+            },
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "9"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "10.3"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "5.1"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "5.2"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "4"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "6"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "5"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.2"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md",
+              "section": "9"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "8. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "9-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-004",
+            "ADR-005",
+            "ADR-006",
+            "ADR-007",
+            "ADR-011",
+            "ADR-012",
+            "ADR-023",
+            "ADR-053",
+            "ADR-057",
+            "ADR-072",
+            "ADR-058",
+            "ADR-059",
+            "ADR-060"
+          ],
+          "code": [
+            "crates/core/src/registry.rs",
+            "crates/core/src/access.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/store/src/paths.rs",
+            "apps/desktop/src-tauri/src/session.rs",
+            "crates/brokerd/tests/isolation.rs",
+            "crates/cli/tests/success_criteria.rs",
+            "crates/store/src/backup.rs"
+          ],
+          "documents": []
+        },
+        "title": "9. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-001",
+    "last_reviewed": "2026-08-18",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Concept",
+    "variants": []
+  }
+}

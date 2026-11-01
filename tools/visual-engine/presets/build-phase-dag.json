@@ -1,0 +1,18 @@
+{
+  "id": "build-phase-dag",
+  "visual": "graph",
+  "family": "process",
+  "summary": "V2 build-phase DAG with layout preset (docs/12_BUILD_PLAN.md)",
+  "canonical_reader_question": "How do the build phases depend on each other?",
+  "required_fields": [
+    "data.nodes",
+    "data.links"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {
+    "layout": "none"
+  },
+  "notes": "prefer tools/docgen VisualSpec for document-grade phase diagrams; this preset is for quick data-annotated DAGs",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

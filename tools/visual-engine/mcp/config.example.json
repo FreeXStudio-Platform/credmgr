@@ -1,0 +1,9 @@
+{
+  "_comment": "Project-scoped registration lives in the repo-root .mcp.json (committed). This example is for user-scoped registration in other clients.",
+  "mcpServers": {
+    "credmgr-visuals": {
+      "command": "node",
+      "args": ["tools/visual-engine/mcp/server.mjs"]
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "visual_id": "SIM-09-incident",
+  "classification": "internal",
+  "theme": "project-theme",
+  "reader_question": "What happened, in what order?",
+  "text_summary": "Phase 8's audit found node.restore authorising against the token instead of the target node (a cross-node integrity hole), fixed same-session with a failing test written first, recorded as ADR-053.",
+  "selected_visual": "timeline",
+  "preset": "incident-timeline",
+  "title": "node.restore cross-node auth gap",
+  "data": {
+    "events": [
+      {
+        "name": "gap found: node.restore checks token, not target node",
+        "date": "2026-08-16T00:00:00Z"
+      },
+      {
+        "name": "failing test written first",
+        "date": "2026-08-16T00:15:00Z"
+      },
+      {
+        "name": "fixed via resolve_capability, same pattern as node.seal",
+        "date": "2026-08-16T00:30:00Z"
+      },
+      {
+        "name": "recorded as ADR-053; full suite re-verified green",
+        "date": "2026-08-16T01:00:00Z"
+      }
+    ]
+  }
+}

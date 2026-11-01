@@ -1,0 +1,53 @@
+{
+  "visual_id": "SIM-05-conformance",
+  "classification": "internal",
+  "theme": "project-theme",
+  "reader_question": "Which subsystems diverge from their own design decision?",
+  "text_summary": "Simulation text summary for accessibility gate.",
+  "selected_visual": "heatmap",
+  "preset": "subsystem-conformance",
+  "title": "Subsystem conformance to its own ADR",
+  "subtitle": "1 conforms · 0.5 partial · 0 diverges — current code vs. the ADR that decided it, never blended",
+  "data": {
+    "rows": [
+      "access-graph",
+      "audit-log",
+      "session/login",
+      "maintenance ops"
+    ],
+    "cols": [
+      "design",
+      "build",
+      "wiring",
+      "proof"
+    ],
+    "matrix": [
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ]
+    ]
+  },
+  "scale_min": 0,
+  "scale_max": 1
+}

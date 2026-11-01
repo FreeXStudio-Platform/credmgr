@@ -1,0 +1,80 @@
+# Build/test for v2 (Rust + Tauri). Per the CI cost-control policy, this is NOT a security
+# check, so it never triggers on push or pull_request — workflow_dispatch only. Use it to
+# confirm a completed change before merge/deploy, or to exercise a gate that has never run.
+name: v2 build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v2-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # crates/ workspace — MSRV-pinned (docs/16_CROSS_PLATFORM.md §7), no Tauri dependency.
+  core-workspace:
+    name: crates workspace (${{ matrix.os }}, rust ${{ matrix.rust }})
+    # The whole workspace suite (Argon2id in debug builds, crash-point loops) takes about 20-25 minutes on a hosted runner; 20 cancelled it on 2026-11-01.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults: { run: { working-directory: v2 } }
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows-latest removed 2026-09-24 after this workflow's first-ever run (35967163459):
+        # the broker and the MCP transport are Unix-domain-socket only (`crate::peer`,
+        # `std::os::unix`), so the workspace cannot compile on Windows until the named-pipe
+        # transport exists (docs/16_CROSS_PLATFORM.md §5.3, `planned`). Restore it with that
+        # transport. The desktop-app job below still builds on Windows.
+        os: [macos-15, ubuntu-22.04]
+        rust: ['1.78.0', stable]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: clippy, rustfmt
+      - id: build
+        run: cargo build --workspace --locked
+      - run: cargo test --workspace --locked
+      - run: cargo clippy --workspace -- -D warnings
+      - run: cargo fmt --all -- --check
+      # The real binaries were built above: drive every broker op through the real socket
+      # (v2/scripts/endpoint-matrix.py). The PR-triggered copy of this gate is the
+      # `v2-endpoint-matrix` job in security.yml; here it runs on all four legs, which adds the
+      # macOS peer-credential path (LOCAL_PEERCRED / proc_pidinfo) and the stable-Rust build.
+      # It is the LAST step, and runs whenever the build succeeded even if test/clippy/fmt did not
+      # (and they run even if it fails - including the deliberate XPASS failure that asks for a stale
+      # known-gap marker to be deleted), so one failure never hides the others' results.
+      - if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: python3 scripts/endpoint-matrix.py
+        timeout-minutes: 10
+
+  # apps/desktop/src-tauri — its own workspace, current stable only (ADR-035).
+  desktop-app:
+    name: desktop app (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults: { run: { working-directory: v2/apps/desktop } }
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest, ubuntu-22.04]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: v2/apps/desktop/package-lock.json
+      - name: install Linux webview deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - run: npm ci
+      - run: npm run tauri build -- --debug --no-bundle

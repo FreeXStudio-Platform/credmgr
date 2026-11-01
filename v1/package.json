@@ -1,0 +1,47 @@
+{
+  "name": "credmgr",
+  "version": "1.9.1",
+  "description": "Local credential manager with CLI, web dashboard, Node SDK, and MCP server",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "main": "index.js",
+  "files": [
+    "bin/",
+    "client/",
+    "dashboard/",
+    "examples/",
+    "lib/",
+    "mcp/",
+    "index.js",
+    "README.md",
+    "scripts/"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client/index.js",
+    "./mcp": "./mcp/server.js"
+  },
+  "bin": {
+    "credmgr": "./bin/credmgr"
+  },
+  "scripts": {
+    "test": "node tests/run-all.js",
+    "dashboard": "node bin/credmgr dashboard",
+    "daemon": "node bin/credmgr daemon",
+    "mcp": "node bin/credmgr mcp",
+    "guard": "node scripts/guard-no-secrets.mjs --all",
+    "hooks:install": "node scripts/guard-no-secrets.mjs --install",
+    "pretest": "node scripts/guard-no-secrets.mjs --all"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ]
+}

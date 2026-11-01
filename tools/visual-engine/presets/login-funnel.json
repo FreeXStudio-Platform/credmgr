@@ -1,0 +1,15 @@
+{
+  "id": "login-funnel",
+  "visual": "funnel",
+  "family": "flow",
+  "summary": "Session/login step counts (ADR-056: vault.unlock -> minted token)",
+  "canonical_reader_question": "Where would a login sequence be interrupted, if at all?",
+  "required_fields": [
+    "data.items"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "step counts must reconcile with the real dispatch path (ops.rs); funnel not sankey unless flows split",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

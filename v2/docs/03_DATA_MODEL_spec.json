@@ -1,0 +1,78 @@
+[
+  {
+    "kind": "system_map",
+    "id": "plaintext-boundary",
+    "title": "What's plaintext vs. sealed on disk",
+    "caption": "Enumerated from crates/store/src/paths.rs. Left: plaintext, HMAC-signed, no key needed (§2,§8,§9). Right: sealed in a CMV2 envelope under a node key (§7).",
+    "width": 1120,
+    "height": 900,
+    "motion": false,
+    "nodes": [
+      { "id": "hdr-plain", "type": "gate", "label": "PLAINTEXT ON DISK (no key)", "x": 60, "y": 90, "w": 240, "h": 64 },
+      { "id": "hdr-cipher", "type": "gate", "label": "CIPHERTEXT — CMV2 envelope", "x": 460, "y": 90, "w": 280, "h": 64 },
+      { "id": "hdr-outside", "type": "gate", "label": "OUTSIDE THE VAULT DIR", "x": 900, "y": 90, "w": 200, "h": 64 },
+
+      { "id": "reg", "type": "datastore", "label": "registry.json + .sig", "x": 60, "y": 270, "w": 240, "h": 70 },
+      { "id": "entry-env", "type": "datastore", "label": "entry envelope (*.env)", "x": 460, "y": 270, "w": 280, "h": 70 },
+      { "id": "gen-counter", "type": "datastore", "label": "generation counter", "x": 900, "y": 270, "w": 200, "h": 70 },
+
+      { "id": "manifest", "type": "datastore", "label": "manifest.json (per node)", "x": 60, "y": 460, "w": 240, "h": 70 },
+      { "id": "pending-env", "type": "datastore", "label": "pending envelope (*.env)", "x": 460, "y": 460, "w": 280, "h": 70 },
+
+      { "id": "audit-log", "type": "datastore", "label": "audit/*.log + *.tip", "x": 60, "y": 650, "w": 240, "h": 70 },
+      { "id": "reserved", "type": "fallback", "label": "notes.env + totp/*.env — reserved", "x": 460, "y": 650, "w": 280, "h": 70 }
+    ],
+    "edges": [
+      { "src": "hdr-plain", "dst": "reg", "label": "0600, HMAC via .sig" },
+      { "src": "reg", "dst": "manifest", "label": "cross-bound (§8)" },
+      { "src": "manifest", "dst": "audit-log", "label": "independently HMAC'd" },
+      { "src": "hdr-cipher", "dst": "entry-env", "label": "sealed to node key" },
+      { "src": "entry-env", "dst": "pending-env", "label": "same CMV2 format" },
+      { "src": "pending-env", "dst": "reserved", "label": "reserved path only" },
+      { "src": "hdr-outside", "dst": "gen-counter", "label": "0600, HMAC'd file" }
+    ],
+    "legend": [
+      { "kind": "node", "key": "fallback", "label": "reserved path — nothing writes here yet" }
+    ],
+    "data_sources": [
+      { "kind": "cited", "ref": "crates/store/src/paths.rs", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "crates/store/src/manifest.rs", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "crates/store/src/registry_file.rs", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "crates/store/src/generation.rs", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "crates/core/src/envelope.rs", "retrieved": "2026-08-23" }
+    ]
+  },
+  {
+    "kind": "sequence",
+    "id": "rollback-defence",
+    "title": "Broker-open rollback defence",
+    "caption": "Restoring one file alone still fails: registry.sig, the external generation counter, and manifest.json's own HMAC + cross-binding each independently refuse — i19_tampered_manifest_is_refused_at_broker_open_naming_the_node and i20_rolled_back_registry_is_refused_on_the_generation_check (crates/brokerd/tests/isolation.rs).",
+    "width": 1000,
+    "height": 460,
+    "actors": [
+      { "id": "broker", "label": "broker open" },
+      { "id": "registry", "label": "registry.json" },
+      { "id": "counter", "label": "generation counter" },
+      { "id": "manifest", "label": "manifest.json" }
+    ],
+    "messages": [
+      { "src": "broker", "dst": "registry", "label": "registry_file::load — verify registry.sig (HMAC)", "order": 1, "style": "solid" },
+      { "src": "registry", "dst": "broker", "label": "RegistryTampered{path} if the tag is wrong", "order": 2, "style": "dashed" },
+      { "src": "broker", "dst": "counter", "label": "check_and_advance(vaultGeneration)", "order": 3, "style": "solid" },
+      { "src": "counter", "dst": "broker", "label": "GenerationRolledBack{on_disk,external} if lower", "order": 4, "style": "dashed" },
+      { "src": "broker", "dst": "manifest", "label": "manifest::load + verify_cross_binding", "order": 5, "style": "solid" },
+      { "src": "manifest", "dst": "broker", "label": "ManifestTampered{node_id} if HMAC or (generation,hmac) disagrees", "order": 6, "style": "dashed" }
+    ],
+    "legend": [
+      { "kind": "line", "key": "solid", "label": "call" },
+      { "kind": "line", "key": "dashed", "label": "refusal, named error" }
+    ],
+    "data_sources": [
+      { "kind": "cited", "ref": "crates/brokerd/src/state.rs (verify_and_load_vault)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "crates/store/src/registry_file.rs (load)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "crates/store/src/generation.rs (check_and_advance)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "crates/store/src/manifest.rs (load, verify_cross_binding)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "crates/brokerd/tests/isolation.rs (i19, i20)", "retrieved": "2026-08-23" }
+    ]
+  }
+]

@@ -1,0 +1,8 @@
+This tree was produced by tools/public-export from a single commit of a private repository.
+
+tools/corpus_check.py looks for this file. When it is present, a document stamp that names a commit which
+this repository cannot resolve (the commit exists only in the private repository) is checked for structure
+only, instead of failing every run. A stamp whose commit does resolve here is still compared against that
+commit, so drift in this repository's own history is still caught.
+
+Do not copy this file into the private repository: it would switch that comparison off where history exists.

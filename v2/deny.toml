@@ -1,0 +1,83 @@
+# cargo-deny configuration for the `crates/` workspace.
+# `apps/desktop/src-tauri` is a separate Cargo workspace (ADR-035) and is
+# audited independently — see docs/16_CROSS_PLATFORM.md §7 and §9 (AR-8).
+#
+# Run: cargo deny check
+# CI:  .github/workflows/security.yml (unrestricted trigger per the
+#      2026-07-29 CI cost-control security amendment)
+
+[graph]
+targets = [
+    { triple = "x86_64-apple-darwin" },
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-pc-windows-msvc" },
+    { triple = "x86_64-unknown-linux-gnu" },
+]
+all-features = false
+no-default-features = false
+
+[advisories]
+version = 2
+ignore = []
+
+[licenses]
+version = 2
+# Anticipated licenses for Phase 1's crypto crates (16 §2) that nothing in
+# Phase 0's skeleton pulls yet — not an error for one to sit unused for now.
+unused-allowed-license = "allow"
+# Every crate this workspace pulls must be one of these. A new dependency
+# with a different license fails CI rather than being noticed in an audit
+# six months later.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    # Pulled transitively by `interprocess` (Phase 3, `16_CROSS_PLATFORM.md
+    # §2`'s IPC crate): doctest-file, recvmsg. OSI-approved, more permissive
+    # than MIT.
+    "0BSD",
+]
+confidence-threshold = 0.8
+
+# Workspace crates carry the FreexStudio source-available licence (license-file),
+# which is not an SPDX id; `publish = false` crates are skipped by the licence check.
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+deny = [
+    # Unmaintained/soundness-flagged crates relevant to a crypto/secrets
+    # codebase. Extend this list as Phase 1+ dependencies land.
+    { crate = "openssl", reason = "this workspace uses RustCrypto crates only — see 16_CROSS_PLATFORM.md §2" },
+    # 17_AIRLOCK_AND_LLM.md A-1/A-2: the vault makes no outbound network
+    # connection and opens no listening port, ever. Until 2026-09-24 that was
+    # true only by absence — nothing stopped a future dependency from adding
+    # an HTTP client (gap G-16, 2026-09-24). These bans make it a build failure.
+    { crate = "reqwest", reason = "A-1: the vault never makes an outbound network connection" },
+    { crate = "hyper", reason = "A-1/A-2: no HTTP client or server in the vault" },
+    { crate = "ureq", reason = "A-1: the vault never makes an outbound network connection" },
+    { crate = "isahc", reason = "A-1: the vault never makes an outbound network connection" },
+    { crate = "curl", reason = "A-1: the vault never makes an outbound network connection" },
+    { crate = "surf", reason = "A-1: the vault never makes an outbound network connection" },
+    { crate = "attohttpc", reason = "A-1: the vault never makes an outbound network connection" },
+    { crate = "axum", reason = "A-2: the vault opens no listening port" },
+    { crate = "actix-web", reason = "A-2: the vault opens no listening port" },
+    { crate = "warp", reason = "A-2: the vault opens no listening port" },
+    { crate = "tiny_http", reason = "A-2: the vault opens no listening port" },
+]
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

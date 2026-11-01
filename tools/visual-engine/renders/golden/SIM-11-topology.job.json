@@ -1,0 +1,75 @@
+{
+  "visual_id": "SIM-11-topology",
+  "classification": "internal",
+  "theme": "project-theme",
+  "reader_question": "Which crates depend on which?",
+  "text_summary": "Simulation text summary for accessibility gate.",
+  "selected_visual": "graph",
+  "preset": "crate-dependency-graph",
+  "layout": "circular",
+  "title": "CredMgr V2 crate dependencies",
+  "data": {
+    "nodes": [
+      {
+        "name": "core"
+      },
+      {
+        "name": "keystore"
+      },
+      {
+        "name": "store"
+      },
+      {
+        "name": "brokerd"
+      },
+      {
+        "name": "cli"
+      },
+      {
+        "name": "mcp"
+      }
+    ],
+    "links": [
+      {
+        "source": "keystore",
+        "target": "core"
+      },
+      {
+        "source": "store",
+        "target": "core"
+      },
+      {
+        "source": "brokerd",
+        "target": "core"
+      },
+      {
+        "source": "brokerd",
+        "target": "keystore"
+      },
+      {
+        "source": "brokerd",
+        "target": "store"
+      },
+      {
+        "source": "cli",
+        "target": "core"
+      },
+      {
+        "source": "cli",
+        "target": "brokerd"
+      },
+      {
+        "source": "cli",
+        "target": "mcp"
+      },
+      {
+        "source": "mcp",
+        "target": "core"
+      },
+      {
+        "source": "mcp",
+        "target": "store"
+      }
+    ]
+  }
+}

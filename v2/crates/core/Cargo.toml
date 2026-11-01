@@ -1,0 +1,66 @@
+[package]
+name = "credmgr-core"
+description = "Pure, I/O-free crypto, envelopes, registry types and the access graph resolver."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lib]
+name = "credmgr_core"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Pinned to the 0.10/0.12/2.x generation, NOT the latest majors on crates.io:
+# sha2 0.11 / hkdf 0.13 / chacha20poly1305 0.11 pull in `block-buffer` 0.12.1+,
+# which requires Cargo's `edition2024` feature — unavailable below Rust 1.85
+# and therefore incompatible with this workspace's 1.78 MSRV pin (same class
+# of conflict as ADR-035's Tauri exclusion, this time inside the pinned
+# workspace itself instead of being solved by excluding a crate from it).
+# Already a transitive dependency of `totp-rs` (which uses it for
+# `get_secret_base32`'s encode direction) — declared directly here too for
+# the decode direction, `totp::decode_gate_secret_base32`.
+base32 = "0.5.1"
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc", "getrandom"] }
+hkdf = "0.12"
+hmac = "0.12"
+rand_core = { version = "0.6", features = ["getrandom"] }
+secrecy = "0.10.3"
+serde = { version = "1.0.229", features = ["derive"] }
+# ADR-078: the field document is canonical JSON (`fields.rs`). Already in the
+# workspace graph through every other crate; core only encodes and decodes
+# bytes with it, so the crate stays I/O-free.
+serde_json = "1"
+sha2 = "0.10"
+# ADR-084: NFKC for `names::canonical_name` (pure data tables, no I/O, MSRV 1.36).
+unicode-normalization = "0.1.23"
+# NOT the "otpauth" feature: it pulls `url` -> `idna_adapter`, which needs
+# Cargo's `edition2024` feature (same MSRV wall as ADR-035/the header comment
+# above). `TOTP::new`/`generate`/`check`/`get_secret_base32` are all still
+# available without it; the `otpauth://` URI is built by hand in `totp.rs`.
+# NOT the "rand" feature either: it exists only to back `gen_secret`
+# (`Secret::generate_secret()`), which this crate never calls — secrets are
+# always generated through the existing `rand_core::OsRng` path
+# (`totp::generate_gate_secret`), the same one `keys.rs`/`envelope.rs`/
+# `recovery.rs` already use. Enabling it anyway pulled `rand` 0.9 ->
+# `getrandom` 0.3, whose wasm32 target dependency (`wit-bindgen` 0.57) hits
+# the identical edition2024 MSRV wall — invisible to `cargo build`/`test`
+# (which only resolve the host target) but breaks `cargo metadata`-based
+# tooling (`cargo deny`/`cargo audit`), which resolves every target's graph.
+totp-rs = { version = "5.7.2", default-features = false, features = ["zeroize"] }
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets", "zeroize"] }
+zeroize = { version = "1.7", features = ["alloc"] }
+# Pinned directly (not just via `zeroize`) because zeroize_derive is pulled in
+# transitively (x25519-dalek's "zeroize" feature) and Cargo would otherwise
+# resolve it to 1.5.0, which hits the same edition2024 wall as above.
+zeroize_derive = "=1.4.2"
+
+[dev-dependencies]
+# Pinned below latest for the same edition2024/MSRV reason as the crypto
+# crates above: proptest 1.5+ pulls a `rand`/`getrandom` generation that
+# requires Cargo's edition2024 feature.
+proptest = "=1.4.0"
+tempfile = "=3.15.0"

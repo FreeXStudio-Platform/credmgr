@@ -1,0 +1,74 @@
+<sc-if value="{{dlgAbout}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S18 About" onClick="{{stop}}" role="dialog" aria-modal="true" aria-label="About CredMgr" style="width:460px;max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:32px;display:flex;flex-direction:column;gap:16px">
+    <sc-if value="{{aboutIsMain}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:center;text-align:center">
+        <svg width="40" height="40" viewBox="0 0 24 24" stroke-linecap="square" style="color:var(--bone)"><sc-if value="{{markKeep}}" hint-placeholder-val="{{true}}"><rect x="3.5" y="3.5" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="8" y="8" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="11" y="11" width="2" height="2" fill="currentColor" style="{{logoDotStyle}}"></rect></sc-if><sc-if value="{{markCells}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="1.3" fill="currentColor" style="{{logoDotStyle}}"></circle></sc-if><sc-if value="{{markNode}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="3" fill="currentColor" style="{{logoDotStyle}}"></circle></sc-if><sc-if value="{{markSeal}}" hint-placeholder-val="{{false}}"><path d="M12 3 L19.8 7.5 V16.5 L12 21 L4.2 16.5 V7.5 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><path d="M12 8 L15.5 10 V14 L12 16 L8.5 14 V10 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><rect x="11.1" y="11.1" width="1.8" height="1.8" fill="currentColor" style="{{logoDotStyle}}"></rect></sc-if></svg>
+        <div style="font-family:var(--f-mono);font-size:var(--fs-lg);font-weight:var(--fw-label)">CredMgr</div>
+        <div class="t-caption">offline · no telemetry · no HTTP client linked</div>
+        <div class="t-caption" style="color:var(--mute)">published by FreexStudio</div>
+        <div style="display:flex;gap:16px;margin-top:8px;font-family:var(--f-mono);font-size:var(--fs-sm)"><a href="#" style="display:inline-flex;align-items:center;min-height:24px" onClick="{{goDonate}}">Donate</a><a href="#" style="display:inline-flex;align-items:center;min-height:24px" onClick="{{goPrivacy}}">Privacy</a><a href="#" style="display:inline-flex;align-items:center;min-height:24px" onClick="{{goLicenses}}">Licences</a></div>
+        <div data-about-version="true" style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute);margin-top:12px">{{aboutVersion}}</div>
+        <sc-if value="{{cosmUnlocked}}" hint-placeholder-val="{{false}}"><span class="k-chip" data-state="ok" style="align-self:center">supporter</span></sc-if>
+      </div>
+    </sc-if>
+    <sc-if value="{{aboutIsDonate}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <button class="k-btn" onClick="{{goAboutMain}}" style="border:none;padding:0;color:var(--mute);align-self:flex-start">← About</button>
+        <span class="t-eyebrow">support credmgr</span>
+        <p class="t-body-sm" style="margin:0">Free to use today under a source-available licence, no telemetry — built and maintained by the FreexStudio team. Future versions may be paid. Donations are voluntary gifts, are not refundable, buy no features, and grant no licence or influence over the roadmap. Nothing functional is ever locked. The cosmetic extras in Settings → Appearance open with a supporter code, e-mailed after a donation.</p>
+        <div style="display:flex;gap:4px">
+          <sc-for list="{{donateTabs}}" as="t" hint-placeholder-count="5">
+            <button class="k-btn" onClick="{{t.go}}" style="flex:1;padding:5px 0;font-size:var(--fs-xs);background:{{t.bg}};color:{{t.fg}}">{{t.short}}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-family:var(--f-mono);font-size:var(--fs-sm);font-weight:var(--fw-label)">{{activeChainName}}</div>
+          <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--ash);word-break:break-all;user-select:all;border:1px solid var(--faint);border-radius:var(--r-sm);padding:10px 12px">{{activeChainAddress}}</div>
+          <button class="k-btn" onClick="{{donateCopyAddr}}" style="align-self:flex-start;padding:3px 10px;font-size:var(--fs-xs)">{{donateCopyLabel}}</button>
+        </div>
+        <div class="k-note" style="margin:0">
+          <span class="t-mono-label">before you send anything</span>
+          <ul style="margin:6px 0 0;padding-left:16px;font-size:var(--fs-xs);color:var(--ash);line-height:var(--lh-base)">
+            <li>verify the first and last six characters after pasting — clipboard hijackers target exactly this</li>
+            <li>send a small test amount first if the sum matters to you</li>
+            <li>the EVM address is valid only on the five chains listed above — never send it on an unlisted chain</li>
+          </ul>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{aboutIsPrivacy}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <button class="k-btn" onClick="{{goAboutMain}}" style="border:none;padding:0;color:var(--mute);align-self:flex-start">← About</button>
+        <span class="t-eyebrow">privacy</span>
+        <p class="t-body-sm" style="margin:0">CredMgr has no server, so there is nothing to collect. No account, no telemetry, no crash reporting, no analytics, no cloud sync. The app makes no network requests: no HTTP client is linked into it, and the window’s content policy refuses every request that is not to the app itself. It talks to the broker over a local socket only.</p>
+        <p class="t-body-sm" style="margin:0">Backups are encrypted files the broker writes in the vault’s own backups folder, under a passphrase you choose. Nothing about your vault — its structure, its node names, its contents — leaves this machine unless you copy a backup file somewhere yourself. A revealed value lives in memory for the reveal window and is cleared when you lock; it is never written to storage or to a log.</p>
+        <p class="t-body-sm" style="margin:0">The app never sends anything for a donation. If you choose to e-mail a donation proof to get a supporter code, that e-mail and its attachment reach the maintainer like any other e-mail you send.</p>
+        <div class="t-mono-label">what this window keeps on disk</div>
+        <p class="t-body-sm" style="margin:0">Only these small settings, in the window’s local storage. None of them holds a secret, a node name or an entry name.</p>
+        <ul data-storage-keys="true" style="margin:0;padding-left:16px;font-size:var(--fs-xs);color:var(--ash);line-height:var(--lh-base)">
+          <li><span style="font-family:var(--f-mono);color:var(--bone)">credmgr_prefs</span> — your settings: theme, colour, contrast, motion, auto-lock, reveal window, backup retention, hiding the window from screen capture, mode, view</li>
+          <li><span style="font-family:var(--f-mono);color:var(--bone)">credmgr_cosmetics</span> — app mark, glyph weight, halo, header badge, node shape, colours, backdrop, flourish, ball trail: option names only</li>
+          <li><span style="font-family:var(--f-mono);color:var(--bone)">credmgr_keys</span> — set to <span style="font-family:var(--f-mono)">off</span> only if you turn single-key shortcuts off</li>
+          <li><span style="font-family:var(--f-mono);color:var(--bone)">credmgr_donate_unlocked</span> — set after a supporter code is entered: hides the reminder</li>
+          <li><span style="font-family:var(--f-mono);color:var(--bone)">credmgr_extras_key</span> — the key that opens the sealed extras on this device, kept after the code is entered once</li>
+          <li><span style="font-family:var(--f-mono);color:var(--bone)">credmgr_usage</span> — days with an unlock, which reminders were shown, whether you opted out, and the day each milestone was reached: dates only, no entry names or counts</li>
+          <li><span style="font-family:var(--f-mono);color:var(--bone)">credmgr_gposV</span>, <span style="font-family:var(--f-mono);color:var(--bone)">credmgr_gpos</span>, <span style="font-family:var(--f-mono);color:var(--bone)">credmgr_gposEntry</span> — where nodes and entries sit on the graph, under a one-way hash of each id</li>
+          <li><span style="font-family:var(--f-mono);color:var(--bone)">credpong_best</span>, <span style="font-family:var(--f-mono);color:var(--bone)">credpong_level</span> — the CredPong score</li>
+          <li><span style="font-family:var(--f-mono);color:var(--bone)">credgames.&lt;game&gt;.best</span>, <span style="font-family:var(--f-mono);color:var(--bone)">.level</span> — the score of each further CredGames title</li>
+        </ul>
+      </div>
+    </sc-if>
+    <sc-if value="{{aboutIsLicenses}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <button class="k-btn" onClick="{{goAboutMain}}" style="border:none;padding:0;color:var(--mute);align-self:flex-start">← About</button>
+        <span class="t-eyebrow">licences</span>
+        <p class="t-body-sm" style="margin:0">CredMgr is <b>source-available</b> under the FreexStudio Source-Available Licence: you may run the current stable release as published, and read, audit and report on its source; you may not copy, modify or redistribute it. It is free to use today, and future versions may be offered on other terms. See <span style="font-family:var(--f-mono)">LICENSE</span> in the repository for the complete terms.</p>
+        <p class="t-body-sm" style="margin:0">CredMgr is published by FreexStudio. The names and brand assets are not covered by the licence; see <span style="font-family:var(--f-mono)">TRADEMARKS.md</span>.</p>
+        <p class="t-body-sm" style="margin:0">For permission to do something the licence does not allow, or for a commercial arrangement, write to <span style="font-family:var(--f-mono);user-select:all">Admin@freexstudio.com</span>. Donations are separate from the licence and buy no rights.</p>
+        <p class="t-body-sm" style="margin:0">The typefaces bundled with the app — Inter, Inter Tight and JetBrains Mono — are under the SIL Open Font Licence 1.1; their texts ship in <span style="font-family:var(--f-mono)">third_party/fonts</span>.</p>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</sc-if>

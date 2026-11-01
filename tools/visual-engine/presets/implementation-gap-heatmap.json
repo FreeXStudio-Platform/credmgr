@@ -1,0 +1,17 @@
+{
+  "id": "implementation-gap-heatmap",
+  "visual": "heatmap",
+  "family": "matrix",
+  "summary": "Blueprint implementation-gap intensity",
+  "canonical_reader_question": "Where are the largest build gaps?",
+  "required_fields": [
+    "data.rows",
+    "data.cols",
+    "data.matrix"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "gap percent 0-100",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

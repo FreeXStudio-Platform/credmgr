@@ -1,0 +1,19 @@
+<sc-if value="{{isBoot}}" hint-placeholder-val="{{false}}">
+<div data-screen-label="S0 Starting" role="status" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--void)">
+  <div class="t-mono-label" style="color:var(--mute)">starting credmgr…</div>
+</div>
+</sc-if>
+<sc-if value="{{isBrokerDown}}" hint-placeholder-val="{{false}}">
+<div data-screen-label="S16 Broker unreachable" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:var(--void);text-align:center;padding:24px">
+  <div style="font-family:var(--f-mono);font-size:var(--fs-base);color:var(--ash)">credmgr cannot reach its broker</div>
+  <div class="t-body-sm" style="max-width:420px">The broker (<span style="font-family:var(--f-mono)">credmgrd</span>) is not running, or its socket is not where this app looks for it. Run <span style="font-family:var(--f-mono)">credmgrd</span> in a terminal, or let launchd keep it running (see the install guide, RELEASE.md section 3), then retry. Nothing from your last session is shown here.</div>
+  <button class="k-btn" data-variant="primary" onClick="{{retryBoot}}" style="min-width:160px">Retry</button>
+</div>
+</sc-if>
+<sc-if value="{{isBootFailed}}" hint-placeholder-val="{{false}}">
+<div data-screen-label="S0 Start failed" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:var(--void);text-align:center;padding:24px">
+  <div style="font-family:var(--f-mono);font-size:var(--fs-base);color:var(--ash)">credmgr could not start</div>
+  <div class="t-body-sm" style="max-width:420px">The broker answered, but not in a way this app understands. The message at the bottom of the window has the code. Retry, or restart the broker.</div>
+  <button class="k-btn" data-variant="primary" onClick="{{retryBoot}}" style="min-width:160px">Retry</button>
+</div>
+</sc-if>

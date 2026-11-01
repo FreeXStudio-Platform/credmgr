@@ -1,0 +1,15 @@
+{
+  "id": "usage-funnel",
+  "visual": "funnel",
+  "family": "flow",
+  "summary": "User journey attrition funnel",
+  "canonical_reader_question": "Where do users drop out of the journey?",
+  "required_fields": [
+    "data.items"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "stages must be sequential and counts monotonically non-increasing",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

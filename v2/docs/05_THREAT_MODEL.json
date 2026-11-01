@@ -1,0 +1,593 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 0,
+      "figures": 1,
+      "sections": 12,
+      "tables": 6
+    },
+    "figures": [
+      "plaintext-trust-boundaries"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-052",
+        "ADR-059",
+        "ADR-062",
+        "ADR-070",
+        "ADR-075",
+        "ADR-078",
+        "ADR-061",
+        "ADR-057",
+        "ADR-009",
+        "ADR-041",
+        "ADR-029",
+        "ADR-001",
+        "ADR-071",
+        "ADR-076",
+        "ADR-065",
+        "ADR-056",
+        "ADR-068",
+        "ADR-063",
+        "ADR-007",
+        "ADR-069",
+        "ADR-079",
+        "ADR-077",
+        "ADR-074",
+        "ADR-043",
+        "ADR-044",
+        "ADR-042"
+      ],
+      "code": [
+        "crates/brokerd/tests/isolation.rs",
+        "crates/brokerd/src/main.rs",
+        "crates/brokerd/src/state.rs",
+        "crates/core/src/envelope.rs",
+        "crates/core/Cargo.toml",
+        "crates/brokerd/src/token.rs",
+        "crates/store/src/paths.rs",
+        "crates/keystore/src/software.rs",
+        "crates/keystore/src/lib.rs",
+        "crates/brokerd/src/server.rs",
+        "crates/brokerd/src/rate_limit.rs",
+        "crates/store/src/audit.rs",
+        "crates/cli/src/main.rs",
+        "crates/brokerd/src/ops.rs",
+        "crates/core/src/registry.rs",
+        "crates/core/tests/properties.rs",
+        "crates/core/src/signing.rs",
+        "crates/store/src/generation.rs",
+        "crates/brokerd/src/peer.rs",
+        "crates/cli/tests/no_secret_in_argv.rs",
+        "apps/desktop/src-tauri/src/commands.rs",
+        "crates/brokerd/src/protocol.rs",
+        "apps/desktop/src-tauri/src/autolock.rs",
+        "scripts/dc/verify-build.mjs",
+        "crates/brokerd/src/scope.rs",
+        "crates/mcp/tests/i13_tool_registry.rs",
+        "crates/keystore/src/backup_passphrase.rs",
+        "crates/store/src/backup.rs",
+        "crates/core/tests/isolation_i17.rs",
+        "crates/brokerd/tests/durable_vault.rs",
+        "apps/desktop/src-tauri/tests/drift_guards.rs",
+        "docs/05_THREAT_MODEL_spec.js",
+        "tools/ENGINE_ROUTING_POLICY.md",
+        "apps/desktop/src-tauri/src/lib.rs"
+      ],
+      "documents": [
+        {
+          "doc": "05_THREAT_MODEL.md"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "3"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "9"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "9"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md"
+        },
+        {
+          "doc": "11_MIGRATION.md"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "10"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "3"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "7"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md"
+        },
+        {
+          "doc": "21_RELEASE_AND_INTEGRITY.md"
+        },
+        {
+          "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md"
+        },
+        {
+          "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+          "section": "4.4"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "4"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "2"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "4"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "2"
+        },
+        {
+          "doc": "17_AIRLOCK_AND_LLM.md",
+          "section": "1"
+        },
+        {
+          "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+          "section": "4"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "3"
+        },
+        {
+          "doc": "21_RELEASE_AND_INTEGRITY.md",
+          "section": "3"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "0-what-this-rewrite-corrected",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-009",
+            "ADR-041",
+            "ADR-029"
+          ],
+          "code": [
+            "crates/brokerd/src/state.rs",
+            "crates/core/src/envelope.rs",
+            "crates/core/Cargo.toml",
+            "crates/brokerd/src/token.rs",
+            "crates/store/src/paths.rs",
+            "crates/keystore/src/software.rs",
+            "crates/keystore/src/lib.rs",
+            "crates/brokerd/src/server.rs",
+            "crates/brokerd/src/rate_limit.rs",
+            "crates/store/src/audit.rs",
+            "crates/cli/src/main.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/core/src/registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "9"
+            }
+          ]
+        },
+        "title": "0. What this rewrite corrected"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-what-is-being-protected",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "11_MIGRATION.md"
+            }
+          ]
+        },
+        "title": "1. What is being protected"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "2-adversaries",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "2. Adversaries"
+      },
+      {
+        "figures": [
+          "plaintext-trust-boundaries"
+        ],
+        "headings": [
+          {
+            "id": "3-1-the-vault-directory-built",
+            "level": 3,
+            "title": "3.1 The vault directory \u2014 **`built`**"
+          },
+          {
+            "id": "3-2-the-broker-process-built",
+            "level": 3,
+            "title": "3.2 The broker process \u2014 **`built`**"
+          },
+          {
+            "id": "3-3-the-client-process-built-for-the-cli-and-the-mcp-server",
+            "level": 3,
+            "title": "3.3 The client process \u2014 **`built` for the CLI and the MCP server**"
+          },
+          {
+            "id": "3-4-the-webview-process-partial-and-new",
+            "level": 3,
+            "title": "3.4 The webview process \u2014 **`partial`, and new**"
+          }
+        ],
+        "id": "3-trust-boundaries-every-process-a-plaintext-secret-can-occupy",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078",
+            "ADR-001",
+            "ADR-057",
+            "ADR-062",
+            "ADR-071",
+            "ADR-076",
+            "ADR-065",
+            "ADR-056",
+            "ADR-068",
+            "ADR-063",
+            "ADR-075"
+          ],
+          "code": [
+            "crates/core/src/envelope.rs",
+            "crates/core/tests/properties.rs",
+            "crates/core/src/signing.rs",
+            "crates/store/src/generation.rs",
+            "crates/brokerd/src/peer.rs",
+            "crates/cli/tests/no_secret_in_argv.rs",
+            "apps/desktop/src-tauri/src/commands.rs",
+            "crates/brokerd/src/protocol.rs",
+            "crates/store/src/paths.rs",
+            "apps/desktop/src-tauri/src/autolock.rs",
+            "scripts/dc/verify-build.mjs"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "10"
+            }
+          ]
+        },
+        "title": "3. Trust boundaries \u2014 every process a plaintext secret can occupy"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-attack-control-matrix",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-007",
+            "ADR-063",
+            "ADR-041",
+            "ADR-075"
+          ],
+          "code": [
+            "crates/brokerd/tests/isolation.rs",
+            "crates/brokerd/src/token.rs",
+            "crates/brokerd/src/scope.rs",
+            "crates/mcp/tests/i13_tool_registry.rs",
+            "crates/keystore/src/software.rs",
+            "crates/keystore/src/backup_passphrase.rs",
+            "crates/store/src/backup.rs",
+            "crates/core/src/registry.rs",
+            "crates/brokerd/src/ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "3"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "7"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md"
+            }
+          ]
+        },
+        "title": "4. Attack \u2192 control matrix"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-why-scope-resolution-still-helps-against-a2-and-exactly-where-it-stops",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-065"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "5. Why scope resolution still helps against A2 \u2014 and exactly where it stops"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "6-explicitly-out-of-scope",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "9"
+            },
+            {
+              "doc": "21_RELEASE_AND_INTEGRITY.md"
+            }
+          ]
+        },
+        "title": "6. Explicitly out of scope"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-accepted-risks",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-029",
+            "ADR-063",
+            "ADR-056",
+            "ADR-069",
+            "ADR-079"
+          ],
+          "code": [
+            "crates/core/src/registry.rs"
+          ],
+          "documents": []
+        },
+        "title": "7. Accepted risks"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "8-1-what-is-built",
+            "level": 3,
+            "title": "8.1 What is built"
+          },
+          {
+            "id": "8-2-what-is-not-the-target-design-stated-in-full",
+            "level": 3,
+            "title": "8.2 What is not \u2014 the target design, stated in full"
+          }
+        ],
+        "id": "8-detection-because-prevention-will-not-be-complete",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-077"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "9"
+            }
+          ]
+        },
+        "title": "8. Detection \u2014 because prevention will not be complete"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "9-1-hardware-keystore-tiers-planned",
+            "level": 3,
+            "title": "9.1 Hardware keystore tiers \u2014 **`planned`**"
+          },
+          {
+            "id": "9-2-release-signing-and-self-integrity-planned",
+            "level": 3,
+            "title": "9.2 Release signing and self-integrity \u2014 **`planned`**"
+          },
+          {
+            "id": "9-3-organisation-vault-departments-and-pairing-code-sync-planned",
+            "level": 3,
+            "title": "9.3 Organisation vault, departments and pairing-code sync \u2014 **`planned`**"
+          },
+          {
+            "id": "9-4-the-optional-commercial-licence-certificate-planned",
+            "level": 3,
+            "title": "9.4 The optional commercial-licence certificate \u2014 **`planned`**"
+          }
+        ],
+        "id": "9-the-threat-model-of-what-is-not-built",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-041",
+            "ADR-074"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md"
+            },
+            {
+              "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+              "section": "4.4"
+            }
+          ]
+        },
+        "title": "9. The threat model of what is not built"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "10-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-001",
+            "ADR-007",
+            "ADR-009",
+            "ADR-029",
+            "ADR-041",
+            "ADR-043",
+            "ADR-044",
+            "ADR-070",
+            "ADR-056",
+            "ADR-057"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "9"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "4"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "2"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "9"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "4"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "2"
+            },
+            {
+              "doc": "17_AIRLOCK_AND_LLM.md",
+              "section": "1"
+            },
+            {
+              "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+              "section": "4"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "3"
+            },
+            {
+              "doc": "21_RELEASE_AND_INTEGRITY.md",
+              "section": "3"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "10. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "11-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-001",
+            "ADR-007",
+            "ADR-009",
+            "ADR-029",
+            "ADR-041",
+            "ADR-042",
+            "ADR-043",
+            "ADR-044",
+            "ADR-056",
+            "ADR-057",
+            "ADR-070",
+            "ADR-063",
+            "ADR-065"
+          ],
+          "code": [
+            "crates/brokerd/src/scope.rs",
+            "crates/core/src/envelope.rs",
+            "crates/store/src/audit.rs",
+            "crates/keystore/src/software.rs",
+            "crates/brokerd/tests/isolation.rs",
+            "crates/mcp/tests/i13_tool_registry.rs",
+            "crates/core/tests/isolation_i17.rs",
+            "crates/brokerd/tests/durable_vault.rs",
+            "apps/desktop/src-tauri/tests/drift_guards.rs",
+            "docs/05_THREAT_MODEL_spec.js",
+            "tools/ENGINE_ROUTING_POLICY.md",
+            "apps/desktop/src-tauri/src/lib.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/src/peer.rs"
+          ],
+          "documents": [
+            {
+              "doc": "05_THREAT_MODEL.md"
+            }
+          ]
+        },
+        "title": "11. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-005",
+    "last_reviewed": "2026-08-19",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Threat model",
+    "variants": []
+  }
+}

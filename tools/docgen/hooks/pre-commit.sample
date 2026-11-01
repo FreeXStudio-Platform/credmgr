@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# CredMgr doc-system: block any confidential/secret document staged outside docs/confidential/.
+#
+# Install as a pre-commit AND/OR pre-push hook, e.g.:
+#     cp tools/docgen/hooks/pre-commit.sample .git/hooks/pre-commit
+#     chmod +x .git/hooks/pre-commit
+# (or symlink, or wire into an existing multi-hook runner). The scanner reads the STAGED bytes from
+# the git index, so it enforces exactly what would be committed. Exit non-zero blocks the commit/push.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Prefer the project's virtualenv python if present, else fall back to python3.
+if [ -x ".venv/bin/python" ]; then
+  PY=".venv/bin/python"
+else
+  PY="python3"
+fi
+
+exec "$PY" -m tools.docgen.hooks.staged_content_scanner

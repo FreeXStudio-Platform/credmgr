@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd user agent for credmgrd, the CredMgr V2 broker.
+
+  Install (see RELEASE.md): copy credmgrd to /usr/local/bin (or edit the path below), then
+    cp com.credmgr.brokerd.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.credmgr.brokerd.plist
+
+  Logs go to /tmp on purpose: launchd cannot open a redirect target under ~/Desktop,
+  ~/Documents or ~/Downloads (macOS privacy protection) and would fail the job with a
+  misleading EX_CONFIG. The broker logs no secret — it prints its socket path and errors only.
+
+  KeepAlive restarts the broker if it exits. A restart locks the vault; unlock again with
+  `credmgr unlock`.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.credmgr.brokerd</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/credmgrd</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>StandardOutPath</key>
+  <string>/tmp/com.credmgr.brokerd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/com.credmgr.brokerd.log</string>
+</dict>
+</plist>

@@ -1,0 +1,59 @@
+{
+  "kind": "echarts",
+  "id": "isolation-suite-coverage",
+  "caption": "27 of the 28 specified isolation claims map to exactly one implementing test file; I-10's row is empty because no transport in this build can set presence_attested: true, and there is no I-26. Rendered by tools/visual-engine (ECharts heatmap/matrix) from the job embedded in this spec, re-derived by grepping crates/brokerd/tests/isolation.rs, crates/mcp/tests/i13_tool_registry.rs and crates/core/tests/isolation_i17.rs and cross-reading the result against §4.2–§4.4.",
+  "job": {
+    "visual_id": "isolation-suite-coverage",
+    "classification": "public",
+    "theme": "project-theme",
+    "reader_question": "Which of the 28 specified isolation claims (I-1..I-25 and I-27..I-29) are actually enforced by a test, and where does each one live?",
+    "text_summary": "Twenty-seven of the twenty-eight specified isolation claims (I-1..I-25 and I-27..I-29; there is no I-26) are each discharged by a named test in exactly one of three files: 25 in crates/brokerd/tests/isolation.rs, I-13 in crates/mcp/tests/i13_tool_registry.rs, and I-17 in crates/core/tests/isolation_i17.rs. I-10's row is entirely empty: it is implemented nowhere, an accepted risk (K-1) rather than an oversight — its positive half needs presence attestation, which no transport in this build supplies, though its negative half is proven three times over by tests outside this table (i21, i21b, and success_criteria.rs criterion 2).",
+    "selected_visual": "heatmap",
+    "title": "Isolation suite: I-1..I-29 by implementing test file",
+    "width": 640,
+    "height": 851,
+    "show_values": true,
+    "scale_min": 0,
+    "scale_max": 1,
+    "data_source_ids": ["grep-isolation-test-files-2026-10-03"],
+    "truth_state": "verified-current",
+    "data": {
+      "rows": [
+        "I-1", "I-2", "I-3", "I-4", "I-5", "I-6", "I-7", "I-8", "I-9", "I-10",
+        "I-11", "I-12", "I-13", "I-14", "I-15", "I-16", "I-17", "I-18", "I-19", "I-20",
+        "I-21", "I-22", "I-23", "I-24", "I-25", "I-27", "I-28", "I-29"
+      ],
+      "cols": ["isolation.rs", "i13_tool_registry.rs", "isolation_i17.rs"],
+      "matrix": [
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [null, null, null],
+        [1, null, null],
+        [1, null, null],
+        [null, 1, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [null, null, 1],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null],
+        [1, null, null]
+      ]
+    }
+  }
+}

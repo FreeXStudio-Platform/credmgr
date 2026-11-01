@@ -1,0 +1,118 @@
+{
+  "run": "npm run simulate",
+  "date_basis": "content-derived (no clock in render path)",
+  "engine": "echarts@6.1.0",
+  "results": [
+    {
+      "n": 1,
+      "name": "crate test-tier coverage heatmap",
+      "result": "PASS"
+    },
+    {
+      "n": 2,
+      "name": "op test-tier matrix",
+      "result": "PASS"
+    },
+    {
+      "n": 3,
+      "name": "session/login funnel",
+      "result": "PASS"
+    },
+    {
+      "n": 4,
+      "name": "V2 build-phase DAG",
+      "result": "PASS"
+    },
+    {
+      "n": 5,
+      "name": "subsystem conformance matrix",
+      "result": "PASS"
+    },
+    {
+      "n": 6,
+      "name": "CI gate status matrix",
+      "result": "PASS"
+    },
+    {
+      "n": 7,
+      "name": "doc coverage matrix",
+      "result": "PASS"
+    },
+    {
+      "n": 8,
+      "name": "broker request latency percentiles",
+      "result": "PASS"
+    },
+    {
+      "n": 9,
+      "name": "Phase 8 incident timeline",
+      "result": "PASS"
+    },
+    {
+      "n": 10,
+      "name": "Lite/Pro entitlement matrix",
+      "result": "PASS"
+    },
+    {
+      "n": 11,
+      "name": "crate dependency graph",
+      "result": "PASS"
+    },
+    {
+      "n": 12,
+      "name": "high-density scatter (2.5k points)",
+      "result": "PASS"
+    },
+    {
+      "n": 13,
+      "name": "empty dataset fails loudly",
+      "result": "PASS"
+    },
+    {
+      "n": 14,
+      "name": "malformed dataset fails with gate id",
+      "result": "PASS"
+    },
+    {
+      "n": 15,
+      "name": "restricted classification refused",
+      "result": "PASS"
+    },
+    {
+      "n": 16,
+      "name": "reskin: 4 themes, same semantics",
+      "result": "PASS"
+    },
+    {
+      "n": 17,
+      "name": "SVG export integrity",
+      "result": "PASS"
+    },
+    {
+      "n": 18,
+      "name": "PNG export integrity",
+      "result": "PASS"
+    },
+    {
+      "n": 19,
+      "name": "interactive HTML self-contained + fallback",
+      "result": "PASS"
+    },
+    {
+      "n": 20,
+      "name": "print theme render for PDF embedding",
+      "result": "PASS"
+    },
+    {
+      "n": 21,
+      "name": "direct adapter works with no MCP process running",
+      "result": "PASS"
+    },
+    {
+      "n": 22,
+      "name": "visual regression baseline reproduces",
+      "result": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

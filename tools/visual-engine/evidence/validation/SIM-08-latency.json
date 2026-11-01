@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-08-latency",
+  "selected_visual": "line",
+  "preset": "broker-latency",
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "b80192d3163ea338c151edafbbd883ecbff023febed5d1c9d06b2a6997a0f378",
+  "option_sha256": "0bb9905d990fecbad7a7fa7efd18eada67b0af0c2256f6cf4d6e8b8d49297b60",
+  "job_sha256": "82db2b533c4439c965556fd1f0aad268f1a48ac337cb251c80cd0ae4c42730e5",
+  "render_ms": 14,
+  "warnings": []
+}

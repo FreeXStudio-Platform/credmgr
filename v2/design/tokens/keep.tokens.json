@@ -1,0 +1,170 @@
+{
+  "_meta": {
+    "system": "KEEP",
+    "for": "CredMgr V2 — Vault Next",
+    "version": "1.0.0-draft",
+    "authored": "2026-08-04",
+    "derived_from": "the upstream design system Atlas (design/atlas/tokens/*.css) + the upstream design system docgen B/W document template (tools/docgen/template.html, assets/tokens.json)",
+    "derivation_note": "STRUCTURE and DISCIPLINE were extracted — the four-layer token architecture, the achromatic base, 'color is an event never decoration', the 8px rhythm, the mono-eyebrow/section-frame/stat-tile/svgwrap component vocabulary, the dual dark+light theme with print parity. BRAND was NOT extracted: the upstream project's mark, its palette and its name appear nowhere in KEEP. KEEP has its own identity.",
+    "rule": "This file is the single source of truth for KEEP values. keep.css is generated from it (by hand today, by a tiny emitter at build time in V2). Never fork a value into a component stylesheet."
+  },
+
+  "identity": {
+    "name": "KEEP",
+    "one_line": "The vault speaks in monospace. Colour is a state, never a decoration.",
+    "principles": [
+      "Achromatic by default. Structure, hierarchy and grouping are carried by weight, stroke, spacing and shape — never by hue.",
+      "Colour is reserved for exactly three states: healthy/verified, attention, danger. Nothing else is ever coloured.",
+      "Sealed data has NO colour. It is a hole in the page: dashed outline, hatched fill, no fill colour. Absence is the visual.",
+      "Monospace is the voice of the vault. Every credential name, ref, field label, node label, count and value renders in mono. Prose is the exception, not the rule.",
+      "Flat. Radii are 0–6px. There is exactly one pill in the system: the status chip.",
+      "Every state distinguishable in pure greyscale, at 100% zoom, by a colour-blind reader. Test: print the screen in B/W — nothing is lost."
+    ]
+  },
+
+  "grounds_dark": {
+    "void":    "#000000",
+    "night":   "#050506",
+    "steel":   "#0B0B0E",
+    "steel-2": "#131318",
+    "steel-3": "#1B1B22"
+  },
+  "inks_dark": {
+    "bone":  "#E9ECF1",
+    "ash":   "#98A0AE",
+    "mute":  "#767E8C",
+    "faint": "#2A2E38"
+  },
+
+  "grounds_light": {
+    "void":    "#FCFCFD",
+    "night":   "#FBFBFC",
+    "steel":   "#F3F4F6",
+    "steel-2": "#EDEEF1",
+    "steel-3": "#E4E6EA"
+  },
+  "inks_light": {
+    "bone":  "#0B0C0E",
+    "ash":   "#4A5261",
+    "mute":  "#5D6472",
+    "faint": "#D6D9E0"
+  },
+
+  "signal": {
+    "_rule": "Three semantic colours. No fourth is ever added without an ADR. Each has a dark-theme and a light-theme value because AA contrast differs against the two grounds.",
+    "sig":         "#3E9C86",
+    "sig-hi":      "#5FBFA8",
+    "sig-dim":     "#173B33",
+    "sig-light":   "#1E6D5B",
+    "warn":        "#B0812E",
+    "warn-hi":     "#D6A346",
+    "warn-dim":    "#3A2C10",
+    "warn-light":  "#8A6217",
+    "danger":      "#B3373A",
+    "danger-hi":   "#D6595C",
+    "danger-dim":  "#3A1315",
+    "danger-light":"#942326"
+  },
+
+  "state_semantics": {
+    "_rule": "The complete list of things allowed to carry a signal colour. If a state is not in this table it renders achromatic.",
+    "sig":    ["unlocked", "verified", "integrity ok", "grant active", "2FA satisfied", "value copied ok"],
+    "warn":   ["expiring", "grant expiring", "unverified since", "degraded", "2FA enrolled but unconfirmed", "drift detected"],
+    "danger": ["locked out", "revoked", "integrity failed", "destructive action", "sensitivity=critical", "rate-limited"],
+    "none":   ["sealed / orphaned (dashed + hatch, never coloured)", "sensitivity low/medium/high", "node type", "field type", "everything else"]
+  },
+
+  "fonts": {
+    "display": "\"Inter\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+    "body":    "\"Inter\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+    "mono":    "\"JetBrains Mono\", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    "_rule": "Vendored as @font-face data-URIs. NEVER a CDN link (the app must render identically offline and inside the WKWebView shell). Never a serif fallback."
+  },
+  "weights": {
+    "label":   "600",
+    "body":    "400",
+    "body-em": "500",
+    "display": "600",
+    "data":    "500"
+  },
+
+  "font_size": {
+    "2xs":  "9px",
+    "xs":   "10.5px",
+    "sm":   "12px",
+    "base": "13px",
+    "md":   "14px",
+    "lg":   "16px",
+    "xl":   "20px",
+    "2xl":  "28px",
+    "3xl":  "40px",
+    "4xl":  "56px",
+    "_floor_rule": "9px is the absolute floor and is reserved for keyboard-shortcut tags. Nothing else may go below 10.5px."
+  },
+  "line_height": {
+    "tight": "1.05",
+    "snug":  "1.2",
+    "base":  "1.55",
+    "loose":  "1.7",
+    "mono":  "1.5"
+  },
+
+  "spacing": {
+    "0": "0", "1": "4px", "2": "8px", "3": "12px", "4": "16px", "5": "24px",
+    "6": "32px", "7": "48px", "8": "64px", "9": "96px", "10": "128px",
+    "_rule": "8px rhythm. Sibling groups use flex/grid gap — never stacked margins. Literal px in component CSS is forbidden except 1px hairlines."
+  },
+
+  "radii": {
+    "none": "0",
+    "xs":   "2px",
+    "sm":   "3px",
+    "md":   "6px",
+    "pill": "999px",
+    "_rule": "Flat is the posture. --r-pill is legal on the status chip and nowhere else."
+  },
+
+  "layout": {
+    "maxw":        "1240px",
+    "pad":         "24px",
+    "rail-w":      "300px",
+    "inspector-w": "420px",
+    "header-h":    "52px",
+    "measure":     "68ch"
+  },
+
+  "graph": {
+    "_rule": "The node graph is part of the design system, not a widget bolted onto it. RADIUS IS NOT UNIFORM PER KIND: `global` and `orphan` are fixed radii; `project` and `sub` are COMPUTED PER NODE from that node's entry count as radius = band_min + (band_max - band_min) * sqrt(clamp(counts.entries, 0, cap) / cap). VAULT_GRAPH_SPEC.md section 3 is normative for that formula; the *_min/*_max values below are its band endpoints, NOT literal radii to draw. For static figures (document diagrams, component sheets) where no entry count exists, draw project at 15 and sub at 10 - the band midpoints - and say so in the figure caption.",
+    "node_r_global":       22,
+    "node_r_project_min":  12,
+    "node_r_project_max":  20,
+    "node_r_sub_min":       8,
+    "node_r_sub_max":      14,
+    "node_r_scale_cap":    40,
+    "node_r_orphan":       15,
+    "node_gap_min":   26,
+    "stroke_hair":    1,
+    "stroke_node":    1.5,
+    "stroke_node_selected": 2.5,
+    "edge_structural": "solid",
+    "edge_grant":      "dashed 4 3",
+    "edge_grant_expiring": "dashed 2 3",
+    "label_show_zoom": 1.4,
+    "hover_delay_ms":  180,
+    "sim_alpha_decay": 0.035,
+    "sim_charge":      -260,
+    "sim_link_dist_structural": 110,
+    "sim_link_dist_grant":      190
+  },
+
+  "motion": {
+    "ease-out-expo":    "cubic-bezier(0.16, 1, 0.3, 1)",
+    "ease-in-out-expo": "cubic-bezier(0.87, 0, 0.13, 1)",
+    "ease-out-cubic":   "cubic-bezier(0.33, 1, 0.68, 1)",
+    "t-xs": "110ms",
+    "t-sm": "180ms",
+    "t-md": "320ms",
+    "t-lg": "560ms",
+    "_rule": "Custom easings outside this table are forbidden. Every animation is wrapped by prefers-reduced-motion. No animation may be load-bearing: if all motion is disabled the UI must still communicate every state."
+  }
+}

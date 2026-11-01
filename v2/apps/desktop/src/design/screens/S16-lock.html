@@ -1,0 +1,55 @@
+<sc-if value="{{isLockScreen}}" hint-placeholder-val="{{false}}">
+<div data-screen-label="S16 Lock screen" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:var(--void);padding:24px">
+  <svg width="44" height="44" viewBox="0 0 24 24" stroke-linecap="square" style="color:var(--bone)"><sc-if value="{{markKeep}}" hint-placeholder-val="{{true}}"><rect x="3.5" y="3.5" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="8" y="8" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="11" y="11" width="2" height="2" fill="currentColor" style="{{logoDotStyle}}"></rect></sc-if><sc-if value="{{markCells}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="1.3" fill="currentColor" style="{{logoDotStyle}}"></circle></sc-if><sc-if value="{{markNode}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="3" fill="currentColor" style="{{logoDotStyle}}"></circle></sc-if><sc-if value="{{markSeal}}" hint-placeholder-val="{{false}}"><path d="M12 3 L19.8 7.5 V16.5 L12 21 L4.2 16.5 V7.5 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><path d="M12 8 L15.5 10 V14 L12 16 L8.5 14 V10 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><rect x="11.1" y="11.1" width="1.8" height="1.8" fill="currentColor" style="{{logoDotStyle}}"></rect></sc-if></svg>
+  <div style="font-family:var(--f-mono);font-size:var(--fs-base);color:var(--ash)">credmgr is locked</div>
+  <sc-if value="{{lockNoteShow}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status" data-lock-note="true" style="max-width:420px;text-align:center">{{lockNote}}</div></sc-if>
+  <sc-if value="{{lockStepPass}}" hint-placeholder-val="{{true}}">
+    <div class="t-mono-label">passphrase</div>
+    <input type="password" value="{{passInput}}" onChange="{{onPassInput}}" onKeyDown="{{onPassKey}}" autoFocus="{{true}}" aria-label="passphrase" style="font-family:var(--f-mono);font-size:var(--fs-lg);text-align:center;width:260px" placeholder="enter passphrase">
+    <sc-if value="{{lockErrPass}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert" style="max-width:420px;text-align:center">{{lockErrPass}}</div></sc-if>
+    <button class="k-btn" data-variant="primary" onClick="{{submitPass}}" disabled="{{passDisabled}}" style="min-width:220px">{{lockBusyLabel}}</button>
+  </sc-if>
+  <sc-if value="{{lockStepCode}}" hint-placeholder-val="{{false}}">
+    <div class="t-mono-label">2FA code</div>
+    <input value="{{twofaInput}}" onChange="{{onTwofa}}" onKeyDown="{{onTwofaKey}}" maxLength="48" autoFocus="{{true}}" autoComplete="off" aria-label="2FA code" style="font-family:var(--f-mono);font-size:var(--fs-xl);letter-spacing:.5em;text-align:center;width:260px" placeholder="______">
+    <div class="t-caption" style="max-width:420px;text-align:center;color:var(--mute)">The 6 digits from your authenticator, or one of your recovery codes.</div>
+    <sc-if value="{{lockErrCode}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert" style="max-width:420px;text-align:center">{{lockErrCode}}</div></sc-if>
+    <button class="k-btn" data-variant="primary" onClick="{{submitTwofa}}" disabled="{{twofaDisabled}}" style="min-width:220px">Verify</button>
+    <button class="k-btn" onClick="{{gotoRecover}}" style="border:none;color:var(--mute)">lost your authenticator?</button>
+    <button class="k-btn" onClick="{{gotoPassphrase}}" style="border:none;color:var(--mute)">back</button>
+  </sc-if>
+  <sc-if value="{{lockStepRecover}}" hint-placeholder-val="{{false}}">
+    <div class="t-body-sm" style="max-width:420px;text-align:center">Your passphrase and the recovery code printed when you created this vault reset the second factor. You can enrol a new authenticator afterwards.</div>
+    <input type="password" value="{{recoverPass}}" onChange="{{onRecoverPass}}" onKeyDown="{{onRecoverKey}}" autoFocus="{{true}}" aria-label="passphrase" style="font-family:var(--f-mono);font-size:var(--fs-base);text-align:center;width:300px" placeholder="passphrase">
+    <input type="password" value="{{recoverCode}}" onChange="{{onRecoverCode}}" onKeyDown="{{onRecoverKey}}" autoComplete="off" aria-label="root recovery code" style="font-family:var(--f-mono);font-size:var(--fs-base);text-align:center;width:300px" placeholder="root recovery code">
+    <sc-if value="{{lockErrRecover}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert" style="max-width:420px;text-align:center">{{lockErrRecover}}</div></sc-if>
+    <button class="k-btn" data-variant="primary" onClick="{{submitRecover}}" disabled="{{recoverDisabled}}" style="min-width:220px">Reset and unlock</button>
+    <button class="k-btn" onClick="{{gotoPassphrase}}" style="border:none;color:var(--mute)">back</button>
+  </sc-if>
+  <sc-if value="{{aprLinkShow}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{aprOpenPanel}}" style="border:none;color:var(--mute)">{{aprLinkText}}</button></sc-if>
+  <sc-if value="{{aprShow}}" hint-placeholder-val="{{false}}">
+    <div data-screen-label="S16a Locked approval" role="group" aria-label="requests waiting for approval" style="width:380px;max-width:calc(100vw - 32px);border:1px solid var(--hair-strong);border-radius:var(--r-md);padding:16px;display:flex;flex-direction:column;gap:10px;background:var(--steel)">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="k-chip" data-state="warn">approval_pending</span><span class="t-mono-label">while locked · {{aprCount}} waiting</span></div>
+      <div class="t-body-sm">{{aprIntro}}</div>
+      <sc-if value="{{aprListShow}}" hint-placeholder-val="{{false}}">
+        <div role="radiogroup" aria-label="waiting requests" style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{aprWaiting}}" as="w" hint-placeholder-count="2"><label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="radio" name="apr-request" checked="{{w.picked}}" onChange="{{w.pick}}" style="width:auto;margin-top:3px"><span style="display:flex;flex-direction:column;overflow-wrap:anywhere"><span class="t-body-sm">{{w.title}}</span><span class="t-caption">{{w.sub}}</span></span></label></sc-for>
+        </div>
+      </sc-if>
+      <label style="display:flex;flex-direction:column;gap:4px"><span class="t-caption">{{aprIdCaption}}</span><input aria-label="request id" value="{{aprReq}}" onChange="{{onAprReq}}" autocomplete="off" spellcheck="false" style="font-family:var(--f-mono)" placeholder="rq_______"></label>
+      <sc-if value="{{aprSelShow}}" hint-placeholder-val="{{false}}">
+        <div style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--hair);padding-top:10px">
+          <div class="t-mono-label" style="word-break:break-word">{{aprSelLabel}}</div>
+        <input type="password" aria-label="passphrase for this decision" value="{{aprPass}}" onChange="{{onAprPass}}" autocomplete="off" style="font-family:var(--f-mono)" placeholder="passphrase">
+        <input aria-label="second factor code" value="{{aprCode}}" onChange="{{onAprCode}}" maxLength="6" autocomplete="off" inputmode="numeric" style="font-family:var(--f-mono);letter-spacing:.4em;text-align:center" placeholder="2FA code ______">
+          <div class="t-caption">Wrong tries count toward the unlock back-off. A recovery code is not accepted here.</div>
+          <div style="display:flex;gap:8px;justify-content:flex-end"><button class="k-btn" onClick="{{aprDeny}}" disabled="{{aprDisabled}}">Deny</button><button class="k-btn" data-variant="primary" onClick="{{aprApprove}}" disabled="{{aprDisabled}}">Approve</button></div>
+        </div>
+      </sc-if>
+      <sc-if value="{{aprErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{aprErr}}</div></sc-if>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="k-btn" onClick="{{aprClose}}" style="border:none;color:var(--mute)">Close</button></div>
+    </div>
+  </sc-if>
+  <sc-if value="{{aprResultShow}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status" aria-live="polite" style="font-family:var(--f-mono)">{{aprResult}}</div></sc-if>
+</div>
+</sc-if>

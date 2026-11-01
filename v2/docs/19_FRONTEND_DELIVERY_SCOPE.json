@@ -1,0 +1,713 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 0,
+      "figures": 2,
+      "sections": 12,
+      "tables": 7
+    },
+    "figures": [
+      "desktop-login-sequence",
+      "route-coverage-by-mode"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-057",
+        "ADR-062",
+        "ADR-071",
+        "ADR-078",
+        "ADR-079",
+        "ADR-075",
+        "ADR-076",
+        "ADR-059",
+        "ADR-001",
+        "ADR-077",
+        "ADR-061",
+        "ADR-068",
+        "ADR-043",
+        "ADR-065",
+        "ADR-073",
+        "ADR-066",
+        "ADR-072",
+        "ADR-064",
+        "ADR-047",
+        "ADR-063",
+        "ADR-042",
+        "ADR-035",
+        "ADR-056"
+      ],
+      "code": [
+        "tools/corpus_check.py",
+        "apps/desktop/README.md",
+        "apps/desktop/src-tauri/src/commands.rs",
+        "apps/desktop/src/lib/bridge.ts",
+        "apps/desktop/src-tauri/tauri.conf.js",
+        "crates/brokerd/src/ops.rs",
+        "apps/desktop/tests/e2e/wp-d-prefs.spec.ts",
+        "apps/desktop/src-tauri/src/lib.rs",
+        "crates/brokerd/src/protocol.rs",
+        "scripts/guard-no-personal-data.mjs",
+        "scripts/guard-no-secrets.mjs",
+        "crates/mcp/src/tools.rs",
+        "crates/cli/src/main.rs",
+        "crates/brokerd/src/state/durable.rs",
+        "tools/docgen/sequence_diagram.py",
+        "tools/docgen/visual.py",
+        "docs/19_FRONTEND_DELIVERY_SCOPE.md"
+      ],
+      "documents": [
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "3"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "5"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "3"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "5"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "3"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "11"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md",
+          "section": "4"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md"
+        },
+        {
+          "doc": "20_THEMING.md"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "4.2"
+        },
+        {
+          "doc": "02_ARCHITECTURE.md",
+          "section": "6.2"
+        },
+        {
+          "doc": "02_ARCHITECTURE.md",
+          "section": "6.1"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "5.3"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "7"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "9"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "2"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "10"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "4"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "6"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "6"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "4"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "10.6"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "5"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "13"
+        },
+        {
+          "doc": "20_THEMING.md",
+          "section": "5"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "14"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "15"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "1"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md",
+          "section": "5.1"
+        },
+        {
+          "doc": "03_ENDPOINTS_CURRENT.md"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "4"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "1"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "6"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-what-this-document-is-and-why-it-is-scope-rather-than-design",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "12_BUILD_PLAN.md",
+              "section": "4"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md"
+            },
+            {
+              "doc": "20_THEMING.md"
+            }
+          ]
+        },
+        "title": "1. What this document is, and why it is scope rather than design"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "2-status-of-the-delivery-surface",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-059",
+            "ADR-075",
+            "ADR-062",
+            "ADR-078",
+            "ADR-076",
+            "ADR-057"
+          ],
+          "code": [
+            "apps/desktop/src-tauri/src/commands.rs",
+            "apps/desktop/src/lib/bridge.ts",
+            "apps/desktop/src-tauri/tauri.conf.js",
+            "crates/brokerd/src/ops.rs",
+            "apps/desktop/tests/e2e/wp-d-prefs.spec.ts"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "4.2"
+            },
+            {
+              "doc": "20_THEMING.md"
+            }
+          ]
+        },
+        "title": "2. Status of the delivery surface"
+      },
+      {
+        "figures": [
+          "desktop-login-sequence"
+        ],
+        "headings": [
+          {
+            "id": "3-1-the-eight-hand-written-commands-built",
+            "level": 3,
+            "title": "3.1 The eight hand-written commands \u2014 **`built`**"
+          },
+          {
+            "id": "3-2-six-rules-every-screen-inherits-from-the-bridge-built",
+            "level": 3,
+            "title": "3.2 Six rules every screen inherits from the bridge \u2014 **`built`**"
+          },
+          {
+            "id": "3-3-the-other-forty-five-operations-built",
+            "level": 3,
+            "title": "3.3 The other forty-five operations \u2014 **`built`**"
+          }
+        ],
+        "id": "3-the-tauri-bridge-built",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-001",
+            "ADR-077",
+            "ADR-075",
+            "ADR-057",
+            "ADR-061",
+            "ADR-068",
+            "ADR-043",
+            "ADR-062",
+            "ADR-065",
+            "ADR-073",
+            "ADR-078",
+            "ADR-066",
+            "ADR-071",
+            "ADR-072",
+            "ADR-064",
+            "ADR-076",
+            "ADR-047"
+          ],
+          "code": [
+            "apps/desktop/src-tauri/src/lib.rs",
+            "crates/brokerd/src/protocol.rs",
+            "apps/desktop/src-tauri/src/commands.rs",
+            "crates/brokerd/src/ops.rs",
+            "apps/desktop/src/lib/bridge.ts"
+          ],
+          "documents": [
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "6.2"
+            },
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "6.1"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "5.3"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "7"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "9"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "2"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "10"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "4"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "6"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "6"
+            }
+          ]
+        },
+        "title": "3. The Tauri bridge \u2014 **`built`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-the-response-shapes-a-screen-renders-against-built",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-065",
+            "ADR-063"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "4"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "10.6"
+            }
+          ]
+        },
+        "title": "4. The response shapes a screen renders against \u2014 **`built`**"
+      },
+      {
+        "figures": [
+          "route-coverage-by-mode"
+        ],
+        "headings": [],
+        "id": "5-delivery-scope-every-route-in-both-modes-built-verification-pending",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "5"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "5"
+            }
+          ]
+        },
+        "title": "5. Delivery scope: every route, in both modes \u2014 **`built`**, verification pending"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "6-1-four-states-per-view-designed-rather-than-improvised",
+            "level": 3,
+            "title": "6.1 Four states per view, designed rather than improvised"
+          },
+          {
+            "id": "6-2-theming-both-modes-every-screen",
+            "level": 3,
+            "title": "6.2 Theming \u2014 both modes, every screen"
+          },
+          {
+            "id": "6-3-accessibility-a-delivery-gate-not-a-review-comment",
+            "level": 3,
+            "title": "6.3 Accessibility \u2014 a delivery gate, not a review comment"
+          },
+          {
+            "id": "6-4-recent-activity-refreshes-on-mutation-not-on-a-timer",
+            "level": 3,
+            "title": "6.4 Recent activity refreshes on mutation, not on a timer"
+          },
+          {
+            "id": "6-5-the-donation-screen",
+            "level": 3,
+            "title": "6.5 The donation screen"
+          }
+        ],
+        "id": "6-behaviour-every-screen-must-implement-planned",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-042"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "13"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "5"
+            },
+            {
+              "doc": "20_THEMING.md"
+            },
+            {
+              "doc": "20_THEMING.md",
+              "section": "5"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "14"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "15"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "6. Behaviour every screen must implement \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-acceptance-how-a-delivery-is-checked-off",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "apps/desktop/src/lib/bridge.ts",
+            "scripts/guard-no-personal-data.mjs",
+            "scripts/guard-no-secrets.mjs"
+          ],
+          "documents": []
+        },
+        "title": "7. Acceptance \u2014 how a delivery is checked off"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-division-of-labour-and-the-integration-path-partial",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-075",
+            "ADR-062",
+            "ADR-078"
+          ],
+          "code": [
+            "apps/desktop/src/lib/bridge.ts"
+          ],
+          "documents": [
+            {
+              "doc": "12_BUILD_PLAN.md",
+              "section": "5.1"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md"
+            }
+          ]
+        },
+        "title": "8. Division of labour, and the integration path \u2014 **`partial`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "9-where-endpoint-truth-lives-and-one-source-that-is-not-in-this-repository",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "tools/corpus_check.py",
+            "crates/brokerd/src/ops.rs",
+            "crates/mcp/src/tools.rs",
+            "crates/cli/src/main.rs"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1"
+            },
+            {
+              "doc": "03_ENDPOINTS_CURRENT.md"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            }
+          ]
+        },
+        "title": "9. Where endpoint truth lives \u2014 and one source that is not in this repository"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "10-what-this-document-deliberately-does-not-resolve",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-063"
+          ],
+          "code": [
+            "crates/brokerd/src/state/durable.rs"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "5"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "5"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "10.6"
+            }
+          ]
+        },
+        "title": "10. What this document deliberately does not resolve"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "11-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-062",
+            "ADR-078"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "4"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "5"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "5"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "13"
+            },
+            {
+              "doc": "20_THEMING.md",
+              "section": "5"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "5"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "10.6"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "5.3"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md",
+              "section": "4"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md",
+              "section": "5.1"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "6"
+            }
+          ]
+        },
+        "title": "11. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "12-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-035",
+            "ADR-042",
+            "ADR-043",
+            "ADR-056",
+            "ADR-057",
+            "ADR-059",
+            "ADR-062",
+            "ADR-063",
+            "ADR-065",
+            "ADR-071",
+            "ADR-073",
+            "ADR-075",
+            "ADR-068"
+          ],
+          "code": [
+            "apps/desktop/src-tauri/src/commands.rs",
+            "apps/desktop/src/lib/bridge.ts",
+            "crates/brokerd/src/ops.rs",
+            "apps/desktop/README.md",
+            "tools/docgen/sequence_diagram.py",
+            "tools/docgen/visual.py",
+            "docs/19_FRONTEND_DELIVERY_SCOPE.md"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "5"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "5"
+            },
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md"
+            }
+          ]
+        },
+        "title": "12. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-019",
+    "last_reviewed": "2026-08-18",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Frontend delivery scope",
+    "variants": []
+  }
+}

@@ -1,0 +1,971 @@
+<div style="height:100vh;display:flex;flex-direction:column;background:var(--night);color:var(--bone);filter:{{gsFilter}}" tabIndex="-1" data-contrast="{{contrastAttr}}" data-reduced-motion="{{reducedMotionAttr}}">
+
+<sc-if value="{{isLockScreen}}" hint-placeholder-val="{{false}}">
+<div data-screen-label="S16 Lock screen" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:var(--void)">
+  <svg width="44" height="44" viewBox="0 0 24 24" stroke-linecap="square" style="color:var(--bone)"><sc-if value="{{markKeep}}" hint-placeholder-val="{{true}}"><rect x="3.5" y="3.5" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="8" y="8" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="11" y="11" width="2" height="2" fill="currentColor" style="{{logoDotStyle}}"></rect></sc-if><sc-if value="{{markCells}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="1.3" fill="currentColor" style="{{logoDotStyle}}"></circle></sc-if><sc-if value="{{markNode}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="3" fill="currentColor" style="{{logoDotStyle}}"></circle></sc-if><sc-if value="{{markSeal}}" hint-placeholder-val="{{false}}"><path d="M12 3 L19.8 7.5 V16.5 L12 21 L4.2 16.5 V7.5 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><path d="M12 8 L15.5 10 V14 L12 16 L8.5 14 V10 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><rect x="11.1" y="11.1" width="1.8" height="1.8" fill="currentColor" style="{{logoDotStyle}}"></rect></sc-if></svg>
+  <div style="font-family:var(--f-mono);font-size:var(--fs-base);color:var(--ash)">credmgr is locked</div>
+  <sc-if value="{{lockStep1}}" hint-placeholder-val="{{true}}">
+    <button class="k-btn" data-variant="primary" onClick="{{unlockTouch}}" style="min-width:220px">Unlock with Touch ID</button>
+    <button class="k-btn" onClick="{{gotoPassphrase}}" style="border:none;color:var(--mute)">use passphrase instead</button>
+  </sc-if>
+  <sc-if value="{{lockStep2}}" hint-placeholder-val="{{false}}">
+    <div class="t-mono-label">2FA code</div>
+    <input value="{{twofaInput}}" onChange="{{onTwofa}}" maxLength="6" autoFocus="{{true}}" style="font-family:var(--f-mono);font-size:var(--fs-xl);letter-spacing:.5em;text-align:center;width:220px" placeholder="______">
+    <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">any 6 digits unlock this mock</div>
+  </sc-if>
+  <sc-if value="{{lockStep3}}" hint-placeholder-val="{{false}}">
+    <div class="t-mono-label">passphrase</div>
+    <input type="password" value="{{passInput}}" onChange="{{onPassInput}}" autoFocus="{{true}}" style="font-family:var(--f-mono);font-size:var(--fs-lg);text-align:center;width:260px" placeholder="enter passphrase">
+    <button class="k-btn" data-variant="primary" onClick="{{submitPass}}" disabled="{{passDisabled}}" style="min-width:220px">Unlock</button>
+    <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">any value unlocks this mock</div>
+  </sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isFirstRun}}" hint-placeholder-val="{{false}}">
+<div data-screen-label="S17 First run" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--void)">
+  <div style="width:560px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);padding:32px;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;gap:8px">
+      <sc-for list="{{frDots}}" as="d" hint-placeholder-count="5"><div style="width:24px;height:2px;background:{{d.bg}}"></div></sc-for>
+    </div>
+    <div class="t-eyebrow">first run · step {{frStepNum}} of 5</div>
+    <div class="t-h2">{{frTitle}}</div>
+    <sc-if value="{{frIs1}}" hint-placeholder-val="{{true}}">
+      <div class="t-body-sm">Name this vault. It stays on this machine — nothing is created anywhere else.</div>
+      <input value="{{frVaultName}}" onChange="{{onFrName}}" style="font-family:var(--f-mono)" placeholder="main">
+    </sc-if>
+    <sc-if value="{{frIs2}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm">Platform keystore detected: <span style="font-family:var(--f-mono);color:var(--bone)">Secure Enclave (Hardware)</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="t-mono-label">passphrase — required, the only portable escrow</div>
+        <input type="password" value="{{frPass}}" onChange="{{onFrPass}}" style="font-family:var(--f-mono)" placeholder="passphrase">
+        <input type="password" value="{{frPassRepeat}}" onChange="{{onFrPassRepeat}}" style="font-family:var(--f-mono)" placeholder="repeat it">
+        <sc-if value="{{frPassMismatch}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger">Passphrases don't match</div></sc-if>
+      </div>
+    </sc-if>
+    <sc-if value="{{frIs3}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm">Shown once. Write it down. You cannot continue until it is transcribed.</div>
+      <div style="font-family:var(--f-mono);font-size:var(--fs-md);letter-spacing:.08em;padding:16px;border:1px dashed var(--faint);text-align:center">KX7Q-M2NR-84VD-P0TL-C6WJ-Z1BF-A9HS-E3GY</div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-base);color:var(--ash);cursor:pointer"><input type="checkbox" checked="{{frRecOk}}" onChange="{{onFrRec}}" style="width:auto">I have transcribed the recovery code</label>
+    </sc-if>
+    <sc-if value="{{frIs4}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm">Enrol the vault-wide gate. Skippable — but every reveal of a critical value will then rest on one factor.</div>
+      <div style="display:flex;gap:16px;align-items:center">
+        <div style="width:96px;height:96px;border:1px solid var(--faint);display:grid;place-items:center;font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">QR</div>
+        <div style="display:flex;flex-direction:column;gap:8px;flex:1">
+          <input value="{{frTotp}}" onChange="{{onFrTotp}}" maxLength="6" style="font-family:var(--f-mono);letter-spacing:.4em;text-align:center" placeholder="confirm one code">
+          <div class="t-caption">10 recovery codes are issued after confirmation</div>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{frIs5}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm"><span style="font-family:var(--f-mono)">global</span> is created automatically. 3 folders under ~/projects were detected — nothing is created without a tick.</div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <sc-for list="{{frFolders}}" as="f" hint-placeholder-count="3">
+          <label style="display:flex;gap:8px;align-items:center;font-family:var(--f-mono);font-size:var(--fs-base);padding:6px 8px;border:1px solid var(--faint);border-radius:var(--r-sm);cursor:pointer"><input type="checkbox" checked="{{f.on}}" onChange="{{f.toggle}}" style="width:auto">{{f.name}}<span style="margin-left:auto;color:var(--mute);font-size:var(--fs-xs)">{{f.dir}}</span></label>
+        </sc-for>
+      </div>
+      <div class="t-caption">V2 starts empty. Nothing is imported from V1 — anything you want here, you add yourself.</div>
+    </sc-if>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <sc-if value="{{frCanBack}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{frBack}}">Back</button></sc-if>
+      <button class="k-btn" data-variant="primary" onClick="{{frNext}}" disabled="{{frNextDisabled}}">{{frNextLabel}}</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{isApp}}" hint-placeholder-val="{{true}}">
+<div class="cm-shell" data-screen-label="S1 Main">
+  <header class="k-head" style="flex:none;height:var(--header-h)">
+    <button class="k-btn cm-hamburger" onClick="{{toggleRailOpen}}" style="border:none;padding:4px 6px" aria-label="menu">☰</button>
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke-linecap="square" style="color:var(--bone);flex:0 0 auto"><sc-if value="{{markKeep}}" hint-placeholder-val="{{true}}"><rect x="3.5" y="3.5" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="8" y="8" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="11" y="11" width="2" height="2" fill="currentColor" style="{{logoDotStyle}}"></rect></sc-if><sc-if value="{{markCells}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="1.3" fill="currentColor" style="{{logoDotStyle}}"></circle></sc-if><sc-if value="{{markNode}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="3" fill="currentColor" style="{{logoDotStyle}}"></circle></sc-if><sc-if value="{{markSeal}}" hint-placeholder-val="{{false}}"><path d="M12 3 L19.8 7.5 V16.5 L12 21 L4.2 16.5 V7.5 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><path d="M12 8 L15.5 10 V14 L12 16 L8.5 14 V10 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><rect x="11.1" y="11.1" width="1.8" height="1.8" fill="currentColor" style="{{logoDotStyle}}"></rect></sc-if></svg>
+    <span style="font-family:var(--f-mono);font-size:var(--fs-base);font-weight:var(--fw-label)">main</span>
+    <sc-if value="{{cosmRing}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" title="supporter" style="width:7px;height:7px;border:1px solid var(--bone);border-radius:50%;display:inline-block;flex:0 0 auto"></span></sc-if>
+    <div style="flex:1;display:flex;justify-content:center;position:relative">
+      <input class="cm-searchinput" value="{{searchQ}}" onChange="{{onSearch}}" onFocus="{{onSearchFocus}}" placeholder="search…  /" style="width:min(420px,100%);background:var(--steel);font-family:var(--f-mono);font-size:var(--fs-base)" data-comment-anchor="search-bar">
+      <sc-if value="{{searchOpen}}" hint-placeholder-val="{{false}}">
+        <div class="cm-searchdrop" data-screen-label="S7 Search" style="position:absolute;top:38px;width:min(420px,100%);max-height:360px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-sm);box-shadow:0 8px 24px var(--scrim);z-index:60;overflow-y:auto">
+          <sc-for list="{{searchRows}}" as="r" hint-placeholder-count="2">
+            <button onClick="{{r.go}}" style="display:flex;width:100%;gap:8px;align-items:center;padding:8px 12px;border:0;background:none;color:var(--bone);cursor:pointer;font-family:var(--f-mono);font-size:var(--fs-base);text-align:left" style-hover="background:var(--steel-2)">
+              <span style="color:var(--mute);flex:0 0 14px">{{r.glyph}}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.label}}</span><span style="margin-left:auto;color:var(--mute);font-size:var(--fs-xs)">{{r.meta}}</span>
+            </button>
+          </sc-for>
+          <sc-if value="{{searchMoreShow}}" hint-placeholder-val="{{false}}"><div class="t-caption" style="padding:6px 12px;color:var(--mute)">+{{searchMoreCount}} more — refine your search</div></sc-if>
+          <sc-if value="{{searchNone}}" hint-placeholder-val="{{false}}"><div class="k-empty" style="padding:16px">Nothing matches</div></sc-if>
+        </div>
+      </sc-if>
+    </div>
+    <button class="k-chip" data-state="{{lockChipState}}" onClick="{{toggleVaultLock}}" style="cursor:pointer;background:none" title="⌘L locks"><span style="{{lockGlyphStyle}}">{{lockChipGlyph}}</span> {{lockChipLabel}}</button>
+    <sc-if value="{{pendingChipShow}}" hint-placeholder-val="{{false}}"><button class="k-chip" data-state="warn" onClick="{{openPending}}" style="cursor:pointer;background:none" title="entries written while locked wait here for your review">{{pendingChipLabel}}</button></sc-if>
+    <span role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">{{pendingAnnounce}}</span>
+    <div style="position:relative">
+      <button class="k-btn cm-vaultmenu-btn" onClick="{{toggleVaultMenu}}" style="border:none;padding:4px 8px" aria-label="vault menu">⌄</button>
+      <sc-if value="{{vaultMenuOpen}}" hint-placeholder-val="{{false}}">
+        <div class="cm-vaultmenu" role="menu" style="position:absolute;right:0;top:32px;z-index:70;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-sm);box-shadow:0 8px 24px var(--scrim);min-width:200px;padding:4px;display:flex;flex-direction:column">
+          <sc-for list="{{vaultMenuItems}}" as="m" hint-placeholder-count="4">
+            <button onClick="{{m.go}}" style="display:flex;justify-content:space-between;gap:16px;padding:6px 10px;border:0;background:none;color:var(--bone);cursor:pointer;font-family:var(--f-mono);font-size:var(--fs-sm);text-align:left;border-radius:var(--r-xs)" style-hover="background:var(--steel-2)"><span>{{m.label}}</span><span class="t-kbd">{{m.kbd}}</span></button>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+    <button class="k-btn" onClick="{{openHelp}}" style="border:none;padding:4px 8px;font-family:var(--f-mono);font-weight:var(--fw-label)" aria-label="help">?</button>
+    <button class="k-btn" onClick="{{openSettings}}" style="border:none;padding:4px 8px" aria-label="settings">⚙</button>
+  </header>
+  <sc-if value="{{pendingBannerShow}}" hint-placeholder-val="{{false}}">
+  <div data-screen-label="S20 Pending banner" style="flex:none;display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--steel-2);border-bottom:1px solid var(--hair-strong);font-family:var(--f-mono);font-size:var(--fs-sm)">
+    <span class="k-chip" data-state="warn">held</span>
+    <span>{{pendingBannerText}}</span>
+    <button class="k-btn" data-variant="primary" onClick="{{openPending}}" style="margin-left:auto">Review</button>
+    <button class="k-btn" onClick="{{dismissPendingBanner}}" style="border:none;padding:4px 8px" aria-label="dismiss">✕</button>
+  </div>
+  </sc-if>
+  <div class="cm-body">
+  <div class="cm-scrim {{scrimShow}}" onClick="{{closeSheets}}"></div>
+  <nav class="cm-rail {{railOpenClass}}">
+    <div style="padding:16px 16px 8px;display:flex;justify-content:space-between;align-items:center"><span class="t-mono-label">worktree</span><button class="k-btn cm-hamburger" onClick="{{closeRail}}" style="border:none;padding:2px 6px" aria-label="close menu">✕</button></div>
+    <ul class="k-tree" style="flex:1">
+      <sc-for list="{{railRows}}" as="r" hint-placeholder-count="8">
+        <li style="padding-left:{{r.indent}}">
+          <button class="k-tree-row" aria-current="{{r.current}}" onClick="{{r.select}}" onContextMenu="{{r.menu}}" style="border:{{r.border}};color:{{r.color}}">
+            <svg class="k-node-glyph" data-kind="{{r.kind}}" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5"></circle></svg>
+            <sc-if value="{{r.renaming}}" hint-placeholder-val="{{false}}">
+              <input value="{{r.renameVal}}" onChange="{{r.onRenameChange}}" onKeyDown="{{r.cancelRename}}" onBlur="{{r.commitRename}}" onClick="{{stop}}" autoFocus="{{true}}" style="width:100%;background:var(--steel-2);border:1px solid var(--hair-strong);color:var(--bone);font-size:inherit;font-family:inherit;padding:1px 4px">
+            </sc-if>
+            <sc-if value="{{r.notRenaming}}" hint-placeholder-val="{{true}}">
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.label}}</span>
+            </sc-if>
+            <span style="color:{{r.lockColor}};font-size:var(--fs-xs);flex:0 0 auto">{{r.badges}}</span>
+            <span class="k-tree-count">{{r.count}}</span>
+          </button>
+        </li>
+      </sc-for>
+    </ul>
+    <div style="padding:12px;border-top:1px solid var(--hair);display:flex;gap:0">
+      <button class="k-btn" onClick="{{setGraphView}}" style="flex:1;border-radius:2px 0 0 0;background:{{graphBtnBg}};color:{{graphBtnFg}}">graph</button>
+      <button class="k-btn" onClick="{{setTreeView}}" style="flex:1;border-radius:0;border-left:none;background:{{treeBtnBg}};color:{{treeBtnFg}}">tree</button>
+      <button class="k-btn" onClick="{{openGames}}" style="flex:1;border-radius:0 2px 2px 0;border-left:none" title="CredPong — a light arcade game, isolated from your vault">games</button>
+    </div>
+  </nav>
+
+  <main class="cm-main">
+    <div ref="{{graphRef}}" style="position:absolute;inset:0;display:{{graphDisplay}}"></div>
+    <button class="k-chip" onClick="{{toggleEntriesMode}}" style="position:absolute;top:12px;right:16px;cursor:pointer;background:none;display:{{graphDisplay}}" title="E — every node's entries shown by default; toggle to show only the selected node's">{{entriesModeLabel}}</button>
+    <button class="k-chip" onClick="{{openGames}}" style="position:absolute;top:40px;right:16px;cursor:pointer;background:none;display:{{graphDisplay}}" title="CredPong — local, isolated, never reads vault data">bored? there's a game in here →</button>
+    <sc-if value="{{isTreeView}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="S2 Worktree view" style="position:absolute;inset:0;overflow-y:auto;padding:32px 48px;background:var(--void)">
+        <div class="t-eyebrow" style="margin-bottom:16px">worktree · full parity with the graph</div>
+        <div style="display:flex;flex-direction:column;max-width:640px">
+          <sc-for list="{{treeRows}}" as="r" hint-placeholder-count="9">
+            <div style="display:flex;align-items:center;gap:0;padding-left:{{r.indent}};border-left:{{r.guide}};border-bottom:1px solid var(--hair);background:{{r.bg}};border-radius:var(--r-xs)">
+              <button onClick="{{r.select}}" onMouseEnter="{{r.hoverOn}}" onMouseLeave="{{r.hoverOff}}" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;padding:8px 12px;border:0;background:none;font:inherit;text-align:left;color:inherit;cursor:pointer">
+                <svg width="18" height="18" viewBox="0 0 24 24" style="color:{{r.glyphColor}};flex:0 0 auto"><circle cx="12" cy="12" r="{{r.gr}}" fill="{{r.gfill}}" stroke="currentColor" stroke-width="{{r.gsw}}" stroke-dasharray="{{r.gdash}}"></circle></svg>
+                <span style="font-family:var(--f-mono);font-size:var(--fs-md);font-weight:{{r.fw}}">{{r.label}}</span>
+                <span style="color:{{r.lockColor}};font-size:var(--fs-sm)">{{r.badges}}</span>
+                <span style="margin-left:auto;font-family:var(--f-mono);font-size:var(--fs-xs);color:{{r.subColor}}">{{r.counts2}}</span>
+              </button>
+              <button class="k-btn" onClick="{{r.menuBtn}}" style="border:none;padding:2px 8px;color:{{r.subColor}};flex:0 0 auto" aria-label="node actions">⋮</button>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{hoverVisible}}" hint-placeholder-val="{{false}}">
+      <div class="k-hover" data-screen-label="S3 Hover card" style="left:{{hoverX}};top:{{hoverY}}">
+        <sc-if value="{{hoverIsEntry}}" hint-placeholder-val="{{false}}">
+          <div style="text-align:center;padding:0 4px"><div class="l" style="text-transform:capitalize;white-space:nowrap">{{hoverEntryType}}</div></div>
+        </sc-if>
+        <sc-if value="{{hoverIsNode}}" hint-placeholder-val="{{true}}">
+          <div style="text-align:center"><div class="n">{{hoverEntries}}</div><div class="l">entries</div></div>
+          <div style="text-align:center"><div class="n">{{hoverTotp}}</div><div class="l">2fa</div></div>
+        </sc-if>
+      </div>
+    </sc-if>
+    <sc-if value="{{ctxVisible}}" hint-placeholder-val="{{false}}">
+      <div class="cm-ctxmenu" role="menu" style="position:absolute;left:{{ctxX}};top:{{ctxY}};z-index:70;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-sm);box-shadow:0 8px 24px var(--scrim);min-width:180px;padding:4px;display:flex;flex-direction:column">
+        <sc-for list="{{ctxItems}}" as="m" hint-placeholder-count="6">
+          <button onClick="{{m.go}}" style="padding:6px 10px;border:0;background:none;color:{{m.color}};cursor:pointer;font-family:var(--f-mono);font-size:var(--fs-sm);text-align:left;border-radius:var(--r-xs)" style-hover="background:var(--steel-2)">{{m.label}}</button>
+        </sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{noProjects}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="Empty vault" style="position:absolute;left:50%;top:64%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+        <div class="k-empty" style="padding:0">No projects yet — <span style="color:var(--bone)">global</span> is the only node.</div>
+        <button class="k-btn" data-variant="primary" onClick="{{openAddNodeDlg}}">+ New project</button>
+      </div>
+    </sc-if>
+    <div style="position:absolute;left:16px;right:16px;bottom:12px;text-wrap:balance;font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute);pointer-events:none;display:{{graphDisplay}}">F fit · G global · T view · E entries · / search · ⌘L lock · drag node→node = grant</div>
+  </main>
+
+  <aside class="cm-insp {{inspOpenClass}}">
+    <button class="k-btn cm-insp-close" onClick="{{closeInsp}}" style="border:none;padding:8px 16px;align-self:flex-start" aria-label="close inspector">✕ close</button>
+    <sc-if value="{{inspNode}}" hint-placeholder-val="{{true}}">
+      <div class="k-section" style="padding-bottom:16px">
+        <span class="t-eyebrow">node · {{inspLabel}}</span>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+          <span class="t-mono-data" style="color:var(--ash)">{{inspCounts}}</span>
+          <sc-if value="{{inspLocked}}" hint-placeholder-val="{{false}}"><span class="k-chip">⌐ locked</span></sc-if>
+          <sc-if value="{{insp2fa}}" hint-placeholder-val="{{false}}"><span class="k-chip">2fa on reveal</span></sc-if>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="k-btn" onClick="{{openAddEntry}}" style="flex:1;text-align:left">+ New entry</button>
+          <button class="k-btn" onClick="{{openAddNote}}" style="flex:1;text-align:left">+ New note</button>
+        </div>
+      </div>
+      <div data-screen-label="S4 Inspector">
+        <sc-for list="{{inspEntries}}" as="e" hint-placeholder-count="6">
+          <button class="k-entry" onClick="{{e.open}}" style="border-left:{{e.sens}};border-top:0;border-right:0;border-bottom:0;background:none;font:inherit;text-align:left;width:100%;color:inherit;cursor:pointer">
+            <span class="k-entry-name">⌗ {{e.name}}</span>
+            <span style="display:flex;gap:6px;align-items:center"><sc-if value="{{e.totp}}" hint-placeholder-val="{{false}}"><span style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">2FA</span></sc-if><span class="k-type">{{e.type}}</span></span>
+          </button>
+        </sc-for>
+        <sc-if value="{{inspEmpty}}" hint-placeholder-val="{{false}}"><div class="k-empty">No entries in this node<br><div style="display:flex;gap:8px;justify-content:center;margin-top:12px"><button class="k-btn" onClick="{{openAddEntry}}">+ New entry</button><button class="k-btn" onClick="{{openAddNote}}">+ New note</button></div></div></sc-if>
+      </div>
+      <div class="k-section">
+        <span class="t-eyebrow" style="display:flex;justify-content:space-between">notes <span class="k-type" title="notes.read / notes.write are not built yet — designed against a mock" style="border-style:dashed">mock · notes.* not built</span></span>
+        <div class="t-body-sm" style="font-size:var(--fs-base)">{{inspNotes}}</div>
+      </div>
+    </sc-if>
+    <sc-if value="{{inspOrphan}}" hint-placeholder-val="{{false}}">
+      <div class="k-sealed-panel" data-screen-label="S10 Orphaned" style="text-align:left">
+        <span class="t-eyebrow">orphaned · {{orphanCount}} items · sealed</span>
+        <div style="margin:16px 0;display:flex;flex-direction:column">
+          <sc-for list="{{orphanItems}}" as="o" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;padding:6px 0;border-bottom:1px dashed var(--faint);font-family:var(--f-mono);font-size:var(--fs-base)">
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">⌗ {{o.name}}</span><span style="color:var(--mute);font-size:var(--fs-xs)">from {{o.from}}</span><span style="color:var(--mute);font-size:var(--fs-xs)">{{o.date}}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size:var(--fs-sm);line-height:var(--lh-base);margin-bottom:16px">Values are sealed. Opening one needs Touch ID and a fresh 2FA code, every time. No agent can read this node.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="k-btn" onClick="{{openOrphanItem}}">Open an item…</button>
+          <button class="k-btn" onClick="{{openRestoreOrphan}}">Restore to a node…</button>
+          <button class="k-btn" data-variant="danger" onClick="{{openDestroy}}">Destroy…</button>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{inspEntry}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="S5 Entry detail">
+        <div class="k-section" style="padding-bottom:12px">
+          <button class="k-btn" onClick="{{closeEntry}}" style="border:none;padding:2px 0;color:var(--mute)">← {{inspLabel}}</button>
+          <div style="display:flex;gap:8px;align-items:baseline;margin-top:8px">
+            <span style="font-family:var(--f-mono);font-size:var(--fs-lg);font-weight:var(--fw-label)">{{entryName}}</span>
+            <span class="k-type">{{entryType}}</span>
+          </div>
+          <div class="t-caption" style="margin-top:4px">{{entryMeta}}</div>
+        </div>
+        <sc-if value="{{entryUnlocked}}" hint-placeholder-val="{{true}}">
+        <div class="k-section">
+          <sc-for list="{{entryFields}}" as="f" hint-placeholder-count="4">
+            <div class="k-field {{f.sensClass}}" style="grid-template-columns:140px 1fr;align-items:start">
+              <span class="k-type" style="font-size:var(--fs-sm);text-transform:none;letter-spacing:normal;color:var(--ash);width:fit-content;word-break:break-word;margin-top:3px">{{f.label}}</span>
+              <div style="min-width:0;display:flex;flex-direction:column;gap:6px">
+                <div class="k-field-value" data-masked="{{f.masked}}">{{f.display}}</div>
+                <sc-if value="{{f.counting}}" hint-placeholder-val="{{false}}"><div style="height:1px;background:var(--faint)"><div style="height:1px;background:var(--sig);width:{{f.pct}}"></div></div><div class="t-kbd" role="status" aria-live="polite" style="color:var(--sig)">re-masks in {{f.secs}}s</div></sc-if>
+                <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-start">
+                  <sc-if value="{{f.maskable}}" hint-placeholder-val="{{true}}"><button class="k-btn" onClick="{{f.reveal}}" aria-live="polite" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="{{f.revealTitle}}">{{f.revealLabel}}</button></sc-if>
+                  <button class="k-btn" onClick="{{f.copy}}" disabled="{{f.copyDisabled}}" aria-live="polite" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="concealed clipboard · 30 s clear · never requires reveal">{{f.copyLabel}}</button>
+                  <button class="k-btn" disabled="{{true}}" style="border:none;padding:2px 4px;color:var(--mute)" title="field.* ops not built yet" aria-label="field menu">⋮</button>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+          <button class="k-btn" disabled="{{true}}" title="field.add is not built yet" style="margin-top:12px">+ Add field <span class="k-type" style="border-style:dashed;margin-left:6px">mock</span></button>
+        </div>
+        <div class="k-section"><div class="t-caption">every reveal and copy writes an audit record</div></div>
+        </sc-if>
+        <sc-if value="{{entryLockedShow}}" hint-placeholder-val="{{false}}">
+          <div class="k-section" data-screen-label="S5 Entry detail — locked">
+            <div class="k-empty" style="padding:24px 8px;display:flex;flex-direction:column;gap:12px;align-items:center"><span>Locked. The name and type stay visible; field labels and values need the vault open.</span><button class="k-btn" data-variant="primary" onClick="{{toggleVaultLock}}">Unlock…</button></div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+  </aside>
+  </div>
+</div>
+
+<sc-if value="{{dlgAddEntry}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S6 Add entry" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-addentry-title" style="width:640px;max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:16px">
+    <div id="dlg-addentry-title" class="t-h3" style="font-family:var(--f-mono)">New entry</div>
+    <sc-if value="{{addLockedNote}}" hint-placeholder-val="{{false}}"><div class="k-note" style="margin:0"><span class="t-mono-label">vault locked</span>will be held for review until unlock — it lands in the pending tray, not the manifest</div></sc-if>
+    <div style="display:grid;grid-template-columns:80px 1fr;gap:12px;align-items:center">
+      <span class="t-mono-label">where</span>
+      <select aria-label="entry location (node)" value="{{addNode}}" onChange="{{onAddNode}}" style="font-family:var(--f-mono)">
+        <sc-for list="{{addNodeOpts}}" as="o" hint-placeholder-count="8"><option value="{{o.id}}">{{o.label}}</option></sc-for>
+      </select>
+      <span class="t-mono-label">name</span>
+      <input value="{{addName}}" onChange="{{onAddName}}" style="font-family:var(--f-mono)" placeholder="vps-root">
+      <sc-if value="{{addNameDup}}" hint-placeholder-val="{{false}}"><span></span><div class="t-caption is-danger">{{addNameDupMsg}}</div></sc-if>
+      <sc-if value="{{addNameSplitNote}}" hint-placeholder-val="{{false}}"><span></span><div class="t-caption">not used while splitting — each segment is named from its first label, or “untitled n”</div></sc-if>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center">
+      <button class="k-btn" onClick="{{addField}}">+ Add field</button>
+      <label style="display:flex;gap:6px;align-items:center;font-family:var(--f-mono);font-size:var(--fs-sm);cursor:pointer"><input type="radio" checked="{{addSingle}}" onChange="{{setSingle}}" style="width:auto">Single</label>
+      <label style="display:flex;gap:6px;align-items:center;font-family:var(--f-mono);font-size:var(--fs-sm);cursor:pointer"><input type="radio" checked="{{addBulk}}" onChange="{{setBulk}}" style="width:auto">Bulk</label>
+    </div>
+    <sc-if value="{{addSingle}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{singleFields}}" as="sf" hint-placeholder-count="1">
+          <div style="display:grid;grid-template-columns:160px 1fr;gap:8px">
+            <input value="{{sf.label}}" onChange="{{sf.onLabel}}" style="font-family:var(--f-mono);font-size:var(--fs-sm)" placeholder="label — free text, no vocabulary">
+            <textarea value="{{sf.value}}" onChange="{{sf.onValue}}" rows="{{sf.rows}}" style="font-family:var(--f-mono);font-size:var(--fs-sm);resize:vertical" placeholder="value (grows, multi-line)"></textarea>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{addBulk}}" hint-placeholder-val="{{false}}">
+      <textarea value="{{bulkText}}" onChange="{{onBulk}}" rows="8" style="flex:none;font-family:var(--f-mono);font-size:var(--fs-sm);resize:vertical" placeholder="label: value            ← one field per line&#10;///                     ← separates fields, so a value can span lines&#10;private key:&#10;-----BEGIN EXAMPLE KEY-----&#10;…"></textarea>
+    </sc-if>
+    <div style="border:1px solid var(--faint);border-radius:var(--r-sm)">
+      <div style="padding:8px 12px;border-bottom:1px solid var(--hair)"><span class="t-mono-label">preview — the contract; nothing is written until shown here</span></div>
+      <sc-for list="{{previewFields}}" as="p" hint-placeholder-count="2">
+        <div style="display:grid;grid-template-columns:130px minmax(70px,1fr) auto;gap:8px;align-items:center;padding:6px 12px 6px 10px;border-bottom:1px solid var(--hair);border-left:{{p.sensBorder}};font-family:var(--f-mono);font-size:var(--fs-sm)">
+          <span style="color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{p.label}}</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:{{p.vcolor}};letter-spacing:{{p.vspace}}">{{p.display}}</span>
+          <span style="display:flex;gap:6px;align-items:center"><sc-if value="{{p.hint}}" hint-placeholder-val="{{false}}"><span style="font-size:var(--fs-xs);color:var(--warn)">looks sensitive</span></sc-if><button class="k-type" onClick="{{p.cycle}}" style="cursor:pointer;background:none" title="inferred — one click to change">{{p.type}} ▾</button></span>
+        </div>
+      </sc-for>
+      <sc-if value="{{previewEmpty}}" hint-placeholder-val="{{true}}"><div class="k-empty" style="padding:16px">no fields yet</div></sc-if>
+      <div style="display:flex;gap:16px;align-items:center;padding:8px 12px;font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">
+        <span>{{previewSummary}}</span>
+        <span>type: <button class="k-type" onClick="{{cycleEntryType}}" style="cursor:pointer;background:none">{{previewEntryType}} ▾</button></span>
+        <span>sensitivity: <span class="k-type">{{previewSens}}</span></span>
+        <sc-if value="{{addBulk}}" hint-placeholder-val="{{false}}"><label style="margin-left:auto;display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" checked="{{splitSegs}}" onChange="{{onSplit}}" style="width:auto">split each /// segment into its own entry</label></sc-if>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="k-btn" onClick="{{closeDialog}}">Cancel</button>
+      <button class="k-btn" onClick="{{saveEntryAgain}}" disabled="{{saveDisabled}}">{{saveAgainLabel}}</button>
+      <button class="k-btn" data-variant="primary" onClick="{{saveEntry}}" disabled="{{saveDisabled}}">{{saveLabel}}</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{dlgPending}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S20 Pending tray" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-pending-title" style="width:620px;max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><span id="dlg-pending-title" class="t-h3" style="font-family:var(--f-mono)">Held while locked</span><span class="k-type" style="border-style:dashed" title="vault.pending_list / pending_accept / pending_discard are dispatched by the broker but not wired through the Tauri bridge yet — this tray runs on a local mock">mock · bridge not wired</span></div>
+    <div class="t-body-sm">Entries written while the vault was locked wait here instead of the manifest. Accepting one writes it to its node; discarding removes it. Values are never shown on this screen.</div>
+    <sc-if value="{{pendingLockedNote}}" hint-placeholder-val="{{false}}"><div class="k-note" style="margin:0"><span class="t-mono-label">vault locked</span>unlock to accept or discard — accepting writes to the manifest</div></sc-if>
+    <div style="display:flex;flex-direction:column;border:1px solid var(--faint);border-radius:var(--r-sm)">
+      <sc-for list="{{pendingRows}}" as="p" hint-placeholder-count="2">
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px 10px 10px;border-bottom:1px solid var(--hair);border-left:{{p.sensBorder}}">
+          <div style="min-width:0;display:flex;flex-direction:column;gap:2px">
+            <div style="display:flex;gap:8px;align-items:baseline;font-family:var(--f-mono)"><span style="color:var(--mute);font-size:var(--fs-xs)">{{p.node}} /</span><span style="font-size:var(--fs-base);font-weight:var(--fw-label);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{p.name}}</span></div>
+            <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">{{p.fieldCount}} · {{p.type}} · {{p.sens}} · {{p.when}} · {{p.by}}</div>
+          </div>
+          <div style="display:flex;gap:8px"><button class="k-btn" onClick="{{p.discard}}" disabled="{{pendingActDisabled}}">Discard</button><button class="k-btn" data-variant="primary" onClick="{{p.accept}}" disabled="{{pendingActDisabled}}">Accept</button></div>
+        </div>
+      </sc-for>
+      <sc-if value="{{pendingEmpty}}" hint-placeholder-val="{{true}}"><div class="k-empty">Nothing is waiting. Entries added while the vault is locked appear here.</div></sc-if>
+    </div>
+    <div style="display:flex;justify-content:flex-end"><button class="k-btn" onClick="{{closeDialog}}">Close</button></div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{dlgSeal}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S9 Seal node" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-seal-title" style="width:520px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px">
+    <div id="dlg-seal-title" class="t-h3" style="font-family:var(--f-mono)">⚠ Remove node “{{sealName}}”?</div>
+    <div style="font-size:var(--fs-md);font-weight:var(--fw-body-em)">Nothing is deleted.</div>
+    <ul style="margin:0;padding-left:16px;display:flex;flex-direction:column;gap:6px;font-size:var(--fs-base);color:var(--ash)">
+      <sc-for list="{{sealLines}}" as="l" hint-placeholder-count="5"><li>{{l.text}}</li></sc-for>
+    </ul>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+      <span class="t-mono-label">type the node name to confirm</span>
+      <input value="{{sealTyped}}" onChange="{{onSealTyped}}" style="font-family:var(--f-mono)" placeholder="{{sealName}}">
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:8px">
+      <button class="k-btn" data-variant="danger" onClick="{{confirmSeal}}" disabled="{{sealDisabled}}">Seal node</button>
+      <button class="k-btn" onClick="{{closeDialog}}">Cancel</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{dlgGrant}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S11 Grant" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-grant-title" style="width:560px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:14px">
+    <span id="dlg-grant-title" class="t-eyebrow">grant access</span>
+    <sc-if value="{{grantLiteNote}}" hint-placeholder-val="{{false}}"><div class="k-note" style="margin:0"><span class="t-mono-label">lite mode</span>Creating grants is managed in Pro. Viewing and revoking stay available here — revoking is safety, not a lever.</div></sc-if>
+    <div style="display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center">
+      <span class="t-mono-label">from</span>
+      <select aria-label="grant from node" value="{{grantFrom}}" onChange="{{onGrantFrom}}" disabled="{{grantDisabledAll}}" style="font-family:var(--f-mono)"><sc-for list="{{grantNodeOpts}}" as="o" hint-placeholder-count="8"><option value="{{o.id}}">{{o.label}}</option></sc-for></select>
+      <span class="t-mono-label">to</span>
+      <select aria-label="grant to node" value="{{grantTo}}" onChange="{{onGrantTo}}" disabled="{{grantDisabledAll}}" style="font-family:var(--f-mono)"><sc-for list="{{grantNodeOpts2}}" as="o" hint-placeholder-count="8"><option value="{{o.id}}">{{o.label}}</option></sc-for></select>
+      <span class="t-mono-label">allow</span>
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        <sc-for list="{{grantCaps}}" as="c" hint-placeholder-count="4"><label style="display:flex;gap:6px;align-items:center;font-family:var(--f-mono);font-size:var(--fs-sm);cursor:pointer"><input type="checkbox" checked="{{c.on}}" onChange="{{c.toggle}}" disabled="{{grantDisabledAll}}" style="width:auto">{{c.label}}</label></sc-for>
+      </div>
+      <span class="t-mono-label">expiry</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select aria-label="grant expiry" value="{{grantExpiry}}" onChange="{{onGrantExpiry}}" disabled="{{grantDisabledAll}}" style="font-family:var(--f-mono)"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="never">Never</option></select>
+        <sc-if value="{{grantNever}}" hint-placeholder-val="{{false}}"><span class="k-chip" data-state="warn">never expires</span></sc-if>
+      </div>
+      <span class="t-mono-label">reason</span>
+      <input value="{{grantReason}}" onChange="{{onGrantReason}}" disabled="{{grantDisabledAll}}" style="font-family:var(--f-mono)" placeholder="required — recorded in the audit log">
+    </div>
+    <div style="font-size:var(--fs-base);color:var(--ash);border-left:3px solid var(--faint);padding-left:12px">This creates a dashed line on the graph. Anyone working in <span style="font-family:var(--f-mono);color:var(--bone)">{{grantFromLabel}}</span> will be able to see the ticked things in <span style="font-family:var(--f-mono);color:var(--bone)">{{grantToLabel}}</span> until this expires or is revoked.</div>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end">
+      <input value="{{grantCode}}" onChange="{{onGrantCode}}" maxLength="6" disabled="{{grantDisabledAll}}" style="font-family:var(--f-mono);width:110px;letter-spacing:.3em;text-align:center" placeholder="2FA code">
+      <button class="k-btn" data-variant="primary" onClick="{{confirmGrant}}" disabled="{{grantSaveDisabled}}">Create grant</button>
+      <button class="k-btn" onClick="{{closeDialog}}">Cancel</button>
+    </div>
+    <div class="t-caption">grant.create is presence-blocked in today's backend (Phase 5 gap) — this flow is designed against the full gate</div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{dlgAddNode}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S8 Add node" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-addnode-title" style="width:560px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><span id="dlg-addnode-title" class="t-eyebrow">new node</span><span class="k-type" style="border-style:dashed" title="node.create shipped (ADR-051); node.get/node.update are still mocked">mock · node.get/update not built</span></div>
+    <div style="display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:center">
+      <span class="t-mono-label">name</span>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <input value="{{newNodeName}}" onChange="{{onNewNodeName}}" style="font-family:var(--f-mono)" placeholder="linux">
+        <sc-if value="{{newNodeDupShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger">{{newNodeDupMsg}}</div></sc-if>
+      </div>
+      <span class="t-mono-label">parent</span>
+      <select aria-label="parent node" value="{{newNodeParent}}" onChange="{{onNewNodeParent}}" style="font-family:var(--f-mono)"><sc-for list="{{parentOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.id}}">{{o.label}}</option></sc-for></select>
+      <span class="t-mono-label">work folders</span>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <sc-for list="{{newNodeFolders}}" as="wf" hint-placeholder-count="1">
+          <input value="{{wf.val}}" onChange="{{wf.onChange}}" style="font-family:var(--f-mono);font-size:var(--fs-sm)" placeholder="~/projects/linux">
+        </sc-for>
+        <div style="display:flex;justify-content:space-between;align-items:center"><span class="t-caption">agents launched here scope to this node automatically</span><button class="k-btn" onClick="{{addNodeFolder}}" style="padding:2px 8px;font-size:var(--fs-xs)">+ add another</button></div>
+      </div>
+    </div>
+    <sc-if value="{{isPro}}" hint-placeholder-val="{{false}}">
+      <div style="border-top:1px solid var(--hair);padding-top:12px">
+        <span class="t-mono-label" style="display:block;margin-bottom:10px">advanced · pro</span>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-family:var(--f-mono);font-size:var(--fs-sm)">
+          <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" checked="{{advSubShare}}" onChange="{{onAdvSubShare}}" style="width:auto">Sub-nodes see each other</label>
+          <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" checked="{{advTwofa}}" onChange="{{onAdvTwofa}}" style="width:auto">2FA on reveal</label>
+          <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" checked="{{advChildRead}}" onChange="{{onAdvChildRead}}" style="width:auto">This node can read its children</label>
+          <label style="display:flex;gap:8px;align-items:center">Agent access <select aria-label="agent access" value="{{advAgentAccess}}" onChange="{{onAdvAgentAccess}}" style="font-family:var(--f-mono);font-size:var(--fs-sm)"><option value="read-write">read-write</option><option value="read-only">read-only</option><option value="none">none</option></select></label>
+        </div>
+      </div>
+    </sc-if>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="k-btn" onClick="{{closeDialog}}">Cancel</button>
+      <button class="k-btn" data-variant="primary" onClick="{{confirmAddNode}}" disabled="{{newNodeDisabled}}">Create node</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{dlgDestroy}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-destroy-title" style="width:480px;background:var(--steel);border:1px solid var(--danger);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px">
+    <div id="dlg-destroy-title" class="t-h3" style="font-family:var(--f-mono);color:var(--danger-fg)">Destroy {{orphanCount}} sealed items?</div>
+    <div class="t-body-sm">The only truly irreversible action in this product. Typed confirmation, 2FA, presence — then a 10-second delay you can still cancel.</div>
+    <input value="{{destroyTyped}}" onChange="{{onDestroyTyped}}" style="font-family:var(--f-mono)" placeholder="type DESTROY">
+    <sc-if value="{{destroyCounting}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;gap:12px;align-items:center"><span class="t-mono-data" style="color:var(--danger-fg)">{{destroySecs}}s</span><div style="flex:1;height:1px;background:var(--faint)"><div style="height:1px;background:var(--danger);width:{{destroyPct}}"></div></div></div>
+    </sc-if>
+    <div style="display:flex;justify-content:space-between">
+      <button class="k-btn" data-variant="danger" onClick="{{startDestroy}}" disabled="{{destroyDisabled}}">{{destroyLabel}}</button>
+      <button class="k-btn" onClick="{{closeDialog}}">Cancel</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{dlgTouch}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:90;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-touch-title" style="width:340px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center">
+    <span id="dlg-touch-title" class="t-eyebrow">{{touchTitle}}</span>
+    <div class="t-body-sm">{{touchBody}}</div>
+    <button class="k-btn" data-variant="primary" onClick="{{touchOk}}" style="width:100%">Touch ID</button>
+    <input value="{{touchCode}}" onChange="{{onTouchCode}}" maxLength="6" style="font-family:var(--f-mono);letter-spacing:.4em;text-align:center;width:160px" placeholder="2FA code">
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{donateToastVisible}}" hint-placeholder-val="{{false}}">
+<div data-screen-label="Donate toast" style="position:fixed;right:20px;bottom:20px;z-index:72;width:256px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 20px 48px var(--scrim);padding:12px;display:flex;flex-direction:column;gap:8px;animation:toastIn var(--t-md) var(--ease-out-expo)">
+
+  <sc-if value="{{donateViewMain}}" hint-placeholder-val="{{true}}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div>
+        <span class="t-eyebrow">enjoying credmgr?</span>
+        <p class="t-body-sm" style="margin:6px 0 0">Free and open source, no ads, no tracking. If it's useful, a donation helps keep it that way.</p>
+      </div>
+      <button class="k-btn" onClick="{{dismissDonateToast}}" style="border:none;padding:2px 6px;flex:none" aria-label="dismiss">✕</button>
+    </div>
+    <div style="display:flex;gap:4px">
+      <sc-for list="{{donateTabs}}" as="t" hint-placeholder-count="5">
+        <button class="k-btn" onClick="{{t.go}}" style="flex:1;padding:4px 0;font-size:var(--fs-xs);background:{{t.bg}};color:{{t.fg}}">{{t.short}}</button>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--ash);word-break:break-all;user-select:all;border:1px solid var(--faint);border-radius:var(--r-sm);padding:8px 10px">{{activeChainAddress}}</div>
+      <button class="k-btn" onClick="{{donateCopyAddr}}" style="align-self:flex-start;padding:2px 8px;font-size:var(--fs-xs)">{{donateCopyLabel}}</button>
+    </div>
+    <div style="border-top:1px solid var(--hair);padding-top:8px;display:flex;flex-direction:column;gap:6px">
+      <p class="t-caption" style="margin:0">Real work goes into building this well. If you've felt that, paying it forward — any amount — means a lot.</p>
+      <div style="display:flex;gap:6px">
+        <button class="k-btn" data-variant="primary" onClick="{{goDonateGuide}}" style="flex:1;font-size:var(--fs-xs);padding:4px 0">Donate</button>
+        <button class="k-btn" onClick="{{goDonateCode}}" style="flex:1;font-size:var(--fs-xs);padding:4px 0">Enter code</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{donateViewGuide}}" hint-placeholder-val="{{false}}">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <button class="k-btn" onClick="{{backDonateMain}}" style="border:none;padding:0;color:var(--mute)">← back</button>
+      <button class="k-btn" onClick="{{dismissDonateToast}}" style="border:none;padding:2px 6px" aria-label="dismiss">✕</button>
+    </div>
+    <span class="t-eyebrow">donate in 3 steps</span>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div>
+        <div class="t-mono-label">1 · send</div>
+        <div style="display:flex;gap:4px;margin:6px 0">
+          <sc-for list="{{donateTabs}}" as="t" hint-placeholder-count="5">
+            <button class="k-btn" onClick="{{t.go}}" style="flex:1;padding:4px 0;font-size:var(--fs-xs);background:{{t.bg}};color:{{t.fg}}">{{t.short}}</button>
+          </sc-for>
+        </div>
+        <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--ash);word-break:break-all;user-select:all;border:1px solid var(--faint);border-radius:var(--r-sm);padding:8px 10px">{{activeChainAddress}}</div>
+        <button class="k-btn" onClick="{{donateCopyAddr}}" style="align-self:flex-start;margin-top:6px;padding:2px 8px;font-size:var(--fs-xs)">{{donateCopyLabel}}</button>
+      </div>
+      <div>
+        <div class="t-mono-label">2 · email proof</div>
+        <p class="t-body-sm" style="margin:4px 0 0">Send a screenshot of the transaction and its hash ID to <span style="font-family:var(--f-mono);user-select:all">billing@example.com</span>. Subject: the app you donated for.</p>
+      </div>
+      <div>
+        <div class="t-mono-label">3 · get your code</div>
+        <p class="t-body-sm" style="margin:4px 0 0">We reply within 24 hours with a code. Enter it any time to stop seeing this box.</p>
+      </div>
+    </div>
+    <button class="k-btn" onClick="{{goDonateCode}}" style="align-self:flex-start;font-size:var(--fs-xs)">Have a code already? →</button>
+  </sc-if>
+
+  <sc-if value="{{donateViewCode}}" hint-placeholder-val="{{false}}">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <button class="k-btn" onClick="{{backDonateMain}}" style="border:none;padding:0;color:var(--mute)">← back</button>
+      <button class="k-btn" onClick="{{dismissDonateToast}}" style="border:none;padding:2px 6px" aria-label="dismiss">✕</button>
+    </div>
+    <span class="t-eyebrow">enter your code</span>
+    <p class="t-body-sm" style="margin:0">The code from our reply email. This stops the box for good on this device.</p>
+    <input value="{{donateCodeVal}}" onChange="{{onDonateCode}}" placeholder="code from email" style="font-family:var(--f-mono);letter-spacing:.15em;text-transform:uppercase;width:100%">
+    <sc-if value="{{donateCodeErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="status" aria-live="polite">That code doesn't look right.</div></sc-if>
+    <sc-if value="{{donateCodeOkShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-ok" role="status" aria-live="polite">Thanks — you won't see this again.</div></sc-if>
+    <button class="k-btn" data-variant="primary" onClick="{{submitDonateCode}}">Submit</button>
+  </sc-if>
+
+</div>
+</sc-if>
+
+<sc-if value="{{dlgHelp}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="Help" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-help-title" style="width:600px;max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:28px;display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <span id="dlg-help-title" class="t-h3" style="font-family:var(--f-mono)">Help</span>
+      <button class="k-btn" onClick="{{closeDialog}}" style="border:none;padding:2px 6px;color:var(--mute)" aria-label="close">✕</button>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">reading the graph</div>
+      <div class="t-body-sm" style="display:flex;flex-direction:column;gap:6px">
+        <div>Filled circle — <b>global</b>, the one node every other node can read. Ringed circle — a <b>project</b>. Thinner ring — a <b>sub-node</b>. Dashed ring — <b>orphaned</b>, sealed items with nowhere to live.</div>
+        <div>Each project's inner mark is a fingerprint of its name — decorative, not a category. Small dots orbiting a node are its entries; colour is a hash of the entry's id, never its name or value.</div>
+        <div><span style="color:var(--warn)">⌐</span> means gated behind 2FA on reveal, <span style="color:var(--mute)">‖</span> means the node itself is locked. A dashed line with an arrowhead is a <b>grant</b> — it points from the trusted node to the node it can see into.</div>
+        <div>Drag one node onto another to propose a grant between them. <span style="font-family:var(--f-mono)">T</span> switches to the tree view — a full keyboard- and screen-reader-accessible peer to the graph, never a fallback.</div>
+      </div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">sealing</div>
+      <div class="t-body-sm">Removing a node never deletes it. "Seal" moves its entries to Orphaned, where names stay visible but values need Touch ID and a fresh 2FA code to open — every time, no exceptions for agents. Settings → Nodes lists everything sealed in the last 7 days with a one-click Restore, which brings the node, its sub-nodes, its links and its entries back exactly as they were.</div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">grants</div>
+      <div class="t-body-sm">Isolation between nodes is the default — nothing can see into anything else until you say so. A grant names a from-node, a to-node, which capabilities (list, read, reveal values, notes), an expiry, and a reason. It shows as a dashed edge on the graph and can be revoked from Settings → Grants at any time, in either mode.</div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">security levels</div>
+      <div class="t-body-sm" style="display:flex;flex-direction:column;gap:4px">
+        <div><b>Open</b> — no prompts. Reveals return immediately. Isolation between nodes is still absolute.</div>
+        <div><b>Guarded</b> (default) — high and critical reveals wait for one Touch ID tap. Everything else flows.</div>
+        <div><b>Sealed</b> — every reveal, create and update waits for a tap. For the node holding the wallet.</div>
+      </div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">agents</div>
+      <div class="t-body-sm">An agent wired in from Settings → Agents reads and writes credentials the same way you do, scoped to the node its work folder belongs to. It can never create a grant, read another node, read sealed data, read a 2FA seed, change permissions, or purge the audit log — those are absent from its vocabulary, not merely denied.</div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">notes</div>
+      <div class="t-body-sm">+ New note in the inspector adds an entry whose only field is free text — for anything that is not a credential. It is stored and audited like any other entry. Its text shows directly; change the field type in the preview before saving if you want it masked.</div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">writing while locked</div>
+      <div class="t-body-sm">An entry added while the vault is locked is not written to the manifest. It waits in the pending tray — the “held” chip in the header, or Pending writes in the vault menu. After you unlock, a banner reports how many are waiting; each is accepted or discarded on its own, with its node, name and field count shown and never its values.</div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">keyboard</div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-family:var(--f-mono);font-size:var(--fs-sm)">
+        <span class="t-kbd">/</span><span>focus search</span>
+        <span class="t-kbd">F</span><span>fit graph to view</span>
+        <span class="t-kbd">G</span><span>jump to global</span>
+        <span class="t-kbd">T</span><span>toggle graph / tree</span>
+        <span class="t-kbd">E</span><span>entries: all nodes ↔ selected only</span>
+        <span class="t-kbd">N</span><span>new entry</span>
+        <span class="t-kbd">⌘L</span><span>lock the vault</span>
+        <span class="t-kbd">⌘⇧O</span><span>Operations panel (pro)</span>
+        <span class="t-kbd">Esc</span><span>close whatever is open</span>
+        <span class="t-kbd">Tab</span><span>cycle fields inside an open dialog</span>
+      </div>
+    </div>
+    <div class="t-caption">Licence, privacy and donation info live in About — <a href="#" onClick="{{helpGoAbout}}">open it</a>.</div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{dlgAbout}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S18 About" onClick="{{stop}}" role="dialog" aria-modal="true" aria-label="About CredMgr" style="width:460px;max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:32px;display:flex;flex-direction:column;gap:16px">
+    <sc-if value="{{aboutIsMain}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:center;text-align:center">
+        <svg width="40" height="40" viewBox="0 0 24 24" stroke-linecap="square" style="color:var(--bone)"><sc-if value="{{markKeep}}" hint-placeholder-val="{{true}}"><rect x="3.5" y="3.5" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="8" y="8" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="11" y="11" width="2" height="2" fill="currentColor" style="{{logoDotStyle}}"></rect></sc-if><sc-if value="{{markCells}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="1.3" fill="currentColor" style="{{logoDotStyle}}"></circle></sc-if><sc-if value="{{markNode}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="3" fill="currentColor" style="{{logoDotStyle}}"></circle></sc-if><sc-if value="{{markSeal}}" hint-placeholder-val="{{false}}"><path d="M12 3 L19.8 7.5 V16.5 L12 21 L4.2 16.5 V7.5 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><path d="M12 8 L15.5 10 V14 L12 16 L8.5 14 V10 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><rect x="11.1" y="11.1" width="1.8" height="1.8" fill="currentColor" style="{{logoDotStyle}}"></rect></sc-if></svg>
+        <div style="font-family:var(--f-mono);font-size:var(--fs-lg);font-weight:var(--fw-label)">CredMgr</div>
+        <div class="t-caption">offline · no telemetry · no network stack linked</div>
+        <div class="t-caption" style="color:var(--mute)">published by FreexStudio</div>
+        <div style="display:flex;gap:16px;margin-top:8px;font-family:var(--f-mono);font-size:var(--fs-sm)"><a href="#" onClick="{{goDonate}}">Donate</a><a href="#" onClick="{{goPrivacy}}">Privacy</a><a href="#" onClick="{{goLicenses}}">Licences</a></div>
+        <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute);margin-top:12px">2.0.0</div>
+        <sc-if value="{{cosmUnlocked}}" hint-placeholder-val="{{false}}"><span class="k-chip" data-state="ok" style="align-self:center">supporter</span></sc-if>
+      </div>
+    </sc-if>
+    <sc-if value="{{aboutIsDonate}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <button class="k-btn" onClick="{{goAboutMain}}" style="border:none;padding:0;color:var(--mute);align-self:flex-start">← About</button>
+        <span class="t-eyebrow">support credmgr</span>
+        <p class="t-body-sm" style="margin:0">Free, open source, no paid tier, no telemetry, no company behind it — built and maintained by one person. Donations are not refundable, buy no features, and grant no licence or influence over the roadmap. A supporter code only unlocks cosmetic extras in Settings → Appearance and ends the reminder.</p>
+        <div style="display:flex;gap:4px">
+          <sc-for list="{{donateTabs}}" as="t" hint-placeholder-count="5">
+            <button class="k-btn" onClick="{{t.go}}" style="flex:1;padding:5px 0;font-size:var(--fs-xs);background:{{t.bg}};color:{{t.fg}}">{{t.short}}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-family:var(--f-mono);font-size:var(--fs-sm);font-weight:var(--fw-label)">{{activeChainName}}</div>
+          <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--ash);word-break:break-all;user-select:all;border:1px solid var(--faint);border-radius:var(--r-sm);padding:10px 12px">{{activeChainAddress}}</div>
+          <button class="k-btn" onClick="{{donateCopyAddr}}" style="align-self:flex-start;padding:3px 10px;font-size:var(--fs-xs)">{{donateCopyLabel}}</button>
+        </div>
+        <div class="k-note" style="margin:0">
+          <span class="t-mono-label">before you send anything</span>
+          <ul style="margin:6px 0 0;padding-left:16px;font-size:var(--fs-xs);color:var(--ash);line-height:var(--lh-base)">
+            <li>verify the first and last six characters after pasting — clipboard hijackers target exactly this</li>
+            <li>send a small test amount first if the sum matters to you</li>
+            <li>the EVM address is valid only on the five chains listed above — never send it on an unlisted chain</li>
+          </ul>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{aboutIsPrivacy}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <button class="k-btn" onClick="{{goAboutMain}}" style="border:none;padding:0;color:var(--mute);align-self:flex-start">← About</button>
+        <span class="t-eyebrow">privacy</span>
+        <p class="t-body-sm" style="margin:0">CredMgr has no server, so there is nothing to collect. No account, no telemetry, no crash reporting, no analytics, no cloud sync. The vault talks to the broker over a local socket only — no HTTP client is linked into the process and nothing it does can reach the network.</p>
+        <p class="t-body-sm" style="margin:0">Backups are files you control, written to a destination you choose. Nothing about your vault — its structure, its node names, its contents — leaves this machine unless you copy a backup file somewhere yourself.</p>
+      </div>
+    </sc-if>
+    <sc-if value="{{aboutIsLicenses}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <button class="k-btn" onClick="{{goAboutMain}}" style="border:none;padding:0;color:var(--mute);align-self:flex-start">← About</button>
+        <span class="t-eyebrow">licences</span>
+        <p class="t-body-sm" style="margin:0">Released under the MIT licence. See <span style="font-family:var(--f-mono)">LICENSE</span> in the repository for the complete terms.</p>
+        <p class="t-body-sm" style="margin:0">CredMgr is published by FreexStudio. See <span style="font-family:var(--f-mono)">TRADEMARKS.md</span>.</p>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ovGames}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:82;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{cpBackdropClick}}">
+  <div class="cm-modal-panel" data-screen-label="S19 CredPong" onClick="{{stop}}" role="dialog" aria-modal="true" aria-label="CredPong" style="width:min(760px,94vw);max-height:92vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <sc-if value="{{cpIsMenu}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-family:var(--f-mono);font-size:var(--fs-lg);font-weight:var(--fw-label)">CredPong</div>
+          <div class="t-caption">graph-mode arcade · isolated · a CredGames title, part of FreexStudio.com</div>
+        </div>
+        <button class="k-btn" onClick="{{cpClose}}" style="border:none;padding:2px 6px" aria-label="close">✕</button>
+      </div>
+      <div class="k-note" style="margin:0">This game reads only how many nodes your vault has and how many entries each holds, to shape its first levels. It never uses a name, a field or a value, writes nothing to the vault, and nothing leaves this device.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <span class="t-mono-label">paddle</span>
+        <div style="display:flex;gap:0">
+          <button class="k-btn" onClick="{{cpSetModeBottom}}" style="flex:1;border-radius:2px 0 0 2px;background:{{cpModeBottomBg}};color:{{cpModeBottomFg}}">Bottom</button>
+          <button class="k-btn" onClick="{{cpSetModeSide}}" style="flex:1;border-radius:0;border-left:none;background:{{cpModeSideBg}};color:{{cpModeSideFg}}">Side</button>
+          <button class="k-btn" onClick="{{cpSetModeRoam}}" style="flex:1;border-radius:0 2px 2px 0;border-left:none;background:{{cpModeRoamBg}};color:{{cpModeRoamFg}}">Free-roam</button>
+        </div>
+        <div class="t-caption">{{cpModeDesc}}</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span class="t-mono-data">local best: {{cpBestLabel}}</span>
+          <sc-if value="{{cpHasProgress}}" hint-placeholder-val="{{false}}"><span class="t-caption">resuming at level {{cpResumeLabel}}</span></sc-if>
+        </div>
+        <button class="k-btn" data-variant="primary" onClick="{{cpStart}}">Start — space to launch</button>
+      </div>
+      <div style="border-top:1px solid var(--hair);padding-top:14px">
+        <div class="t-caption">More CredGames titles — coming soon. CredGames is a title of FreexStudio.com.</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{cpIsPlay}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="t-mono-label">CredPong</span>
+        <button class="k-btn" onClick="{{cpExit}}" style="border:none;padding:2px 6px" aria-label="exit">✕ exit</button>
+      </div>
+      <div ref="{{cpRef}}" style="position:relative;width:680px;height:440px;max-width:100%;background:var(--void);border:1px solid var(--hair-strong);border-radius:var(--r-sm);margin:0 auto"></div>
+      <div class="t-caption" style="text-align:center">{{cpControlHint}} · space to launch · esc to exit</div>
+    </sc-if>
+
+    <sc-if value="{{cpIsOver}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;padding:24px 0">
+        <div style="font-family:var(--f-mono);font-size:var(--fs-lg)">Game over</div>
+        <div class="t-mono-data" style="font-size:var(--fs-xl)">{{cpScoreLabel}}</div>
+        <div class="t-caption">{{cpBestNote}}</div>
+        <div style="display:flex;gap:8px">
+          <button class="k-btn" data-variant="primary" onClick="{{cpStart}}">Play again</button>
+          <button class="k-btn" onClick="{{cpBackToMenu}}">Back to menu</button>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ovSettings}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:75;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel cm-settings" data-screen-label="S12-15 Settings" onClick="{{stop}}" role="dialog" aria-modal="true" aria-label="Settings" style="width:min(920px,94vw);height:min(640px,90vh);background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);display:grid;grid-template-columns:220px 1fr;overflow:hidden">
+    <div style="border-right:1px solid var(--hair);padding:16px 8px;display:flex;flex-direction:column;gap:2px;overflow-y:auto">
+      <span class="t-mono-label" style="padding:0 10px 8px">settings · {{modeLabel}}</span>
+      <sc-for list="{{settingsNav}}" as="s" hint-placeholder-count="6">
+        <button onClick="{{s.go}}" aria-current="{{s.current}}" style="display:block;width:100%;text-align:left;padding:7px 10px;border:0;background:{{s.bg}};color:var(--bone);cursor:pointer;font-family:var(--f-mono);font-size:var(--fs-sm);border-radius:var(--r-xs)" style-hover="background:var(--steel-2)">{{s.label}}</button>
+      </sc-for>
+      <div style="margin-top:auto;padding:10px;display:flex;flex-direction:column;gap:6px"><button class="k-btn" onClick="{{openHelp}}" style="width:100%">Help ?</button><button class="k-btn" onClick="{{closeOverlay}}" style="width:100%">Close</button></div>
+    </div>
+    <div style="overflow-y:auto;padding:24px 32px">
+
+      <sc-if value="{{setSecurity}}" hint-placeholder-val="{{true}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">security</span>
+        <div style="display:flex;flex-direction:column;gap:16px;max-width:520px">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Auto-lock</div><div class="t-caption">on idle, on sleep, on screen lock, on ⌘L</div></div><select aria-label="auto-lock after" value="{{autoLockVal}}" onChange="{{onAutoLock}}" style="font-family:var(--f-mono)"><option value="15">15 min</option><option value="5">5 min</option><option value="60">60 min</option><option value="0">never (warned)</option></select></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Two-factor gate</div><div class="t-caption">vault-wide TOTP · enrolled · 10 recovery codes</div></div><span class="k-chip" data-state="ok">enrolled</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Reveal window</div><div class="t-caption">values re-mask after</div></div><select aria-label="reveal window" value="{{revealWindowVal}}" onChange="{{onRevealWindow}}" style="font-family:var(--f-mono)"><option value="20">20 s</option><option value="10">10 s</option><option value="60">60 s</option></select></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Concealed clipboard</div><div class="t-caption">clears after 30 s and on app switch</div></div><div style="display:flex;gap:8px;align-items:center"><span class="k-type" style="border-style:dashed" title="the desktop shell performs the clear; this browser preview does it best-effort, and only where the browser allows clipboard reads">mock</span><span class="k-chip" data-state="ok">on</span></div></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Search inside saved values</div><div class="t-caption" style="max-width:360px">off by default. when on, search also matches text inside masked fields — passwords, keys, notes — not just names. results never show the matching text itself; values still reveal and copy under the usual rules.</div></div><button class="k-btn" onClick="{{toggleContentSearch}}" style="border:none;padding:0"><span class="k-chip" data-state="{{contentSearchState}}" style="cursor:pointer">{{contentSearchLabel}}</span></button></div>
+          <div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:var(--fs-md)">Security level</div><div class="t-caption">also settable per node</div></div><div style="display:flex;gap:0"><sc-for list="{{secLevels}}" as="lv" hint-placeholder-count="3"><button class="k-btn" onClick="{{lv.set}}" style="border-radius:0;background:{{lv.bg}};color:{{lv.fg}}">{{lv.label}}</button></sc-for></div></div>
+          <div class="t-caption" style="max-width:52ch">{{secLevelDesc}}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{setAppearance}}" hint-placeholder-val="{{false}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">appearance</span>
+        <div style="display:flex;flex-direction:column;gap:20px;max-width:520px">
+          <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:var(--fs-md)">Theme</div><div style="display:flex;gap:0"><button class="k-btn" onClick="{{setDark}}" style="border-radius:2px 0 0 2px;background:{{darkBtnBg}};color:{{darkBtnFg}}">dark</button><button class="k-btn" onClick="{{setLight}}" style="border-radius:0 2px 2px 0;border-left:none;background:{{lightBtnBg}};color:{{lightBtnFg}}">light</button></div></div>
+          <div style="display:flex;flex-direction:column;gap:12px;border-top:1px solid var(--hair);padding-top:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:var(--fs-md)">Colour</div><div class="t-caption">off = pure black &amp; white · on tints the room, never the map</div></div><div style="display:flex;gap:0"><button class="k-btn" onClick="{{colourOff}}" style="border-radius:2px 0 0 2px;background:{{coffBg}};color:{{coffFg}}">off</button><button class="k-btn" onClick="{{colourOn}}" style="border-radius:0;border-left:none;background:{{conBg}};color:{{conFg}}">on</button><button class="k-btn" onClick="{{colourAuto}}" style="border-radius:0 2px 2px 0;border-left:none;background:{{cautoBg}};color:{{cautoFg}}" title="follows the OS accent">auto</button></div></div>
+            <sc-if value="{{colourIsOn}}" hint-placeholder-val="{{false}}">
+              <div style="display:grid;grid-template-columns:70px 1fr 48px;gap:12px;align-items:center;font-family:var(--f-mono);font-size:var(--fs-sm)">
+                <span style="color:var(--mute)">hue</span><input type="range" min="0" max="360" value="{{hueVal}}" onChange="{{onHue}}" style="padding:0;background:none;border:none"><span>{{hueVal}}°</span>
+                <span style="color:var(--mute)">intensity</span><input type="range" min="0" max="100" value="{{intVal}}" onChange="{{onIntensity}}" style="padding:0;background:none;border:none"><span>{{intVal}}%</span>
+              </div>
+              <div style="display:flex;gap:8px"><sc-for list="{{huePresets}}" as="hp" hint-placeholder-count="5"><button class="k-btn" onClick="{{hp.set}}" style="font-size:var(--fs-xs)">{{hp.label}}</button></sc-for></div>
+              <div class="t-caption">grounds are tinted, never coloured — chroma stays under 0.012 even at full intensity; text contrast is repaired at runtime, and the UI says "adjusted for contrast" rather than silently ignoring you</div>
+            </sc-if>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--hair);padding-top:16px"><div><div style="font-size:var(--fs-md)">Contrast</div><div class="t-caption">high raises every floor to 7:1</div></div><select aria-label="contrast" value="{{contrastVal}}" onChange="{{onContrast}}" style="font-family:var(--f-mono)"><option value="standard">standard (AA)</option><option value="high">high (AAA)</option></select></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--hair);padding-top:16px"><div><div style="font-size:var(--fs-md)">Motion</div><div class="t-caption">reduced removes all animation; nothing becomes unreadable — also follows the OS setting automatically</div></div><select aria-label="motion" value="{{motionVal}}" onChange="{{onMotion}}" style="font-family:var(--f-mono)"><option value="system">system</option><option value="reduced">reduced</option></select></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--hair);padding-top:16px"><div><div style="font-size:var(--fs-md)">Hardware acceleration</div><div class="t-caption">GPU-composited animations · off saves a little more power, independent of Motion</div></div><button class="k-btn" onClick="{{toggleHwAccel}}">{{hwAccelLabel}}</button></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--hair);padding-top:16px"><div><div style="font-size:var(--fs-md)">Greyscale proof</div><div class="t-caption">design-review aid — renders the whole app desaturated</div></div><button class="k-btn" onClick="{{toggleGreyscale}}">{{gsLabel}}</button></div>
+          <div data-screen-label="Supporter extras" style="display:flex;flex-direction:column;gap:14px;border-top:1px solid var(--hair);padding-top:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><div style="font-size:var(--fs-md)">Supporter extras</div><div class="t-caption">cosmetic only — nothing here changes what the app does, and nobody loses anything without it</div></div>
+              <sc-if value="{{cosmUnlocked}}" hint-placeholder-val="{{false}}"><span class="k-chip" data-state="ok" style="flex:none;white-space:nowrap">unlocked</span></sc-if>
+              <sc-if value="{{cosmLockedShow}}" hint-placeholder-val="{{true}}"><button class="k-btn" onClick="{{cosmHowTo}}" style="flex:none;white-space:nowrap">Enter code</button></sc-if></div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span class="t-mono-label">app mark</span>
+              <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
+                <sc-for list="{{cosmMarks}}" as="m" hint-placeholder-count="4">
+                  <button class="k-btn" onClick="{{m.set}}" disabled="{{m.disabled}}" aria-pressed="{{m.on}}" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 4px;border:1px solid {{m.border}};background:{{m.bg}}">
+                    <svg width="28" height="28" viewBox="0 0 24 24" stroke-linecap="square" style="color:var(--bone)"><sc-if value="{{m.isKeep}}" hint-placeholder-val="{{true}}"><rect x="3.5" y="3.5" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="8" y="8" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.5"></rect><rect x="11" y="11" width="2" height="2" fill="currentColor"></rect></sc-if><sc-if value="{{m.isCells}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="1.3" fill="currentColor"></circle></sc-if><sc-if value="{{m.isNode}}" hint-placeholder-val="{{false}}"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="12" cy="12" r="3" fill="currentColor"></circle></sc-if><sc-if value="{{m.isSeal}}" hint-placeholder-val="{{false}}"><path d="M12 3 L19.8 7.5 V16.5 L12 21 L4.2 16.5 V7.5 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><path d="M12 8 L15.5 10 V14 L12 16 L8.5 14 V10 Z" fill="none" stroke="currentColor" stroke-width="1.5"></path><rect x="11.1" y="11.1" width="1.8" height="1.8" fill="currentColor"></rect></sc-if></svg>
+                    <span style="font-family:var(--f-mono);font-size:var(--fs-xs)">{{m.label}}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><div style="font-size:var(--fs-base)">Node glyph weight</div><div class="t-caption">the mark inside each project node — graph and CredPong</div></div>
+              <div style="display:flex;gap:4px">
+                <sc-for list="{{cosmGlyphs}}" as="g" hint-placeholder-count="3">
+                  <button class="k-btn" onClick="{{g.set}}" disabled="{{g.disabled}}" aria-pressed="{{g.on}}" style="display:flex;align-items:center;gap:6px;background:{{g.bg}};color:{{g.fg}}"><svg width="14" height="14" viewBox="0 0 16 16" style="flex:0 0 auto"><path d="M8 2.5 L13.5 12.5 H2.5 Z" fill="none" stroke="currentColor" stroke-width="{{g.sw}}"></path></svg>{{g.label}}</button>
+                </sc-for>
+              </div></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><div style="font-size:var(--fs-base)">Double halo</div><div class="t-caption">a second, slower ring around the selected node</div></div><button class="k-btn" onClick="{{toggleCosmHalo}}" disabled="{{cosmToggleDisabled}}">{{cosmHaloLabel}}</button></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><div style="font-size:var(--fs-base)">Supporter ring</div><div class="t-caption">a small ring beside the vault name in the header</div></div><button class="k-btn" onClick="{{toggleCosmRing}}" disabled="{{cosmToggleDisabled}}">{{cosmRingLabel}}</button></div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{setBackup}}" hint-placeholder-val="{{false}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">backup <span class="k-type" style="border-style:dashed;margin-left:8px" title="maintenance.backup is not built yet">mock · maintenance.* not built</span></span>
+        <div style="display:flex;flex-direction:column;gap:16px;max-width:520px">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Automatic backup</div><div class="t-caption">daily, and before every destructive operation — in both modes</div></div><span class="k-chip" data-state="ok">last backup: 2h ago</span></div>
+          <div><button class="k-btn" disabled="{{true}}" title="maintenance.backup is not built yet">Back up now <span class="k-type" style="border-style:dashed;margin-left:6px">mock</span></button></div>
+          <sc-if value="{{isPro}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--hair);padding-top:12px"><div style="font-size:var(--fs-md)">Retention</div><select aria-label="backup retention" disabled="{{true}}" title="maintenance.backup is not built yet" style="font-family:var(--f-mono)"><option>14 archives</option><option>30 archives</option></select></div>
+            <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:var(--fs-md)">Destination</div><span style="font-family:var(--f-mono);font-size:var(--fs-sm);color:var(--ash)">~/Backups/credmgr/</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:var(--fs-md)">Export with --age</div><div class="t-caption">encrypted archive to a recipient key</div></div><button class="k-btn" disabled="{{true}}" title="maintenance.backup is not built yet">Export… <span class="k-type" style="border-style:dashed;margin-left:6px">mock</span></button></div>
+          </sc-if>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--hair);padding-top:12px"><div><div style="font-size:var(--fs-md)">Integrity</div><div class="t-caption">{{integrityDesc}}</div></div><span class="k-chip" data-state="ok">ok · checked 04:00</span></div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{setMode}}" hint-placeholder-val="{{false}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">mode</span>
+        <div style="display:flex;flex-direction:column;gap:16px;max-width:520px">
+          <div style="display:flex;gap:0"><button class="k-btn" onClick="{{setLite}}" style="flex:1;border-radius:2px 0 0 2px;background:{{liteBtnBg}};color:{{liteBtnFg}}">Lite</button><button class="k-btn" onClick="{{setPro}}" style="flex:1;border-radius:0 2px 2px 0;border-left:none;background:{{proBtnBg}};color:{{proBtnFg}}">Pro</button></div>
+          <div class="t-body-sm">Lite hides levers, never safety. Automatic backup, integrity checking, grant revoke and sealed-node restore run in both modes. Switching is instant, non-destructive, and never hides data — a Lite vault is byte-identical to a Pro vault.</div>
+          <div class="t-caption">Pro adds: Nodes · Grants · Agents · Maintenance · Audit · Advanced · the Operations panel (⌘⇧O)</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{setGames}}" hint-placeholder-val="{{false}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">games</span>
+        <div style="display:flex;flex-direction:column;gap:12px;max-width:520px">
+          <div class="t-body-sm">CredPong — a light, local arcade game that lives in Graph mode. Fully local: it reads only node and entry counts to shape the early levels, never a name, a field or a value, and no game in this section ever will.</div>
+          <div class="t-caption">Local best: {{cpBestLabel}}</div>
+          <button class="k-btn" onClick="{{openGames}}" style="align-self:flex-start">Open CredPong</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{setNodes}}" hint-placeholder-val="{{false}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">nodes</span>
+        <div style="display:flex;flex-direction:column;gap:8px;max-width:560px">
+          <sc-for list="{{settingsNodeRows}}" as="n" hint-placeholder-count="6">
+            <div style="display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--faint);border-radius:var(--r-sm);font-family:var(--f-mono);font-size:var(--fs-sm)">
+              <span>{{n.label}}</span><span style="color:var(--mute)">{{n.meta}}</span>
+              <button class="k-btn" data-variant="danger" onClick="{{n.seal}}" style="margin-left:auto;padding:2px 8px;font-size:var(--fs-xs)">Remove…</button>
+            </div>
+          </sc-for>
+          <sc-if value="{{noProjects}}" hint-placeholder-val="{{false}}"><div class="t-caption">No projects yet — global is the only node. Add one to give credentials a home.</div></sc-if>
+          <div><button class="k-btn" onClick="{{openAddNodeDlg}}" style="margin-top:8px">+ New project</button></div>
+          <span class="t-mono-label" style="margin-top:16px">recently sealed · 7-day window</span>
+          <sc-for list="{{sealedRows}}" as="s" hint-placeholder-count="1">
+            <div class="is-sealed" style="display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:var(--r-sm);font-family:var(--f-mono);font-size:var(--fs-sm)">
+              <span>{{s.label}}</span><span style="color:var(--mute)">{{s.meta}}</span>
+              <button class="k-btn" onClick="{{s.restore}}" style="margin-left:auto;padding:2px 8px;font-size:var(--fs-xs)">Restore node</button>
+            </div>
+          </sc-for>
+          <sc-if value="{{sealedEmpty}}" hint-placeholder-val="{{true}}"><div class="t-caption">nothing sealed in the last 7 days</div></sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{setGrants}}" hint-placeholder-val="{{false}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">grants</span>
+        <div style="display:flex;flex-direction:column;gap:8px;max-width:640px">
+          <sc-for list="{{grantRows}}" as="g" hint-placeholder-count="1">
+            <div style="display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--faint);border-radius:var(--r-sm)">
+              <span style="font-family:var(--f-mono);font-size:var(--fs-sm)">{{g.fromTo}}</span>
+              <div style="min-width:0"><div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">{{g.scope}} · expires {{g.expires}} · last used {{g.lastUsed}}</div><div style="font-size:var(--fs-sm);color:var(--ash);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{g.reason}}</div></div>
+              <button class="k-btn" data-variant="danger" onClick="{{g.revoke}}" style="padding:2px 10px;font-size:var(--fs-xs)">Revoke</button>
+            </div>
+          </sc-for>
+          <sc-if value="{{grantsEmpty}}" hint-placeholder-val="{{false}}"><div class="k-empty">No grants. Isolation is the default; a grant is a decision.</div></sc-if>
+          <sc-if value="{{isPro}}" hint-placeholder-val="{{false}}"><div><button class="k-btn" onClick="{{openGrantDlg}}" style="margin-top:8px">+ New grant</button></div></sc-if>
+          <sc-if value="{{isLite}}" hint-placeholder-val="{{false}}"><div class="t-caption">creating grants is managed in Pro — revoking stays here, because revoking is safety</div></sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{setAgents}}" hint-placeholder-val="{{false}}">
+        <div data-screen-label="S15 LLM Integration">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">agents · llm integration <span class="k-type" style="border-style:dashed;margin-left:8px" title="llm.detect/connect/disconnect/prompt are not built yet — this Connect flow is a local UI simulation">mock · llm.* not built</span></span>
+        <div style="display:flex;flex-direction:column;gap:16px;max-width:640px">
+          <span class="t-mono-label">detected on this machine</span>
+          <div style="border:1px solid var(--faint);border-radius:var(--r-sm)">
+            <sc-for list="{{llmClients}}" as="c" hint-placeholder-count="7">
+              <div style="display:grid;grid-template-columns:18px minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--hair)">
+                <span style="color:{{c.dotColor}};font-size:var(--fs-sm)">{{c.dot}}</span>
+                <span style="font-size:var(--fs-base)">{{c.name}}</span>
+                <span style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px">{{c.path}}</span>
+                <sc-if value="{{c.btn}}" hint-placeholder-val="{{true}}"><button class="k-btn" onClick="{{c.connect}}" style="padding:2px 10px;font-size:var(--fs-xs)">{{c.btnLabel}}</button></sc-if>
+              </div>
+            </sc-for>
+            <div style="display:flex;gap:8px;padding:10px 12px"><button class="k-btn" data-variant="primary" onClick="{{connectAll}}">Connect all</button><button class="k-btn" onClick="{{copyPrompt}}">{{copyPromptLabel}}</button></div>
+          </div>
+          <div class="t-caption">Connect backs up the client's config first, merges one <span style="font-family:var(--f-mono)">mcpServers.credmgr</span> entry (never touching another key), writes atomically, verifies by re-reading, records it in the audit log, and offers one-click Undo. It also drops <span style="font-family:var(--f-mono)">CREDMGR.md</span> into each node's work folder — the fallback that works with zero MCP support.</div>
+          <div class="t-caption">ChatGPT cannot be wired automatically — paste the prompt into your Project instructions. Delivery is always the clipboard, a config file, or a file on disk: this app has no network stack to send anything with.</div>
+          <span class="t-mono-label" style="margin-top:8px">security level — stated in consequences</span>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+            <sc-for list="{{levelCards}}" as="lc" hint-placeholder-count="3">
+              <button onClick="{{lc.set}}" style="text-align:left;padding:12px;border:1px solid {{lc.border}};background:{{lc.bg}};border-radius:var(--r-sm);cursor:pointer;color:var(--bone)">
+                <div style="font-family:var(--f-mono);font-size:var(--fs-sm);font-weight:var(--fw-label)">{{lc.name}}</div>
+                <div class="t-caption" style="margin-top:6px;color:{{lc.descColor}}">{{lc.desc}}</div>
+              </button>
+            </sc-for>
+          </div>
+          <div class="t-caption">no level ever changes: cross-node isolation · orphan sealing · grants stay human-only</div>
+          <span class="t-mono-label" style="margin-top:8px">the vault protocol prompt</span>
+          <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--ash);border:1px solid var(--faint);border-radius:var(--r-sm);padding:12px;max-height:180px;overflow-y:auto;white-space:pre-wrap">{{vaultPrompt}}</div>
+        </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{setMaint}}" hint-placeholder-val="{{false}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">maintenance <span class="k-type" style="border-style:dashed;margin-left:8px" title="maintenance.verify / doctor / backup are not built yet">mock · maintenance.* not built</span></span>
+        <div class="t-body-sm" style="max-width:520px">Verify, Doctor, Merge entries and repair live in the Operations panel (⌘⇧O) — a full inventory with one-line descriptions, not a dropdown.</div>
+        <button class="k-btn" onClick="{{openOps}}" style="margin-top:16px">Open Operations panel</button>
+      </sc-if>
+
+      <sc-if value="{{setAudit}}" hint-placeholder-val="{{false}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">audit <span class="k-type" style="border-style:dashed;margin-left:8px" title="audit.get is presence-blocked — rows below are static demo data">mock · audit.get not built</span></span>
+        <div style="display:flex;flex-direction:column;max-width:640px">
+          <sc-for list="{{auditRows}}" as="a" hint-placeholder-count="6">
+            <div style="display:grid;grid-template-columns:130px 70px minmax(0,1fr) auto;gap:12px;padding:6px 0;border-bottom:1px solid var(--hair);font-family:var(--f-mono);font-size:var(--fs-xs)">
+              <span style="color:var(--mute)">{{a.time}}</span><span style="color:{{a.opColor}}">{{a.op}}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{a.what}}</span><span style="color:var(--mute)">{{a.who}}</span>
+            </div>
+          </sc-for>
+          <div class="t-caption" style="margin-top:12px">redacted for agent origin · full records need Admin + presence (audit.get)</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{setAdvanced}}" hint-placeholder-val="{{false}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">advanced</span>
+        <div style="display:flex;flex-direction:column;gap:14px;max-width:520px">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Machine lock</div><div class="t-caption">bind the vault to this hardware</div></div><span class="k-chip" data-state="ok">on</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Rotate root key</div><div class="t-caption">re-issues the recovery code</div></div><span class="k-type" style="border-style:dashed;margin-right:8px" title="maintenance.rotate_root is not built yet">mock</span><button class="k-btn" disabled="{{true}}">Rotate…</button></div>
+          <div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:var(--fs-md)">Socket</div><div class="t-caption">newline-delimited JSON over a Unix domain socket — no HTTP, ever</div></div><span style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">~/…/credmgrd.sock</span></div>
+        </div>
+      </sc-if>
+
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ovOps}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:76;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S14 Operations" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-ops-title" style="width:min(680px,94vw);height:min(640px,90vh);background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:16px 24px;border-bottom:1px solid var(--hair);display:flex;justify-content:space-between;align-items:center"><span id="dlg-ops-title" class="t-eyebrow">operations · pro</span><span class="t-kbd">⌘⇧O</span></div>
+    <div style="flex:1;overflow-y:auto">
+      <sc-for list="{{opsRows}}" as="o" hint-placeholder-count="10">
+        <button disabled="{{true}}" title="{{o.opTitle}}" style="display:grid;grid-template-columns:170px minmax(0,1fr) auto;gap:16px;align-items:center;width:100%;text-align:left;padding:14px 24px;border:0;border-bottom:1px solid var(--hair);background:none;color:var(--bone);cursor:not-allowed" style-hover="background:var(--steel-2)">
+          <span style="font-family:var(--f-mono);font-size:var(--fs-base);font-weight:var(--fw-label)">{{o.name}}</span>
+          <span style="font-size:var(--fs-base);color:var(--ash)">{{o.desc}}</span>
+          <span class="k-type" style="border-style:dashed" title="{{o.opTitle}}">mock</span>
+        </button>
+      </sc-for>
+    </div>
+    <div style="padding:12px 24px;border-top:1px solid var(--hair);display:flex;justify-content:flex-end"><button class="k-btn" onClick="{{closeOverlay}}">Close</button></div>
+  </div>
+</div>
+</sc-if>
+</sc-if>
+</div>

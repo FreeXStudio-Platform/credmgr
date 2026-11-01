@@ -1,0 +1,161 @@
+# Security checks. Per the project's CI cost-control policy, SECURITY checks are
+# exempt from run-restraint — they may run on push and pull_request freely.
+# Build/test/deploy workflows are NOT, and are deliberately absent here.
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'      # weekly floor, not a ceiling
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: no credentials in the tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: '20' }
+      # The same guards that run as local pre-commit hooks. Both fail closed.
+      - run: node v1/scripts/guard-no-secrets.mjs --all
+      - run: node v2/scripts/guard-no-personal-data.mjs --all
+
+  audit:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults: { run: { working-directory: v1 } }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: '20', cache: npm, cache-dependency-path: v1/package-lock.json }
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+
+  tests:
+    name: test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults: { run: { working-directory: v1 } }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: '20', cache: npm, cache-dependency-path: v1/package-lock.json }
+      - name: install age
+        run: sudo apt-get update -qq && sudo apt-get install -y age
+      - run: npm ci
+      - run: node tests/run-all.js
+
+  # ── v2 (Rust + Tauri) — see v2/docs/16_CROSS_PLATFORM.md §7, 12_BUILD_PLAN.md Phase 0 ──
+  # v2/docs/12_BUILD_PLAN.md names these "v2/.github/workflows/{security,build}.yml", but
+  # GitHub Actions only reads workflows from the repo-root .github/workflows/ — this is one
+  # shared repo, not a v2-only one — so the v2 jobs live here, scoped by working-directory.
+  v2-deny:
+    name: v2 — cargo deny (licenses, bans, advisories, sources)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults: { run: { working-directory: v2 } }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@d2e383c7f7a2470b3f766fe5611d0bc4ffe2fd71 # 1.78.0
+      - uses: taiki-e/install-action@718993db25d12d67fe704d6aa97369e03d3803c8 # cargo-deny
+      - run: cargo deny check
+
+  v2-audit:
+    name: v2 — cargo audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults: { run: { working-directory: v2 } }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@d2e383c7f7a2470b3f766fe5611d0bc4ffe2fd71 # 1.78.0
+      - uses: taiki-e/install-action@893917a6ab6e12657df08b058b55a4809de347a3 # cargo-audit
+      - run: cargo audit
+
+  # Phase 3 built the isolation suite (docs/13_TEST_PLAN.md §3, I-1..I-25) — it is the
+  # security gate for this project, so it runs here unrestricted per the security exemption,
+  # on every push/PR, not just when someone remembers to run it locally.
+  v2-isolation:
+    name: v2 — isolation suite (I-1..I-25)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults: { run: { working-directory: v2 } }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@d2e383c7f7a2470b3f766fe5611d0bc4ffe2fd71 # 1.78.0
+      - run: cargo test -p credmgr-brokerd --test isolation --locked
+
+  # The endpoint matrix (v2/scripts/endpoint-matrix.py): the REAL credmgrd against a throwaway vault
+  # in a private temp directory, every broker op called over the real Unix socket and asserted
+  # against its documented success shape or documented refusal (R8/R0 denials, presence_required,
+  # session_expired, rate_limited, ...). The op list is read from ops.rs (tools/corpus_check.py), so
+  # a new op fails this job until it has a row. The cargo suite builds its own keyed state and the
+  # e2e journey drives the CLI; this is the only gate that exercises each op on the wire.
+  # It asserts the refusals the access graph exists to make, so it rides the security exemption
+  # (PR / weekly floor / dispatch) - but NOT push: no GitHub-hosted job in this repo triggers on
+  # push (push-time is covered by the local pre-push hook, readiness by the PR gate), and a merge
+  # to main was already gated at its PR. No draft guard: this workflow's
+  # `pull_request` has no ready_for_review type, so a guard here would never fire on promotion.
+  v2-endpoint-matrix:
+    name: v2 — endpoint matrix (every broker op, real socket)
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults: { run: { working-directory: v2 } }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@d2e383c7f7a2470b3f766fe5611d0bc4ffe2fd71 # 1.78.0
+      - run: cargo build -p credmgr-brokerd --locked
+      - run: python3 scripts/endpoint-matrix.py
+        timeout-minutes: 10
+
+  # The desktop bridge (apps/desktop/src-tauri) is its own Cargo workspace (ADR-035), so
+  # `cargo test --workspace` never reaches it. Its suite holds the session-token custody
+  # rules (the token never reaches the webview) and the drift guards that pin its
+  # hand-copied broker vocabulary to ops.rs/protocol.rs — security gates by content. It ran
+  # in no job at all until 2026-09-24, which is how its error-vocabulary guard sat red for
+  # three weeks after ADR-061 without anyone seeing it.
+  v2-desktop-bridge:
+    name: v2 — desktop bridge (token custody + drift guards)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults: { run: { working-directory: v2/apps/desktop/src-tauri } }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # rust-toolchain.toml pins this crate to current stable (ADR-035), not the 1.78 MSRV.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with: { toolchain: '1.94.1' }
+      - name: install Linux webview deps (Tauri links webkit2gtk even for tests)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
+      # The real-broker bridge tests drive a built credmgrd (tests/real_broker.rs); they refuse to skip silently.
+      - name: build the broker the bridge tests drive
+        working-directory: v2
+        run: cargo +1.94.1 build -p credmgr-brokerd --locked
+      - run: cargo test --locked
+
+  semgrep:
+    name: semgrep — SAST
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Public registry rulesets only — no SEMGREP_APP_TOKEN, no Semgrep Cloud account
+      # required. `security-audit` covers general SAST; `secrets` overlaps
+      # guard-no-secrets.mjs deliberately (defence in depth, different detection method).
+      - run: semgrep scan --config p/security-audit --config p/secrets --error
+          --exclude 'v1/tests/**' --exclude '**/target/**' --exclude 'v2/design/**'

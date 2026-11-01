@@ -1,0 +1,20 @@
+# gitleaks configuration for this repository.
+#
+# It extends the default rule set and adds exactly one allowance: the bare OpenSSH key header that the
+# field-parser tests use as a worked example. That header declares cipher "none", KDF "none" and one
+# key, and carries no key material.
+#
+# The allowance is the secret itself, not a file: the base64 header must be followed DIRECTLY by the END
+# marker. A real key has its key material between the two, so it does not match - in any file, including
+# the two that carry the example. (Do not add a `paths` list here: combined with `condition = "AND"` that
+# collapses to "everything in these files" in gitleaks 8.30 and would hide a real key placed in them.)
+title = "CredMgr gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "synthetic OpenSSH header used as a parser test fixture (no key material)"
+regexes = [
+  '''b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAAB(?:\\n\\)?\s*-----END OPENSSH PRIVATE KEY-----''',
+]

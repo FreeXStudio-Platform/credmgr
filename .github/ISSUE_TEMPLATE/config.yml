@@ -1,0 +1,15 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Security vulnerability — DO NOT open an issue
+    url: https://github.com/FreeXStudio-Platform/credmgr/security/advisories/new
+    about: >
+      Report privately via a Security Advisory. Never post a vulnerability in a
+      public issue, and never include a real credential in a report. SECURITY.md
+      says which policy applies to V1 and to V2.
+  - name: Licensing, permissions, commercial arrangements
+    url: mailto:Admin@freexstudio.com
+    about: >
+      CredMgr is source-available, not open source: you may run the current stable release and
+      read, audit and report on the code, but not fork, copy or redistribute it. For a
+      permission the licence does not give, or a commercial arrangement, write to
+      Admin@freexstudio.com. Future versions may be paid.

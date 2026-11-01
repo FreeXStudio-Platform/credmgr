@@ -1,0 +1,19 @@
+{
+  "id": "crate-test-coverage-heatmap",
+  "visual": "heatmap",
+  "family": "matrix",
+  "summary": "Crate × test-tier split — how much of each crate's suite talks to a real broker/socket vs. runs isolated",
+  "canonical_reader_question": "Which crates are proven mostly by real integration tests, and which lean on unit tests alone?",
+  "required_fields": [
+    "data.rows",
+    "data.cols",
+    "data.matrix"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {
+    "scale": "0-100 percent"
+  },
+  "notes": "visualMap 0-100; missing cells must be null (rendered as -), never 0",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md, rewritten for CredMgr's own crate/test-tier data shape."
+}

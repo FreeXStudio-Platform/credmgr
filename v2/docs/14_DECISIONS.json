@@ -1,0 +1,2116 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 0,
+      "figures": 0,
+      "sections": 85,
+      "tables": 5
+    },
+    "figures": [],
+    "references": {
+      "adrs": [
+        "ADR-057",
+        "ADR-058",
+        "ADR-019",
+        "ADR-052",
+        "ADR-053",
+        "ADR-054",
+        "ADR-055",
+        "ADR-009",
+        "ADR-029",
+        "ADR-078",
+        "ADR-002",
+        "ADR-033",
+        "ADR-035",
+        "ADR-039",
+        "ADR-041",
+        "ADR-079",
+        "ADR-030",
+        "ADR-042",
+        "ADR-046",
+        "ADR-048",
+        "ADR-047",
+        "ADR-049",
+        "ADR-050",
+        "ADR-001",
+        "ADR-028",
+        "ADR-045",
+        "ADR-051",
+        "ADR-056",
+        "ADR-043",
+        "ADR-061",
+        "ADR-075",
+        "ADR-063",
+        "ADR-064",
+        "ADR-062",
+        "ADR-065",
+        "ADR-067",
+        "ADR-044",
+        "ADR-013",
+        "ADR-031",
+        "ADR-074",
+        "ADR-022",
+        "ADR-077",
+        "ADR-073",
+        "ADR-011",
+        "ADR-072",
+        "ADR-012",
+        "ADR-069",
+        "ADR-076",
+        "ADR-080"
+      ],
+      "code": [
+        "crates/core/src/envelope.rs",
+        "crates/core/src/parser.rs",
+        "crates/store/src/generation.rs",
+        "crates/store/tests/rebuild_registry.rs",
+        "crates/keystore/src/software.rs",
+        "crates/brokerd/tests/phase3_exit_gate.rs",
+        "crates/brokerd/src/rate_limit.rs",
+        "crates/brokerd/src/auth_backoff.rs",
+        "scripts/emergency-decrypt.mjs",
+        "crates/core/src/recovery.rs",
+        "crates/core/src/keys.rs",
+        "crates/cli/tests/emergency_decrypt.rs",
+        "crates/cli/tests/mcp_integration.rs",
+        "crates/brokerd/tests/phase5_gate.rs",
+        "crates/brokerd/tests/phase5_totp_items.rs",
+        "crates/mcp/tests/i13_tool_registry.rs",
+        "crates/brokerd/src/scope.rs",
+        "crates/brokerd/tests/graph_snapshot.rs",
+        "crates/store/src/entry_archive.rs",
+        "crates/brokerd/tests/entry_lifecycle.rs",
+        "crates/brokerd/src/server.rs",
+        "crates/store/src/audit.rs",
+        "crates/brokerd/tests/audit_ops.rs",
+        "crates/brokerd/tests/grant_ops.rs",
+        "crates/cli/tests/broker_integration.rs",
+        "crates/brokerd/src/ops.rs",
+        "crates/brokerd/tests/node_ops.rs",
+        "crates/brokerd/tests/isolation.rs",
+        "docs/10_API_AND_MCP.md",
+        "crates/mcp/src/tools.rs",
+        "crates/store/src/verify.rs",
+        "crates/keystore/src/backup_passphrase.rs",
+        "crates/brokerd/tests/maintenance.rs",
+        "crates/store/src/rotation_history.rs",
+        "crates/brokerd/tests/entry_undo.rs",
+        "crates/cli/src/main.rs",
+        "crates/brokerd/tests/session_login.rs",
+        "crates/brokerd/src/protocol.rs",
+        "crates/store/src/paths.rs",
+        "tools/corpus_check.py",
+        "tools/ENGINE_ROUTING_POLICY.md",
+        "tools/visual-engine/renders/golden/SIM-03-login-funnel.job.js",
+        "tools/docgen/tests/test_generator_build.py",
+        "apps/desktop/src/lib/bridge.ts",
+        "crates/brokerd/tests/durable_vault.rs",
+        "scripts/dc/compile.mjs",
+        "scripts/dc/verify-build.mjs",
+        "scripts/verify-csp.mjs",
+        "scripts/dc/import.mjs",
+        "scripts/verify-parity.mjs",
+        "scripts/verify-design-audit.mjs",
+        "docs/RELEASE_VERIFICATION.md",
+        "docs/19_FRONTEND_DELIVERY_SCOPE.md",
+        "apps/desktop/README.md",
+        "crates/brokerd/src/state/rotate/vault_lock.rs",
+        "crates/brokerd/tests/rotate_root.rs",
+        "crates/store/src/rotation.rs",
+        "apps/desktop/src-tauri/tests/bridge_ops.rs",
+        "crates/core/src/totp.rs",
+        "crates/brokerd/tests/audit_actor.rs",
+        "crates/brokerd/tests/adr077_ops.rs",
+        "crates/brokerd/src/token.rs",
+        "crates/cli/tests/cli_parity.rs",
+        "crates/core/tests/field_doc.rs",
+        "crates/store/tests/alpha6_golden.rs",
+        "crates/brokerd/tests/field_model.rs",
+        "crates/cli/tests/fields_cli.rs",
+        "crates/core/src/cold.rs",
+        "crates/brokerd/tests/seal_durable.rs"
+      ],
+      "documents": [
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "8"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "7"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "2"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "3"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "7"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "3.1"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "6"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "3"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md"
+        },
+        {
+          "doc": "03_DATA_MODEL.md"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "1"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "5"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "4"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "7"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "2"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "1"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "2"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "3.2"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "1"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1.6"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "3"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1.2"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "2"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1.3"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "6"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "6"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "10"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "3.1"
+        },
+        {
+          "doc": "01_CONCEPT.md",
+          "section": "7"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "1"
+        },
+        {
+          "doc": "00_README_START_HERE.md"
+        },
+        {
+          "doc": "01_CONCEPT.md"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "11_MIGRATION.md"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1.4"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "12"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "2"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "3"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "5"
+        },
+        {
+          "doc": "17_AIRLOCK_AND_LLM.md"
+        },
+        {
+          "doc": "10_API_AND_MCP.md"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "2.3"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+          "section": "8"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md",
+          "section": "2.6"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "8"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "4"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "10.1"
+        },
+        {
+          "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "4"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "4"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "5"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "3"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "2"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-001-a-broker-process-is-the-single-enforcement-point",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-001 \u00b7 A broker process is the single enforcement point"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-002-per-node-asymmetric-keys",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-002 \u00b7 Per-node asymmetric keys"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-003-grants-are-broker-enforced-not-cryptographic",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-003 \u00b7 Grants are broker-enforced, not cryptographic"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-004-depth-is-capped-at-2",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-004 \u00b7 Depth is capped at 2"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-005-upward-read-only-parents-do-not-read-children",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-005 \u00b7 Upward read only; parents do not read children"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-006-depth-2-siblings-share-depth-1-projects-never-do",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-006 \u00b7 Depth-2 siblings share; depth-1 projects never do"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-007-removal-seals-never-deletes",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-007 \u00b7 Removal seals, never deletes"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-008-node-js-22-zero-runtime-dependencies-in-the-core-superseded-by-16crossplatform-md-2026-08-05",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-009"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-008 \u00b7 ~~Node.js 22, zero runtime dependencies in the core~~ \u00b7 **SUPERSEDED by `16_CROSS_PLATFORM.md` (2026-08-05)**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-009-a-rust-broker-is-deferred-resolved-adopted-2026-08-05",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "8"
+            }
+          ]
+        },
+        "title": "ADR-009 \u00b7 ~~A Rust broker is deferred~~ \u00b7 **RESOLVED \u2014 ADOPTED (2026-08-05)**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-010-the-registry-is-plaintext",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-029"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-010 \u00b7 The registry is plaintext"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-011-predefined-field-schemas-are-deleted-outright",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-011 \u00b7 Predefined field schemas are deleted outright"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-012-type-inference-suggests-it-never-decides",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-012 \u00b7 Type inference suggests; it never decides"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-013-separates-fields-a-preview-toggle-splits-entries",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-013 \u00b7 `///` separates fields; a preview toggle splits entries"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-014-label-colon-space-value",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-014 \u00b7 \"Label, colon, **space**, value\""
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-015-operations-leave-the-search-bar",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-015 \u00b7 Operations leave the search bar"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-016-the-inspector-shows-one-node-s-own-entries-full-stop",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-016 \u00b7 The inspector shows one node's own entries, full stop"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-017-two-2fa-concepts-two-names-never-one-word",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-017 \u00b7 Two 2FA concepts, two names, never one word"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-018-an-agent-can-get-a-totp-code-never-a-seed",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-018 \u00b7 An agent can get a TOTP code, never a seed"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-019-no-http-surface-at-all",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-019 \u00b7 No HTTP surface at all"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-020-one-global-mcp-registration-cwd-scoped",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-020 \u00b7 One global MCP registration, cwd-scoped"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-021-denials-are-explicit-and-carry-a-remedy",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-021 \u00b7 Denials are explicit and carry a remedy"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-022-svelte-5-no-tailwind-vendored-graph-engine",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-022 \u00b7 Svelte 5, no Tailwind, vendored graph engine"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "added-by-pass-2",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "Added by Pass 2"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-023-write-is-split-into-create-and-update",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-002"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-023 \u00b7 `write` is split into `create` and `update`"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-024-freshness-is-enforced-outside-the-vault-directory",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-024 \u00b7 Freshness is enforced outside the vault directory"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-025-the-vault-has-no-listening-socket-at-all",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-025 \u00b7 The vault has no listening socket at all"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-026-approval-on-demand-instead-of-an-agent-unlock-window",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-026 \u00b7 Approval on demand instead of an agent unlock window"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-027-restore-is-a-move-from-a-retained-archive-not-an-unseal",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-027 \u00b7 Restore is a move from a retained archive, not an unseal"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "operator-questions-decided-2026-08-05",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "Operator questions \u2014 DECIDED 2026-08-05"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-028-migrate-flat-void-2026-08-05-there-is-no-migration-11migration-md",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-028 \u00b7 ~~Migrate flat~~ \u00b7 **VOID 2026-08-05 \u2014 there is no migration** (`11_MIGRATION.md`)"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-029-entry-names-stay-in-the-plaintext-manifest-with-a-per-node-opt-out-was-q-2",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-033"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-029 \u00b7 Entry names stay in the plaintext manifest \u2014 with a per-node opt-out *(was Q-2)*"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-030-auto-lock-15-minutes-for-the-vault-5-for-critical-nodes-was-q-3",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-030 \u00b7 Auto-lock: 15 minutes for the vault, 5 for critical nodes *(was Q-3)*"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-031-lite-is-the-product-default-pro-is-the-operator-s-install-was-q-4",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-031 \u00b7 Lite is the product default; Pro is the operator's install *(was Q-4)*"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-032-keep-long-credential-names-show-short-ones-was-q-5",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-032 \u00b7 Keep long credential names; show short ones *(was Q-5)*"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-033-wallet-class-nodes-are-hardened-automatically-by-proposal-was-q-6",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-033 \u00b7 Wallet-class nodes are hardened automatically, by proposal *(was Q-6)*"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-034-v1-retired-on-evidence-void-2026-08-05-v1-is-not-retired-it-ships-and-is-supported-alongside-v2",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-034 \u00b7 ~~V1 retired on evidence~~ \u00b7 **VOID 2026-08-05 \u2014 V1 is not retired.** It ships and is supported alongside V2."
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "added-during-phase-0-build",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "Added during Phase 0 build"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-035-apps-desktop-src-tauri-is-its-own-cargo-workspace-on-current-stable-not-the-1-78-msrv-pin",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "7"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md"
+            }
+          ]
+        },
+        "title": "ADR-035 \u00b7 `apps/desktop/src-tauri` is its own Cargo workspace, on current stable, not the 1.78 MSRV pin"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-036-crates-core-s-crypto-and-proptest-dependencies-pinned-below-latest-for-the-same-msrv-reason-as-adr-035",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-035"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "ADR-036 \u00b7 `crates/core`'s crypto and proptest dependencies pinned below latest, for the same MSRV reason as ADR-035"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-037-envelope-aad-binds-the-caller-s-asserted-context-not-the-envelope-s-own-stored-header-field",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/core/src/envelope.rs"
+          ],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "3"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "7"
+            }
+          ]
+        },
+        "title": "ADR-037 \u00b7 Envelope AAD binds the caller's asserted context, not the envelope's own stored header field"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-038-the-bulk-parser-s-value-never-strips-whitespace-beyond-the-mandatory-single-separator-space",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/core/src/parser.rs"
+          ],
+          "documents": [
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "3.1"
+            }
+          ]
+        },
+        "title": "ADR-038 \u00b7 The bulk parser's value never strips whitespace beyond the mandatory single separator space"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-039-phase-2-s-vaultgeneration-counter-is-a-store-owned-trait-not-a-phase-5-borrow",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-035"
+          ],
+          "code": [
+            "crates/store/src/generation.rs",
+            "crates/store/tests/rebuild_registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "6"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "3"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md"
+            }
+          ]
+        },
+        "title": "ADR-039 \u00b7 Phase 2's `vaultGeneration` counter is a store-owned trait, not a Phase-5 borrow"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-040-on-disk-timestamps-are-unix-epoch-seconds-i64-not-iso-8601-strings",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-035"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md"
+            }
+          ]
+        },
+        "title": "ADR-040 \u00b7 On-disk timestamps are Unix epoch seconds (`i64`), not ISO-8601 strings"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-041-phase-3-builds-platformkeystore-the-software-tier-only-hardware-tiers-stay-phase-5",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-039"
+          ],
+          "code": [
+            "crates/keystore/src/software.rs"
+          ],
+          "documents": [
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "3"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "ADR-041 \u00b7 Phase 3 builds `PlatformKeystore` + the `Software` tier only; hardware tiers stay Phase 5"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-042-approval-on-demand-s-decision-gate-is-capability-admin-on-phase-3-the",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-041",
+            "ADR-039",
+            "ADR-079"
+          ],
+          "code": [
+            "crates/brokerd/tests/phase3_exit_gate.rs"
+          ],
+          "documents": [
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "5"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "4"
+            }
+          ]
+        },
+        "title": "ADR-042 \u00b7 Approval-on-demand's decision gate is `Capability::Admin` on Phase 3; the"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-043-auto-lock-idle-timeout-is-real-phase-3-logic-sleep-screen-lock-session-end-are-a",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-030",
+            "ADR-042",
+            "ADR-039"
+          ],
+          "code": [
+            "crates/brokerd/tests/phase3_exit_gate.rs"
+          ],
+          "documents": [
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md"
+            }
+          ]
+        },
+        "title": "ADR-043 \u00b7 Auto-lock: idle-timeout is real Phase 3 logic; sleep/screen-lock/session-end are a"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-044-auth-failure-backoff-is-a-second-uid-keyed-limiter-distinct-from-the",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/brokerd/src/rate_limit.rs",
+            "crates/brokerd/src/auth_backoff.rs",
+            "crates/brokerd/tests/phase3_exit_gate.rs"
+          ],
+          "documents": [
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "7"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "5"
+            }
+          ]
+        },
+        "title": "ADR-044 \u00b7 Auth-failure backoff is a second, uid-keyed limiter \u2014 distinct from the"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-045-the-recovery-code-root-wrap-is-pure-crates-core-compute-built-in-phase-4",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-039"
+          ],
+          "code": [
+            "scripts/emergency-decrypt.mjs",
+            "crates/keystore/src/software.rs",
+            "crates/core/src/recovery.rs",
+            "crates/core/src/keys.rs",
+            "crates/cli/tests/emergency_decrypt.rs"
+          ],
+          "documents": [
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "ADR-045 \u00b7 The recovery-code root wrap is pure `crates/core` compute, built in Phase 4,"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-046-phase-5-builds-gate-2fa-and-the-mcp-registry-for-real-the-three-hardware",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-041",
+            "ADR-039"
+          ],
+          "code": [
+            "crates/cli/tests/mcp_integration.rs",
+            "crates/brokerd/tests/phase5_gate.rs",
+            "crates/brokerd/tests/phase5_totp_items.rs",
+            "crates/mcp/tests/i13_tool_registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "7"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "ADR-046 \u00b7 Phase 5 builds gate 2FA and the MCP registry for real; the three hardware"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-047-graph-snapshot-is-built-and-correct-for-today-s-access-model-the-native-app",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-046",
+            "ADR-039"
+          ],
+          "code": [
+            "crates/brokerd/src/scope.rs",
+            "crates/brokerd/tests/graph_snapshot.rs"
+          ],
+          "documents": [
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "2"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "3.2"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md"
+            }
+          ]
+        },
+        "title": "ADR-047 \u00b7 `graph.snapshot` is built and correct for today's access model; \"the native app"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-048-entry-rotate-entry-remove-entry-restore-built-for-real-the-changelog-id",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-046"
+          ],
+          "code": [
+            "crates/store/src/entry_archive.rs",
+            "crates/brokerd/tests/entry_lifecycle.rs"
+          ],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.6"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "3"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.2"
+            }
+          ]
+        },
+        "title": "ADR-048 \u00b7 `entry.rotate`/`entry.remove`/`entry.restore` built for real; the changelog-id-"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-049-audit-tail-audit-get-built-for-real-plus-the-write-side-gap-they-exposed",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-048",
+            "ADR-047",
+            "ADR-046"
+          ],
+          "code": [
+            "crates/brokerd/src/server.rs",
+            "crates/store/src/audit.rs",
+            "crates/brokerd/tests/audit_ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "2"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.6"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            }
+          ]
+        },
+        "title": "ADR-049 \u00b7 `audit.tail`/`audit.get` built for real, plus the write-side gap they exposed:"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-050-grant-list-grant-create-grant-revoke-built-gated-on-capability-admin",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-049",
+            "ADR-047"
+          ],
+          "code": [
+            "crates/brokerd/tests/grant_ops.rs",
+            "crates/cli/tests/broker_integration.rs"
+          ],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.3"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "6"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "2"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "6"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "10"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "3.1"
+            }
+          ]
+        },
+        "title": "ADR-050 \u00b7 `grant.list`/`grant.create`/`grant.revoke` built; gated on `Capability::Admin`"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-051-node-create-built-for-real-gated-on-capability-admin-resolved-against-the",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-046",
+            "ADR-047",
+            "ADR-050",
+            "ADR-001"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            },
+            {
+              "doc": "01_CONCEPT.md",
+              "section": "7"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "2"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "6"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "1"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "3.1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md"
+            }
+          ]
+        },
+        "title": "ADR-051 \u00b7 `node.create` built for real, gated on `Capability::Admin` resolved against the"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-052-artifact-hardened-stamps-reconciled-to-commits-that-actually-resolve-in-this",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-028",
+            "ADR-045",
+            "ADR-035"
+          ],
+          "code": [
+            "crates/brokerd/tests/node_ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "00_README_START_HERE.md"
+            },
+            {
+              "doc": "01_CONCEPT.md"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md"
+            },
+            {
+              "doc": "11_MIGRATION.md"
+            }
+          ]
+        },
+        "title": "ADR-052 \u00b7 `artifact-hardened` stamps reconciled to commits that actually resolve in this"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-053-node-restore-authorises-against-the-sealed-node-not-merely-against-the-token",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-051"
+          ],
+          "code": [
+            "crates/brokerd/tests/isolation.rs"
+          ],
+          "documents": [
+            {
+              "doc": "00_README_START_HERE.md"
+            }
+          ]
+        },
+        "title": "ADR-053 \u00b7 `node.restore` authorises against the sealed node, not merely against \"the token"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "maintenance-verify",
+            "level": 3,
+            "title": "`maintenance.verify`"
+          },
+          {
+            "id": "maintenance-doctor",
+            "level": 3,
+            "title": "`maintenance.doctor`"
+          },
+          {
+            "id": "maintenance-backup",
+            "level": 3,
+            "title": "`maintenance.backup`"
+          }
+        ],
+        "id": "adr-054-maintenance-verify-doctor-backup-the-exact-three-ops-10-1-already-named",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-039",
+            "ADR-048",
+            "ADR-047",
+            "ADR-049",
+            "ADR-051",
+            "ADR-056"
+          ],
+          "code": [
+            "docs/10_API_AND_MCP.md",
+            "crates/mcp/src/tools.rs",
+            "crates/store/src/verify.rs",
+            "crates/keystore/src/backup_passphrase.rs",
+            "crates/brokerd/tests/maintenance.rs",
+            "crates/mcp/tests/i13_tool_registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.4"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "12"
+            }
+          ]
+        },
+        "title": "ADR-054 \u00b7 `maintenance.verify|doctor|backup` \u2014 the exact three ops `10 \u00a71` already named,"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-055-entry-undo-a-real-forward-only-undo-for-both-remove-and-rotate",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-048",
+            "ADR-049"
+          ],
+          "code": [
+            "crates/mcp/src/tools.rs",
+            "crates/store/src/rotation_history.rs",
+            "crates/brokerd/tests/entry_undo.rs"
+          ],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "3.1"
+            }
+          ]
+        },
+        "title": "ADR-055 \u00b7 `entry.undo` \u2014 a real, forward-only undo for both `remove` and `rotate`,"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-056-the-session-login-mechanism-adr-047-s-named-gap-a-real-vault-unlock",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-051",
+            "ADR-047",
+            "ADR-049",
+            "ADR-046",
+            "ADR-041",
+            "ADR-019",
+            "ADR-043"
+          ],
+          "code": [
+            "crates/brokerd/src/scope.rs",
+            "crates/cli/tests/broker_integration.rs",
+            "crates/cli/src/main.rs",
+            "crates/brokerd/tests/session_login.rs"
+          ],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "2"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "3"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "5"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "3"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "7"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md"
+            }
+          ]
+        },
+        "title": "ADR-056 \u00b7 The session/login mechanism (ADR-047's named gap): a real `vault.unlock`/"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-057-the-tauri-broker-bridge-holds-the-session-token-in-rust-the-webview-never-sees-it",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-056",
+            "ADR-043",
+            "ADR-035",
+            "ADR-061",
+            "ADR-041",
+            "ADR-075"
+          ],
+          "code": [
+            "crates/brokerd/src/protocol.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/store/src/paths.rs",
+            "crates/cli/src/main.rs"
+          ],
+          "documents": [
+            {
+              "doc": "17_AIRLOCK_AND_LLM.md"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md"
+            }
+          ]
+        },
+        "title": "ADR-057 \u00b7 The Tauri\u2194broker bridge holds the session token in Rust; the webview never sees it"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-058-the-corpus-document-header-yaml-front-matter-at-byte-0-the-artifact-hardened-stamp-immediately-after-it",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "tools/corpus_check.py"
+          ],
+          "documents": [
+            {
+              "doc": "00_README_START_HERE.md"
+            }
+          ]
+        },
+        "title": "ADR-058 \u00b7 The corpus document header: YAML front matter at byte 0, the `artifact-hardened` stamp immediately after it"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-059-status-vocabulary-for-the-corpus-and-the-rule-that-a-planned-subsystem-is-never-written-in-the-present-tense",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            },
+            {
+              "doc": "10_API_AND_MCP.md"
+            }
+          ]
+        },
+        "title": "ADR-059 \u00b7 Status vocabulary for the corpus, and the rule that a `planned` subsystem is never written in the present tense"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-060-a-figure-s-authoring-artifact-lives-beside-its-document-renders-golden-is-the-engine-s-fixture-set-not-the-project-s-figure-registry",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "tools/ENGINE_ROUTING_POLICY.md",
+            "tools/visual-engine/renders/golden/SIM-03-login-funnel.job.js",
+            "tools/docgen/tests/test_generator_build.py"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            }
+          ]
+        },
+        "title": "ADR-060 \u00b7 A figure's authoring artifact lives beside its document; `renders/golden/` is the engine's fixture set, not the project's figure registry"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-061-vault-bootstrap-credmgr-init-is-broker-side-two-phase-and-does-not-extend-to-a-live-daemon-s-vault-unlock",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-001",
+            "ADR-041"
+          ],
+          "code": [
+            "crates/cli/src/main.rs"
+          ],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "2.3"
+            }
+          ]
+        },
+        "title": "ADR-061 \u00b7 Vault bootstrap (`credmgr init`) is broker-side, two-phase, and does not extend to a live daemon's `vault.unlock`"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-062-the-desktop-bridge-reaches-every-broker-op-ahead-of-the-screens-that-will-drive-them",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-057",
+            "ADR-035",
+            "ADR-061"
+          ],
+          "code": [
+            "apps/desktop/src/lib/bridge.ts"
+          ],
+          "documents": [
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "8"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md"
+            }
+          ]
+        },
+        "title": "ADR-062 \u00b7 The desktop bridge reaches every broker op, ahead of the screens that will drive them"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-063-the-live-daemon-opens-its-vault-request-scoped-unlock-load-from-disk-and-write-through",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-061",
+            "ADR-041",
+            "ADR-063",
+            "ADR-064"
+          ],
+          "code": [
+            "crates/brokerd/tests/durable_vault.rs"
+          ],
+          "documents": []
+        },
+        "title": "ADR-063 \u00b7 The live daemon opens its vault: request-scoped unlock, load-from-disk, and write-through"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-064-the-vault-gate-is-persisted-re-enrolment-cannot-silently-remove-it-and-the-last-door-exists",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-063"
+          ],
+          "code": [
+            "crates/brokerd/tests/durable_vault.rs"
+          ],
+          "documents": [
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "3"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md",
+              "section": "2.6"
+            }
+          ]
+        },
+        "title": "ADR-064 \u00b7 The vault gate is persisted, re-enrolment cannot silently remove it, and the last door exists"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-065-a-real-login-reaches-its-owner-s-whole-vault-every-node-but-orphaned",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-047",
+            "ADR-056",
+            "ADR-062",
+            "ADR-043",
+            "ADR-057"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "5"
+            }
+          ]
+        },
+        "title": "ADR-065 \u00b7 A real login reaches its owner's whole vault \u2014 every node but Orphaned"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-066-directories-can-be-bound-to-a-node",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-063"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "ADR-066 \u00b7 Directories can be bound to a node"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-067-a-manifest-entry-s-sha256-digests-its-sealed-envelope-not-its-plaintext",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-063"
+          ],
+          "code": [
+            "crates/brokerd/tests/durable_vault.rs"
+          ],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "8"
+            }
+          ]
+        },
+        "title": "ADR-067 \u00b7 A manifest entry's `sha256` digests its sealed envelope, not its plaintext"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-068-a-token-the-broker-does-not-hold-is-refused-not-resolved-from-the-caller-s-cwd",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-065"
+          ],
+          "code": [
+            "crates/brokerd/tests/durable_vault.rs"
+          ],
+          "documents": [
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "4"
+            }
+          ]
+        },
+        "title": "ADR-068 \u00b7 A token the broker does not hold is refused, not resolved from the caller's cwd"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-069-the-locked-write-tray-survives-a-restart-seal-records-still-do-not",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-063",
+            "ADR-067",
+            "ADR-079"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "ADR-069 \u00b7 The locked-write tray survives a restart; seal records still do not"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-070-unlock-backoff-is-capped-at-one-hour-not-fifteen-minutes",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-044",
+            "ADR-064"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "5"
+            }
+          ]
+        },
+        "title": "ADR-070 \u00b7 Unlock backoff is capped at one hour, not fifteen minutes"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-071-a-node-can-be-renamed-and-its-policy-changed-by-partial-patch",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-063"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "10.1"
+            },
+            {
+              "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md"
+            }
+          ]
+        },
+        "title": "ADR-071 \u00b7 A node can be renamed, and its policy changed by partial patch"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-072-a-node-s-note-sealed-capability-gated-bound-to-its-manifest-digest",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-067"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "4"
+            }
+          ]
+        },
+        "title": "ADR-072 \u00b7 A node's note: sealed, capability-gated, bound to its manifest digest"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-073-entry-createbatch-many-single-value-entries-in-one-call",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-013",
+            "ADR-078"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "4"
+            }
+          ]
+        },
+        "title": "ADR-073 \u00b7 `entry.create_batch` \u2014 many single-value entries in one call"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-074-mit-for-everything-and-everyone-money-is-donations-plus-an-optional-commercial-licence",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-031"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "5"
+            }
+          ]
+        },
+        "title": "ADR-074 \u00b7 MIT for everything and everyone; money is donations plus an optional commercial licence"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-075-the-desktop-app-is-the-design-precompiled-under-the-strict-csp",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-035",
+            "ADR-074",
+            "ADR-022"
+          ],
+          "code": [
+            "scripts/dc/compile.mjs",
+            "scripts/dc/verify-build.mjs",
+            "scripts/verify-csp.mjs",
+            "scripts/dc/import.mjs",
+            "scripts/verify-parity.mjs",
+            "scripts/verify-design-audit.mjs",
+            "docs/RELEASE_VERIFICATION.md",
+            "docs/19_FRONTEND_DELIVERY_SCOPE.md",
+            "apps/desktop/README.md"
+          ],
+          "documents": [
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md"
+            }
+          ]
+        },
+        "title": "ADR-075 \u00b7 The desktop app is the design, precompiled, under the strict CSP"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-076-maintenance-rotateroot-replacing-the-root-key-crash-safely",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-047"
+          ],
+          "code": [
+            "scripts/emergency-decrypt.mjs",
+            "crates/brokerd/src/state/rotate/vault_lock.rs",
+            "crates/brokerd/tests/rotate_root.rs",
+            "crates/store/src/rotation.rs",
+            "crates/core/src/keys.rs",
+            "crates/cli/tests/emergency_decrypt.rs",
+            "crates/mcp/tests/i13_tool_registry.rs",
+            "apps/desktop/src-tauri/tests/bridge_ops.rs"
+          ],
+          "documents": []
+        },
+        "title": "ADR-076 \u00b7 `maintenance.rotate_root` \u2014 replacing the root key, crash-safely"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-077-the-audit-log-never-holds-a-bearer-a-locked-node-has-its-own-code-list-status-and-notes-say-more-a-stored-totp-seed-needs-80-bits",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-042",
+            "ADR-077"
+          ],
+          "code": [
+            "crates/core/src/totp.rs",
+            "crates/brokerd/tests/audit_actor.rs",
+            "crates/brokerd/tests/adr077_ops.rs",
+            "crates/brokerd/src/token.rs",
+            "crates/cli/tests/cli_parity.rs"
+          ],
+          "documents": []
+        },
+        "title": "ADR-077 \u00b7 The audit log never holds a bearer; a locked node has its own code; list, status and notes say more; a stored TOTP seed needs 80 bits"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-078-multi-field-entries-a-field-document-sealed-as-envelope-version-2-legacy-single-values-read-in-place",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-013",
+            "ADR-073",
+            "ADR-078",
+            "ADR-011",
+            "ADR-072",
+            "ADR-012"
+          ],
+          "code": [
+            "scripts/emergency-decrypt.mjs",
+            "crates/core/tests/field_doc.rs",
+            "crates/store/tests/alpha6_golden.rs",
+            "crates/brokerd/tests/field_model.rs",
+            "crates/cli/tests/fields_cli.rs",
+            "crates/mcp/tests/i13_tool_registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "3"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "ADR-078 \u00b7 Multi-field entries: a field document sealed as envelope version 2, legacy single values read in place"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "adr-079-k-7-closed-the-orphan-cold-key-the-orphan-node-at-init-seal-records-in-the-signed-registry-and-an-approval-that-never-outlives-a-lock-the-factor-bearing-release-deferred",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-069",
+            "ADR-042",
+            "ADR-067",
+            "ADR-078",
+            "ADR-063",
+            "ADR-061",
+            "ADR-076",
+            "ADR-079",
+            "ADR-080"
+          ],
+          "code": [
+            "crates/core/src/cold.rs",
+            "crates/brokerd/tests/seal_durable.rs"
+          ],
+          "documents": []
+        },
+        "title": "ADR-079 \u00b7 K-7 closed: the orphan cold key, the orphan node at init, seal records in the signed registry, and an approval that never outlives a lock (the factor-bearing release deferred)"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "still-needed-from-the-operator-not-blocking-the-build",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "Still needed from the operator (not blocking the build)"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "superseded-open-questions-section-kept-for-the-record",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "Superseded open-questions section (kept for the record)"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "open-questions-for-the-operator",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "Open questions for the operator"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-014",
+    "last_reviewed": "2026-08-18",
+    "owner": "credmgr-v2",
+    "status": "needs-verification",
+    "surface": "repo",
+    "title": "Decisions (ADR record)",
+    "variants": []
+  }
+}

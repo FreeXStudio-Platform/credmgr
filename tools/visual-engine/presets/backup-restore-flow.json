@@ -1,0 +1,16 @@
+{
+  "id": "backup-restore-flow",
+  "visual": "sankey",
+  "family": "flow",
+  "summary": "Backup/restore volume flow",
+  "canonical_reader_question": "Do restore volumes reconcile with backup volumes?",
+  "required_fields": [
+    "data.nodes",
+    "data.links"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "quantities are bytes or counts; label units",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

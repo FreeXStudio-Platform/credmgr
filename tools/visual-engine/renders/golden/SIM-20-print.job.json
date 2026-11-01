@@ -1,0 +1,25 @@
+{
+  "visual_id": "SIM-20-print",
+  "classification": "internal",
+  "theme": "print-theme",
+  "reader_question": "simulation question?",
+  "text_summary": "Simulation text summary for accessibility gate.",
+  "selected_visual": "bar",
+  "title": "Print chart",
+  "data": {
+    "dimensions": [
+      "c",
+      "v"
+    ],
+    "source": [
+      [
+        "a",
+        2
+      ],
+      [
+        "b",
+        4
+      ]
+    ]
+  }
+}

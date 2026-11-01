@@ -1,0 +1,26 @@
+<sc-if value="{{dlgGrant}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S11 Grant" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-grant-title" style="width:560px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:14px">
+    <span id="dlg-grant-title" class="t-eyebrow">grant access</span>
+    <sc-if value="{{grantLiteNote}}" hint-placeholder-val="{{false}}"><div class="k-note" style="margin:0"><span class="t-mono-label">lite mode</span>Creating grants is managed in Pro. Viewing and revoking stay available here — revoking is safety, not a lever.</div></sc-if>
+    <div style="display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center">
+      <span class="t-mono-label">from</span>
+      <select aria-label="grant from node" value="{{grantFrom}}" onChange="{{onGrantFrom}}" disabled="{{grantDisabledAll}}" style="font-family:var(--f-mono)"><sc-for list="{{grantNodeOpts}}" as="o" hint-placeholder-count="8"><option value="{{o.id}}">{{o.label}}</option></sc-for></select>
+      <span class="t-mono-label">to</span>
+      <select aria-label="grant to node" value="{{grantTo}}" onChange="{{onGrantTo}}" disabled="{{grantDisabledAll}}" style="font-family:var(--f-mono)"><sc-for list="{{grantNodeOpts2}}" as="o" hint-placeholder-count="8"><option value="{{o.id}}">{{o.label}}</option></sc-for></select>
+      <span class="t-mono-label">allow</span>
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        <sc-for list="{{grantCaps}}" as="c" hint-placeholder-count="3"><label style="display:flex;min-height:24px;gap:6px;align-items:center;font-family:var(--f-mono);font-size:var(--fs-sm);cursor:pointer"><input type="checkbox" checked="{{c.on}}" onChange="{{c.toggle}}" disabled="{{grantDisabledAll}}" style="width:auto">{{c.label}}</label></sc-for>
+      </div>
+      <span class="t-mono-label">reason</span>
+      <input value="{{grantReason}}" onChange="{{onGrantReason}}" disabled="{{grantDisabledAll}}" style="font-family:var(--f-mono)" placeholder="required, at least 8 characters — recorded in the audit log" aria-label="reason for the grant">
+    </div>
+    <div style="font-size:var(--fs-base);color:var(--ash);border-left:3px solid var(--faint);padding-left:12px">This creates a dashed line on the graph. Anyone working in <span style="font-family:var(--f-mono);color:var(--bone)">{{grantFromLabel}}</span> will be able to see the ticked things in <span style="font-family:var(--f-mono);color:var(--bone)">{{grantToLabel}}</span> until the grant is revoked.</div>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end">
+      <button class="k-btn" data-variant="primary" onClick="{{confirmGrant}}" disabled="{{grantSaveDisabled}}">Create grant</button>
+      <button class="k-btn" onClick="{{closeDialog}}">Cancel</button>
+    </div>
+    <div class="t-caption">Creating a grant needs presence (Touch ID), which this beta cannot attest yet. The broker will refuse it and nothing will change. A grant never expires by itself; revoke it in Settings → Grants.</div>
+  </div>
+</div>
+</sc-if>

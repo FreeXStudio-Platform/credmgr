@@ -1,0 +1,220 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   KEEP — the CredMgr V2 (Vault Next) design system
+   Generated from keep.tokens.json. Do not edit values here; edit the JSON.
+
+   Derived from an internal design system token architecture + docgen B/W document
+   template (structure and discipline only — see design/PROVENANCE.md).
+   No the upstream design system brand asset, colour or name is reproduced.
+
+   Load order is fixed:  keep.css → keep-components.css → view CSS
+   Nothing below this file may declare a raw colour, font-size or radius.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Layer 1 · grounds + inks · dark is native ─────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  --void:    #000000;   /* absolute floor — graph canvas, modal scrim base */
+  --night:   #050506;   /* body backdrop */
+  --steel:   #0B0B0E;   /* cards, rails, inspector */
+  --steel-2: #131318;   /* hovered / elevated chrome */
+  --steel-3: #1B1B22;   /* pressed, selected row */
+
+  --bone:  #E9ECF1;     /* primary text */
+  --ash:   #98A0AE;     /* secondary copy */
+  --mute:  #767E8C;     /* mono labels, eyebrows, captions (AA vs --night) */
+  --faint: #2A2E38;     /* hairlines, separators, disabled strokes */
+
+  --sig:    #3E9C86;  --sig-hi:    #5FBFA8;  --sig-dim:    #173B33;
+  --warn:   #B0812E;  --warn-hi:   #D6A346;  --warn-dim:   #3A2C10;
+  --danger: #B3373A;  --danger-hi: #D6595C;  --danger-dim: #3A1315;
+
+  --hair:        rgba(233, 236, 241, 0.07);
+  --hair-strong: rgba(233, 236, 241, 0.13);
+  --scrim:       rgba(0, 0, 0, 0.72);
+  --hatch:       rgba(233, 236, 241, 0.055);   /* sealed-node fill */
+
+  color-scheme: dark;
+}
+
+/* ── Layer 1b · light theme = the paper / print / report variant ───────────── */
+[data-theme="light"] {
+  --void:    #FCFCFD;
+  --night:   #FBFBFC;
+  --steel:   #F3F4F6;
+  --steel-2: #EDEEF1;
+  --steel-3: #E4E6EA;
+
+  --bone:  #0B0C0E;
+  --ash:   #4A5261;
+  --mute:  #5D6472;
+  --faint: #D6D9E0;
+
+  --sig:    #1E6D5B;  --sig-hi:    #3E9C86;  --sig-dim:    #DCEFE9;
+  --warn:   #8A6217;  --warn-hi:   #B0812E;  --warn-dim:   #F6EBD5;
+  --danger: #942326;  --danger-hi: #B3373A;  --danger-dim: #F7DEDF;
+
+  --hair:        rgba(11, 12, 14, 0.10);
+  --hair-strong: rgba(11, 12, 14, 0.18);
+  --scrim:       rgba(11, 12, 14, 0.42);
+  --hatch:       rgba(11, 12, 14, 0.05);
+
+  color-scheme: light;
+}
+
+/* ── Layer 2 · type ───────────────────────────────────────────────────────── */
+:root {
+  --f-display: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-body:    "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono:    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --fw-label: 600;  --fw-body: 400;  --fw-body-em: 500;
+  --fw-display: 600; --fw-data: 500;
+
+  --fs-2xs: 9px;    --fs-xs: 10.5px;  --fs-sm: 12px;   --fs-base: 13px;
+  --fs-md: 14px;    --fs-lg: 16px;    --fs-xl: 20px;   --fs-2xl: 28px;
+  --fs-3xl: 40px;   --fs-4xl: 56px;
+
+  --lh-tight: 1.05; --lh-snug: 1.2; --lh-base: 1.55; --lh-loose: 1.7; --lh-mono: 1.5;
+}
+
+/* ── Layer 3 · space, radius, layout ──────────────────────────────────────── */
+:root {
+  --s-0: 0;    --s-1: 4px;  --s-2: 8px;   --s-3: 12px; --s-4: 16px; --s-5: 24px;
+  --s-6: 32px; --s-7: 48px; --s-8: 64px;  --s-9: 96px; --s-10: 128px;
+
+  --r-none: 0; --r-xs: 2px; --r-sm: 3px; --r-md: 6px; --r-pill: 999px;
+
+  --maxw: 1240px;  --pad: 24px;
+  --rail-w: 300px; --inspector-w: 420px; --header-h: 52px;
+  --measure: 68ch;
+}
+
+/* ── Layer 4 · motion ─────────────────────────────────────────────────────── */
+:root {
+  --ease-out-expo:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-expo: cubic-bezier(0.87, 0, 0.13, 1);
+  --ease-out-cubic:   cubic-bezier(0.33, 1, 0.68, 1);
+  --t-xs: 110ms; --t-sm: 180ms; --t-md: 320ms; --t-lg: 560ms;
+}
+
+/* ── Layer 5 · graph constants (shared by app canvas and doc diagrams) ─────── */
+:root {
+  /* global/orphan are fixed. project/sub are COMPUTED per node from entry count —
+     see VAULT_GRAPH_SPEC.md §3; these are band endpoints, never a constant to draw. */
+  --g-r-global: 22px; --g-r-orphan: 15px;
+  --g-r-project-min: 12px; --g-r-project-max: 20px;
+  --g-r-sub-min: 8px; --g-r-sub-max: 14px; --g-r-scale-cap: 40;
+  --g-stroke-hair: 1px; --g-stroke-node: 1.5px; --g-stroke-selected: 2.5px;
+  --g-gap-min: 26px;
+}
+
+/* ══ Base document ═════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--night);
+  color: var(--bone);
+  font-family: var(--f-body);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-body);
+  line-height: var(--lh-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+::selection { background: var(--sig-dim); color: var(--bone); }
+
+/* ── Universal focus ring — never removed, never invisible ─────────────────── */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--sig-hi);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+/* ── Containment: text never escapes its box (the no-overlap rule) ─────────── */
+h1, h2, h3, h4, p, li, td, th, dt, dd, summary, figcaption,
+.k-lede, .k-eyebrow, .k-chip, .k-figcap, .k-note, .k-stat .l {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+a, code { overflow-wrap: anywhere; }
+img, svg, video, canvas { max-width: 100%; height: auto; }
+
+/* ══ Type roles — use these classes, never a raw font-size ════════════════ */
+.t-display { font-family: var(--f-display); font-weight: var(--fw-display);
+             font-size: var(--fs-3xl); line-height: var(--lh-tight);
+             letter-spacing: -0.025em; text-wrap: balance; }
+.t-h1 { font-family: var(--f-display); font-weight: var(--fw-display);
+        font-size: var(--fs-2xl); line-height: var(--lh-snug);
+        letter-spacing: -0.02em; text-wrap: balance; }
+.t-h2 { font-family: var(--f-display); font-weight: var(--fw-display);
+        font-size: var(--fs-xl); line-height: var(--lh-snug); letter-spacing: -0.015em; }
+.t-h3 { font-family: var(--f-display); font-weight: var(--fw-body-em);
+        font-size: var(--fs-lg); line-height: var(--lh-snug); }
+
+.t-lede    { font-size: var(--fs-lg); color: var(--ash); max-width: var(--measure); }
+.t-body    { font-size: var(--fs-md); max-width: var(--measure); }
+.t-body-sm { font-size: var(--fs-base); color: var(--ash); max-width: var(--measure); }
+
+/* The vault's voice. Names, refs, labels, counts, values — all mono. */
+.t-mono-label { font-family: var(--f-mono); font-weight: var(--fw-label);
+                font-size: var(--fs-xs); letter-spacing: 0.16em;
+                text-transform: uppercase; color: var(--mute); }
+.t-mono-data  { font-family: var(--f-mono); font-weight: var(--fw-data);
+                font-size: var(--fs-base); font-variant-numeric: tabular-nums; }
+.t-eyebrow    { font-family: var(--f-mono); font-size: var(--fs-xs);
+                letter-spacing: 0.22em; text-transform: uppercase; color: var(--mute);
+                display: inline-block; }
+.t-caption    { font-family: var(--f-mono); font-size: var(--fs-sm); color: var(--mute); }
+.t-kbd        { font-family: var(--f-mono); font-size: var(--fs-2xs);
+                letter-spacing: 0.06em; color: var(--mute); }
+
+a { color: var(--ash); text-decoration: none; }
+a:hover { color: var(--bone); }
+
+/* ══ State expression ═════════════════════════════════════════════════════
+   The ONLY places a signal colour may appear. Everything else is achromatic. */
+.is-ok       { color: var(--sig); }
+.is-warn     { color: var(--warn); }
+.is-danger   { color: var(--danger); }
+.rule-ok     { border-color: var(--sig); }
+.rule-warn   { border-color: var(--warn); }
+.rule-danger { border-color: var(--danger); }
+
+/* Sealed / orphaned — deliberately COLOURLESS. Absence is the visual. */
+.is-sealed {
+  color: var(--mute);
+  border: 1px dashed var(--faint);
+  background-image: repeating-linear-gradient(
+    45deg, transparent, transparent 5px, var(--hatch) 5px, var(--hatch) 6px);
+}
+
+/* Sensitivity ladder — expressed by STROKE, not four colours.
+   Only `critical` earns a signal colour, because only critical is a danger. */
+.sens-low      { border-left: 1px solid var(--faint); }
+.sens-medium   { border-left: 2px solid var(--mute); }
+.sens-high     { border-left: 3px solid var(--bone); }
+.sens-critical { border-left: 3px solid var(--danger); }
+
+/* ══ Reduced motion — global guard. No animation is load-bearing. ═════════ */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ══ Print — the light theme is the print theme ═══════════════════════════ */
+@media print {
+  :root { color-scheme: light; }
+  body { background: #fff; color: #000; }
+  .k-rail, .k-graph, .no-print { display: none !important; }
+  .k-page { display: block !important; }
+  a::after { content: " (" attr(href) ")"; font-size: var(--fs-2xs); color: #555; }
+}

@@ -1,0 +1,40 @@
+{
+  "visual_id": "SIM-10-tiers",
+  "classification": "public",
+  "theme": "project-theme",
+  "reader_question": "What does each mode include?",
+  "text_summary": "Simulation text summary for accessibility gate.",
+  "selected_visual": "heatmap",
+  "preset": "tier-entitlement-matrix",
+  "title": "Lite vs. Pro (ADR-031)",
+  "subtitle": "1 included · 0.5 limited · 0 excluded",
+  "data": {
+    "rows": [
+      "Lite",
+      "Pro"
+    ],
+    "cols": [
+      "core vault ops",
+      "grants",
+      "gate 2FA",
+      "org-vault sync (planned)"
+    ],
+    "matrix": [
+      [
+        1,
+        1,
+        1,
+        0
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ]
+    ]
+  },
+  "scale_min": 0,
+  "scale_max": 1,
+  "show_values": true
+}

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}} · CredMgr</title>
+<!--
+  KEEP document template — CredMgr V2
+  Derived from the upstream document template (structure only; see design/PROVENANCE.md).
+  Self-contained: no @import, no CDN, no remote font. Renders offline and inside WKWebView.
+
+  Placeholders: {{TITLE}} {{LEDE}} {{EYEBROW}} {{META}} {{TOC}} {{BODY}} {{STAMP}}
+  Theme: data-theme="dark" (native) | "light" (paper/print). Toggle persists to localStorage.
+-->
+<style>
+/* ── KEEP tokens (inlined subset — canonical source: design/tokens/keep.tokens.json) ── */
+:root,[data-theme="dark"]{
+  --void:#000;--night:#050506;--steel:#0B0B0E;--steel-2:#131318;--steel-3:#1B1B22;
+  --bone:#E9ECF1;--ash:#98A0AE;--mute:#767E8C;--faint:#2A2E38;
+  --sig:#3E9C86;--warn:#B0812E;--danger:#B3373A;
+  --hair:rgba(233,236,241,.07);--hair-strong:rgba(233,236,241,.13);
+  --hatch:rgba(233,236,241,.055);color-scheme:dark;
+}
+[data-theme="light"]{
+  --void:#0B0C0E;--night:#FBFBFC;--steel:#F3F4F6;--steel-2:#EDEEF1;--steel-3:#E4E6EA;
+  --bone:#0B0C0E;--ash:#4A5261;--mute:#5D6472;--faint:#D6D9E0;
+  --sig:#1E6D5B;--warn:#8A6217;--danger:#942326;
+  --hair:rgba(11,12,14,.10);--hair-strong:rgba(11,12,14,.18);
+  --hatch:rgba(11,12,14,.05);color-scheme:light;
+}
+:root{
+  --f-display:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:var(--f-display);
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --fs-2xs:9px;--fs-xs:10.5px;--fs-sm:12px;--fs-base:13px;--fs-md:14px;
+  --fs-lg:16px;--fs-xl:20px;--fs-2xl:28px;--fs-3xl:40px;
+  --s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:24px;--s-6:32px;--s-7:48px;--s-8:64px;
+  --r-xs:2px;--r-sm:3px;--r-md:6px;--r-pill:999px;
+  --maxw:1240px;--measure:68ch;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--night);color:var(--bone);font:var(--fs-md)/1.55 var(--f-body);
+  -webkit-font-smoothing:antialiased;overflow-x:hidden}
+h1,h2,h3,h4,p,li,td,th,summary,figcaption{overflow-wrap:break-word;word-break:break-word}
+a,code{overflow-wrap:anywhere}
+img,svg,canvas{max-width:100%;height:auto}
+a{color:var(--ash);text-decoration:none}a:hover{color:var(--bone)}
+:where(a,button,summary,[tabindex]):focus-visible{outline:2px solid var(--sig);outline-offset:2px}
+
+/* ── masthead ── */
+header.mast{border-bottom:1px solid var(--hair-strong);padding:var(--s-8) 0 var(--s-6);
+  background-image:repeating-linear-gradient(0deg,transparent,transparent 21px,var(--hair) 22px),
+                   repeating-linear-gradient(90deg,transparent,transparent 21px,var(--hair) 22px)}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 var(--s-5);min-width:0}
+.eyebrow{font-family:var(--f-mono);font-size:var(--fs-xs);letter-spacing:.22em;
+  text-transform:uppercase;color:var(--mute);display:inline-block}
+.eyebrow::before{content:"";display:inline-block;width:6px;height:6px;background:var(--bone);
+  margin-right:var(--s-2);vertical-align:1px}
+h1{font-family:var(--f-display);font-weight:600;font-size:clamp(28px,5vw,var(--fs-3xl));
+  letter-spacing:-.025em;line-height:1.05;margin:var(--s-3) 0 var(--s-3);text-wrap:balance}
+.lede{font-size:var(--fs-lg);color:var(--ash);max-width:var(--measure)}
+.metaline{font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute);
+  margin-top:var(--s-4);letter-spacing:.04em}
+.mast-actions{position:absolute;top:var(--s-4);right:var(--s-5);display:flex;gap:var(--s-2)}
+
+/* ── layout: sticky TOC + column ── */
+.page{display:grid;grid-template-columns:190px minmax(0,1fr);gap:var(--s-7);
+  max-width:var(--maxw);margin:0 auto;padding:0 var(--s-5)}
+nav.toc{position:sticky;top:0;align-self:start;max-height:100vh;overflow-y:auto;
+  padding:var(--s-6) 0;font-family:var(--f-mono);font-size:var(--fs-sm)}
+nav.toc a{display:block;color:var(--mute);padding:var(--s-1) var(--s-2);
+  border-left:1px solid var(--hair)}
+nav.toc a:hover{color:var(--bone);border-left-color:var(--bone)}
+nav.toc a.active{color:var(--bone);border-left-color:var(--sig)}
+nav.toc .toc-h{letter-spacing:.18em;text-transform:uppercase;color:var(--mute);
+  padding:0 var(--s-2) var(--s-2)}
+main{max-width:980px;min-width:0}
+@media(max-width:900px){.page{display:block}nav.toc{position:static;max-height:none;
+  display:flex;flex-wrap:wrap;gap:2px;padding:var(--s-4) 0;border-bottom:1px solid var(--hair)}
+  nav.toc .toc-h{width:100%}}
+
+/* ── sections ── */
+section.doc{padding:var(--s-8) 0;border-bottom:1px solid var(--hair)}
+section.doc:last-of-type{border-bottom:none}
+.secnum{font-family:var(--f-mono);display:inline-flex;align-items:center;justify-content:center;
+  width:34px;height:34px;border:1px solid var(--faint);border-radius:var(--r-sm);
+  font-size:var(--fs-sm);margin-bottom:var(--s-3)}
+h2{font-family:var(--f-display);font-weight:600;font-size:var(--fs-2xl);
+  letter-spacing:-.02em;margin:0 0 var(--s-3);text-wrap:balance}
+h3{font-family:var(--f-display);font-weight:600;font-size:var(--fs-xl);
+  letter-spacing:-.015em;margin:var(--s-6) 0 var(--s-2)}
+h4{font-family:var(--f-mono);font-size:var(--fs-sm);font-weight:600;text-transform:uppercase;
+  letter-spacing:.14em;color:var(--mute);margin:var(--s-5) 0 var(--s-2)}
+p{max-width:var(--measure);margin:0 0 var(--s-3)}
+ul,ol{padding-left:1.4em;max-width:var(--measure);margin:var(--s-3) 0}
+li{margin:var(--s-1) 0}
+hr{border:none;border-top:1px solid var(--hair);margin:var(--s-6) 0}
+
+/* ── code ── */
+code{font-family:var(--f-mono);font-size:.88em;background:var(--steel-2);
+  border:1px solid var(--hair);border-radius:var(--r-xs);padding:1px 5px}
+pre{background:var(--steel);border:1px solid var(--hair);border-radius:var(--r-sm);
+  padding:var(--s-4);overflow-x:auto;margin:var(--s-4) 0}
+pre code{background:none;border:none;padding:0;font-size:var(--fs-sm);line-height:1.5}
+
+/* ── tables ── */
+.tblwrap{overflow-x:auto;margin:var(--s-4) 0}
+table{width:100%;border-collapse:collapse;font-size:var(--fs-base)}
+th{background:var(--steel-3);font-family:var(--f-mono);font-size:var(--fs-2xs);
+  text-transform:uppercase;letter-spacing:.1em;font-weight:600;text-align:left;padding:var(--s-2)}
+td{padding:var(--s-2);border-bottom:1px solid var(--hair);vertical-align:top;
+  font-variant-numeric:tabular-nums}
+
+/* ── components ── */
+.note{border-left:3px solid var(--faint);background:var(--steel-2);padding:var(--s-3) var(--s-4);
+  margin:var(--s-5) 0}
+.note.ok{border-left-color:var(--sig)}
+.note.warn{border-left-color:var(--warn)}
+.note.danger{border-left-color:var(--danger)}
+.note .lab{font-family:var(--f-mono);font-size:var(--fs-2xs);letter-spacing:.16em;
+  text-transform:uppercase;color:var(--mute);display:block;margin-bottom:var(--s-1)}
+.note p{max-width:none}
+.chip{display:inline-flex;align-items:center;font-family:var(--f-mono);font-size:var(--fs-2xs);
+  letter-spacing:.1em;text-transform:uppercase;padding:2px var(--s-2);border-radius:var(--r-pill);
+  border:1px solid var(--faint);color:var(--mute)}
+.chip.ok{color:var(--sig);border-color:var(--sig)}
+.chip.warn{color:var(--warn);border-color:var(--warn)}
+.chip.danger{color:var(--danger);border-color:var(--danger)}
+.chip.sealed{border-style:dashed}
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:var(--s-3);margin:var(--s-5) 0}
+.stat{border:1px solid var(--faint);border-radius:var(--r-sm);padding:var(--s-4)}
+.stat .n{font-family:var(--f-mono);font-weight:600;font-size:var(--fs-2xl);
+  font-variant-numeric:tabular-nums;line-height:1.05}
+.stat .l{font-family:var(--f-mono);font-size:var(--fs-2xs);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--mute);margin-top:var(--s-1)}
+/* blueprint diagram canvas — strokes use currentColor so figures read in both themes */
+.svgwrap{border:1px solid var(--faint);border-radius:var(--r-sm);padding:var(--s-4);
+  margin:var(--s-5) 0;color:var(--bone);
+  background-image:repeating-linear-gradient(0deg,transparent,transparent 21px,var(--hair) 22px),
+                   repeating-linear-gradient(90deg,transparent,transparent 21px,var(--hair) 22px)}
+.svgwrap svg{width:100%;height:auto;display:block}
+.figcap{font-family:var(--f-mono);font-size:var(--fs-sm);color:var(--mute);
+  text-align:center;margin-top:var(--s-2)}
+.sealed{border:1px dashed var(--faint);color:var(--mute);padding:var(--s-5);
+  text-align:center;border-radius:var(--r-sm);
+  background-image:repeating-linear-gradient(45deg,transparent,transparent 5px,
+    var(--hatch) 5px,var(--hatch) 6px)}
+.btn{font-family:var(--f-mono);font-size:var(--fs-sm);padding:var(--s-1) var(--s-3);
+  border:1px solid var(--faint);border-radius:var(--r-sm);background:transparent;
+  color:var(--bone);cursor:pointer}
+.btn:hover{background:var(--steel-2)}
+
+footer.doc{padding:var(--s-7) 0 var(--s-8);color:var(--mute);font-size:var(--fs-sm);
+  font-family:var(--f-mono);border-top:1px solid var(--hair);margin-top:var(--s-7)}
+
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+@media print{nav.toc,.mast-actions,.no-print{display:none}.page{display:block}
+  header.mast{padding:var(--s-4) 0;background-image:none}}
+</style>
+</head>
+<body>
+
+<header class="mast">
+  <div class="mast-actions no-print">
+    <button class="btn" id="theme-toggle" aria-label="Toggle light/dark theme">theme</button>
+  </div>
+  <div class="wrap">
+    <span class="eyebrow">{{EYEBROW}}</span>
+    <h1>{{TITLE}}</h1>
+    <p class="lede">{{LEDE}}</p>
+    <div class="metaline">{{META}}</div>
+  </div>
+</header>
+
+<div class="page">
+  <nav class="toc" aria-label="Contents">
+    <div class="toc-h">Contents</div>
+    {{TOC}}
+  </nav>
+  <main>
+    {{BODY}}
+    <footer class="doc">{{STAMP}}</footer>
+  </main>
+</div>
+
+<script>
+/* Theme: honour prefers-color-scheme on first load, then persist the user's choice. */
+(function () {
+  var KEY = 'keep-theme';
+  var root = document.documentElement;
+  var saved = null;
+  try { saved = localStorage.getItem(KEY); } catch (e) { /* private mode */ }
+  if (!saved) {
+    saved = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  root.setAttribute('data-theme', saved);
+  var btn = document.getElementById('theme-toggle');
+  if (btn) btn.addEventListener('click', function () {
+    var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+  });
+
+  /* TOC active-section tracking. Guarded: no IntersectionObserver → TOC still navigates. */
+  if (!('IntersectionObserver' in window)) return;
+  var links = {};
+  document.querySelectorAll('nav.toc a[href^="#"]').forEach(function (a) {
+    links[a.getAttribute('href').slice(1)] = a;
+  });
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      var a = links[en.target.id];
+      if (a && en.isIntersecting) {
+        Object.values(links).forEach(function (l) { l.classList.remove('active'); });
+        a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-10% 0px -80% 0px' });
+  document.querySelectorAll('section.doc[id]').forEach(function (s) { io.observe(s); });
+})();
+</script>
+</body>
+</html>

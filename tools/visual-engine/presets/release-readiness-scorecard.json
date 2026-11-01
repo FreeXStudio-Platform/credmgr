@@ -1,0 +1,18 @@
+{
+  "id": "release-readiness-scorecard",
+  "visual": "scorecard",
+  "family": "status",
+  "summary": "Release criteria status bars",
+  "canonical_reader_question": "Which release criteria remain unmet?",
+  "required_fields": [
+    "data.dimensions",
+    "data.source"
+  ],
+  "defaults": {},
+  "semantics": {
+    "severity_items": true
+  },
+  "job_extras": {},
+  "notes": "J1-J10 journey scoreboard style: proven/failed/cannot-verify counts, never a percentage (T-R3)",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

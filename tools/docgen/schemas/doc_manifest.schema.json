@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://credmgr.internal/schemas/doc_manifest.schema.json",
+  "title": "DocManifestRows",
+  "description": "A serialized list of DOC_MANIFEST.md rows (tools/docgen/models.py ManifestRow), as read_manifest() would emit if dumped to JSON. Used to validate manifest-derived data passed between tools.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/manifestRow" },
+  "$defs": {
+    "manifestRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "type", "variants", "content_role", "surface", "status"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Doc-type prefix, e.g. 'DET', 'SOC-S' — matches TAXONOMY.md."
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "variants": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["public", "confidential", "secret"]
+          }
+        },
+        "content_role": {
+          "type": "string",
+          "enum": ["project-doc", "article", "article-capable", "asset"]
+        },
+        "surface": {
+          "type": "string",
+          "enum": ["web", "repo", "both", "none"]
+        },
+        "status": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

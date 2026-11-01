@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://credmgr.internal/schemas/content_index.schema.json",
+  "title": "ContentIndex",
+  "description": "Machine-readable index of the currently-available (authored) PUBLIC documents, emitted by tools/docgen/build_index.py build_content_index(). A future graphify pass or the app docs page consumes this instead of re-parsing Markdown. Leak-safe (RULEBOOK L14): only classification:public entries are ever listed by id/title/path; non-public authored docs are counted in aggregate but never named.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generated_from", "counts", "entries"],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "credmgr.doc-system.content-index/v1",
+      "description": "Schema id + version. Bumped only on a breaking shape change."
+    },
+    "generated_from": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest", "docs_root"],
+      "properties": {
+        "manifest": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-relative path of the DOC_MANIFEST.md the index was built from."
+        },
+        "docs_root": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-relative path of the authored-docs root scanned for .md sources."
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["public", "non_public_excluded", "manifest_rows"],
+      "properties": {
+        "public": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of authored PUBLIC docs listed in entries[]."
+        },
+        "non_public_excluded": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Authored docs whose header tier is confidential/secret; counted but NEVER named (L14 leak-safety)."
+        },
+        "manifest_rows": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of DOC_MANIFEST.md type rows the index was grouped against."
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "description": "One row per authored PUBLIC document, sorted by id (deterministic).",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "tier", "type_prefix", "surface", "path", "status"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full document id, e.g. 'WF-201'."
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "tier": {
+          "type": "string",
+          "const": "public",
+          "description": "Always 'public' — only public docs are listed (L14)."
+        },
+        "type_prefix": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The doc-type prefix extracted from the id (e.g. 'WF'), matching a DOC_MANIFEST.md / TAXONOMY.md row when known, else '(unlisted)'."
+        },
+        "surface": {
+          "type": "string",
+          "enum": ["web", "repo", "both", "none"],
+          "description": "Where the doc may render (from its header)."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-relative path of the authored .md source."
+        },
+        "status": {
+          "type": "string",
+          "description": "The doc header's status (e.g. 'draft', 'published'). May be empty."
+        }
+      }
+    }
+  }
+}

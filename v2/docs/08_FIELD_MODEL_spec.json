@@ -1,0 +1,183 @@
+{
+  "kind": "flowchart",
+  "id": "paste-to-sealed-document",
+  "title": "A paste becomes one sealed field document: parse, preview, send verbatim, seal",
+  "caption": "The parser and the preview live in the client; the broker receives structure, validates it, seals it as an envelope of version 2 and projects four plaintext facts into the manifest. Labels, field types and values exist only in the ciphertext.",
+  "width": 1650,
+  "height": 1230,
+  "motion": true,
+  "nodes": [
+    {
+      "id": "paste",
+      "type": "source",
+      "label": "A paste (Bulk mode, or stdin)",
+      "x": 40,
+      "y": 120,
+      "w": 320,
+      "h": 90,
+      "note": "desktop Add entry, or credmgr set --bulk"
+    },
+    {
+      "id": "parser",
+      "type": "process",
+      "label": "core::parser::parse_bulk_segments",
+      "x": 530,
+      "y": 120,
+      "w": 340,
+      "h": 100,
+      "note": "built and proven: P-6/P-7/P-8, P-17, P-18",
+      "highlight": true
+    },
+    {
+      "id": "preview",
+      "type": "process",
+      "label": "fields_preview (shell, local)",
+      "x": 1040,
+      "y": 120,
+      "w": 340,
+      "h": 100,
+      "note": "no socket, no audit record; parser + inference only",
+      "highlight": true
+    },
+    {
+      "id": "send",
+      "type": "process",
+      "label": "entry.create {fields[]}",
+      "x": 1040,
+      "y": 440,
+      "w": 340,
+      "h": 110,
+      "note": "or one entry.create_batch item per /// segment; the previewed fields, verbatim"
+    },
+    {
+      "id": "validate",
+      "type": "process",
+      "label": "fields::validate + encode",
+      "x": 530,
+      "y": 440,
+      "w": 340,
+      "h": 110,
+      "note": "ids minted; labels one line, 200 chars; 16 MiB per document"
+    },
+    {
+      "id": "seal",
+      "type": "datastore",
+      "label": "entries/<id>.env, version 2",
+      "x": 40,
+      "y": 860,
+      "w": 340,
+      "h": 100,
+      "note": "envelope::seal_as(FieldDocument): the version byte is in the AAD"
+    },
+    {
+      "id": "manifest",
+      "type": "datastore",
+      "label": "manifest projection",
+      "x": 530,
+      "y": 860,
+      "w": 340,
+      "h": 100,
+      "note": "type, sensitivity, fieldCount, hasTotp -- never a label, a field type or a value"
+    },
+    {
+      "id": "audit",
+      "type": "datastore",
+      "label": "audit record",
+      "x": 1040,
+      "y": 860,
+      "w": 340,
+      "h": 100,
+      "note": "the op and, if a field is named, its id (f_...)"
+    }
+  ],
+  "edges": [
+    {
+      "src": "paste",
+      "dst": "parser",
+      "label": "text",
+      "style": "solid",
+      "main": true
+    },
+    {
+      "src": "parser",
+      "dst": "preview",
+      "label": "segments",
+      "style": "solid",
+      "main": true
+    },
+    {
+      "src": "preview",
+      "dst": "send",
+      "label": "the user saves",
+      "style": "solid",
+      "main": true
+    },
+    {
+      "src": "send",
+      "dst": "validate",
+      "label": "over the socket",
+      "style": "solid",
+      "main": true
+    },
+    {
+      "src": "validate",
+      "dst": "seal",
+      "label": "sealed to the node key",
+      "style": "solid",
+      "main": true
+    },
+    {
+      "src": "validate",
+      "dst": "manifest",
+      "label": "project()",
+      "style": "solid",
+      "main": true
+    },
+    {
+      "src": "send",
+      "dst": "audit",
+      "label": "op + ids",
+      "style": "dashed",
+      "main": false
+    }
+  ],
+  "legend": [
+    {
+      "kind": "swatch",
+      "key": "var(--sig)",
+      "label": "the two built, tested pieces that touch the user's text"
+    },
+    {
+      "kind": "line",
+      "key": "solid",
+      "label": "a call that happens in the compiled binaries"
+    },
+    {
+      "kind": "line",
+      "key": "dashed",
+      "label": "a metadata-only record -- no label, no value"
+    },
+    {
+      "kind": "node",
+      "key": "datastore",
+      "label": "what lands on disk"
+    }
+  ],
+  "data_sources": [
+    {
+      "kind": "cited",
+      "ref": "crates/core/src/parser.rs (pub fn parse_bulk_segments, pub fn parse_bulk) and the callers `grep -rn \"parse_bulk\" crates/ apps/desktop/src-tauri/src` returns: crates/cli/src/fields.rs and apps/desktop/src-tauri/src/fields_preview.rs",
+      "retrieved": "2026-10-03"
+    },
+    {
+      "kind": "cited",
+      "ref": "crates/brokerd/src/ops.rs (\"entry.create\", \"entry.create_batch\" arms) and crates/brokerd/src/entry_doc.rs (seal_doc), crates/core/src/envelope.rs (seal_as, PayloadKind::FieldDocument)",
+      "retrieved": "2026-10-03"
+    },
+    {
+      "kind": "cited",
+      "ref": "crates/store/src/manifest.rs (ManifestEntry.field_count, has_totp) and crates/brokerd/src/server.rs (the audit detail for params.field / params.fieldIds)",
+      "retrieved": "2026-10-03"
+    }
+  ]
+}

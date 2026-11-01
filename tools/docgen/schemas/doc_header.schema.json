@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://credmgr.internal/schemas/doc_header.schema.json",
+  "title": "DocHeader",
+  "description": "The required document metadata header (RULEBOOK L5; CLASSIFICATION.md). Mirrors tools/docgen/models.py DocHeader.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "classification",
+    "title",
+    "audience",
+    "owner",
+    "status",
+    "export_allowed",
+    "surface",
+    "last_reviewed"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9-]*[A-Z0-9]-[0-9]+$",
+      "description": "<PREFIX>-<NNN>; PREFIX must be a known TAXONOMY.md doc-type prefix."
+    },
+    "classification": {
+      "type": "string",
+      "enum": ["public", "confidential", "secret"]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "audience": {
+      "type": "string",
+      "enum": [
+        "public",
+        "technical",
+        "compliance",
+        "operations",
+        "leadership",
+        "end-users",
+        "agents"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "review", "approved", "deprecated", "template"]
+    },
+    "export_allowed": {
+      "type": "boolean"
+    },
+    "surface": {
+      "type": "string",
+      "enum": ["web", "repo", "both", "none"]
+    },
+    "last_reviewed": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "variants": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "classification": { "const": "public" } } },
+      "then": {
+        "properties": {
+          "surface": { "enum": ["web", "repo", "both"] }
+        }
+      },
+      "else": {
+        "properties": {
+          "surface": { "const": "none" },
+          "export_allowed": { "const": false }
+        }
+      }
+    }
+  ]
+}

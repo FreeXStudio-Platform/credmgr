@@ -1,0 +1,105 @@
+<sc-if value="{{ovGames}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:82;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{cpBackdropClick}}">
+  <div class="cm-modal-panel" data-screen-label="S19 CredGames" onClick="{{stop}}" role="dialog" aria-modal="true" aria-label="{{gmDialogLabel}}" style="width:min(760px,94vw);max-height:92vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <sc-if value="{{gmIsLibrary}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-family:var(--f-mono);font-size:var(--fs-lg);font-weight:var(--fw-label)">CredGames</div>
+          <div class="t-caption">small local games · graph mode · part of FreexStudio.com</div>
+        </div>
+        <button class="k-btn" onClick="{{cpClose}}" style="min-width:24px;border:none;padding:2px 6px" aria-label="close">✕</button>
+      </div>
+      <div style="display:flex;flex-direction:column">
+        <sc-for list="{{gamesRows}}" as="g" hint-placeholder-count="1">
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;padding:14px 0;border-top:1px solid var(--hair)">
+            <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+              <span style="font-family:var(--f-mono);font-size:var(--fs-md);font-weight:var(--fw-label)">{{g.name}}</span>
+              <span class="t-body-sm" style="color:var(--ash);text-wrap:pretty">{{g.blurb}}</span>
+              <span class="t-caption">reads {{g.reads}} · local best {{g.best}}</span>
+            </div>
+            <button class="k-btn" data-variant="primary" onClick="{{g.open}}" aria-label="{{g.openLabel}}">Play</button>
+          </div>
+        </sc-for>
+      </div>
+      <div class="t-caption" style="border-top:1px solid var(--hair);padding-top:14px">A game may read how many nodes your vault has and how many entries each holds. None sees a name, a field or a value, writes to the vault, or reaches the network. More CredGames titles — coming soon. CredGames is a title of FreexStudio.com.</div>
+    </sc-if>
+
+    <sc-if value="{{gmIsPongMenu}}" hint-placeholder-val="{{false}}">
+      <button class="k-btn" onClick="{{gmBackToLibrary}}" style="border:none;padding:0;color:var(--mute);align-self:flex-start">← all games</button>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-family:var(--f-mono);font-size:var(--fs-lg);font-weight:var(--fw-label)">CredPong</div>
+          <div class="t-caption">graph-mode arcade · isolated · a CredGames title, part of FreexStudio.com</div>
+        </div>
+        <button class="k-btn" onClick="{{cpClose}}" style="min-width:24px;border:none;padding:2px 6px" aria-label="close">✕</button>
+      </div>
+      <div class="k-note" style="margin:0">This game reads only how many nodes your vault has and how many entries each holds, to shape its first levels. It never uses a name, a field or a value, writes nothing to the vault, and nothing leaves this device.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <span class="t-mono-label">paddle</span>
+        <div style="display:flex;gap:0">
+          <button class="k-btn" onClick="{{cpSetModeBottom}}" style="flex:1;border-radius:2px 0 0 2px;background:{{cpModeBottomBg}};color:{{cpModeBottomFg}}">Bottom</button>
+          <button class="k-btn" onClick="{{cpSetModeSide}}" style="flex:1;border-radius:0;border-left:none;background:{{cpModeSideBg}};color:{{cpModeSideFg}}">Side</button>
+          <button class="k-btn" onClick="{{cpSetModeRoam}}" style="flex:1;border-radius:0 2px 2px 0;border-left:none;background:{{cpModeRoamBg}};color:{{cpModeRoamFg}}">Free-roam</button>
+        </div>
+        <div class="t-caption">{{cpModeDesc}}</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span class="t-mono-data" style="white-space:nowrap">local best: {{cpBestLabel}}</span>
+          <sc-if value="{{cpHasProgress}}" hint-placeholder-val="{{false}}"><span class="t-caption">resuming at level {{cpResumeLabel}}</span></sc-if>
+        </div>
+        <button class="k-btn" data-variant="primary" onClick="{{cpStart}}">Start — space to launch</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{gmIsGenericMenu}}" hint-placeholder-val="{{false}}">
+      <button class="k-btn" onClick="{{gmBackToLibrary}}" style="border:none;padding:0;color:var(--mute);align-self:flex-start">← all games</button>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div style="min-width:0">
+          <div style="font-family:var(--f-mono);font-size:var(--fs-lg);font-weight:var(--fw-label)">{{gmName}}</div>
+          <div class="t-caption">{{gmBlurb}}</div>
+        </div>
+        <button class="k-btn" onClick="{{cpClose}}" style="min-width:24px;border:none;padding:2px 6px" aria-label="close">✕</button>
+      </div>
+      <div class="k-note" style="margin:0">{{gmReadsNote}}</div>
+      <sc-for list="{{gmOptions}}" as="o" hint-placeholder-count="0">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <span class="t-mono-label">{{o.label}}</span>
+          <div style="display:flex;gap:0">
+            <sc-for list="{{o.choices}}" as="ch" hint-placeholder-count="2">
+              <button class="k-btn" onClick="{{ch.go}}" aria-pressed="{{ch.on}}" style="flex:1;border-radius:0;margin-left:-1px;background:{{ch.bg}};color:{{ch.fg}}">{{ch.label}}</button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="t-mono-data">local best: {{gmBestLabel}}</span>
+        <button class="k-btn" data-variant="primary" onClick="{{gmStart}}">Start</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{cpIsPlay}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="t-mono-label">{{gmName}}</span>
+        <button class="k-btn" onClick="{{cpExit}}" style="min-width:24px;border:none;padding:2px 6px" aria-label="exit">✕ exit</button>
+      </div>
+      <div ref="{{cpRef}}" style="position:relative;width:680px;height:440px;max-width:100%;background:var(--void);border:1px solid var(--hair-strong);border-radius:var(--r-sm);margin:0 auto"></div>
+      <div class="t-caption" style="text-align:center">{{gmControlHint}} · p to pause · esc to exit</div>
+    </sc-if>
+
+    <sc-if value="{{gmIsOver}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;padding:24px 0">
+        <div style="font-family:var(--f-mono);font-size:var(--fs-lg)">Game over</div>
+        <div class="t-mono-data" style="font-size:var(--fs-xl)">{{gmScoreLabel}}</div>
+        <div class="t-caption">{{gmBestNote}}</div>
+        <div style="display:flex;gap:8px">
+          <button class="k-btn" data-variant="primary" onClick="{{gmStart}}">Play again</button>
+          <button class="k-btn" onClick="{{gmBackToMenu}}">Back to menu</button>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+</sc-if>

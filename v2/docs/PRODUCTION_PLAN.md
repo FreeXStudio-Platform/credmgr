@@ -1,0 +1,28 @@
+<!-- artifact-hardened: NEEDS RE-HARDENING — first draft 2026-10-30; a working plan, replaced in place at each batch, not yet through the second and third pass. Not hardened, so not a source of truth. -->
+
+# CredMgr V2 — production plan (replaced in place; last update 2026-10-31)
+
+Status line: **`main` = `origin/main` = `baf1c5d` (record) over `709840c` (gates); 55 broker ops, 25 error codes, 15 MCP tools, ADR-093 highest; every gate green on 2026-10-30 (unit 700, e2e both browsers, real daemon, design audit 87 states). Batches 1, 2 and 3 are done and batch 4's issue half is done (issues #5-#33, board `CredMgr 2.0`); batch 4's CI half is BLOCKED by GitHub billing (issue #33). **Batch 5 is done 2026-10-31:** nine documents claim-checked and stamped `Approved With Known Risks @ 3d8545f` (README, v2/README, RELEASE, SECURITY, PRIVACY, CHANGELOG, 12, 18, PHASE8); known risks K-1…K-19 each with bound, owner and resolution; the Opus final audit's P0 and both P1 fixed and re-verified (ADR-094, three rounds); the release artefacts rebuilt from the final commit. **Not stamped, on purpose:** `RELEASE_VERIFICATION.md` (its per-control rows lag the B20 controls; the checker reports 48 findings) and this plan. **Next: batch 6, yours** (publish go and path, GitHub billing #33 and the first CI run, runner de-registration #6, the donation address #34, the idle and sleep checks #9, Developer ID signing #28, the leak-gate blocklist, `xcode-select`). Goal: a stamped **2.0.0-beta.1** the operator can publish. Method: one batch per phase (`~/.claude/rules/work-efficiency.md`): build everything in the batch, one sweep for defects, one fix pass, one record.
+
+## What the front end team still owes: nothing
+Checked 2026-10-30 against the Claude Design project: no drop newer than `handoff-2026-10-26/` (B20); the root file list is unchanged (70 entries); `VERIFIED.md` stamps the front end 10/10 (gate 67/67 in four themes, width sweep 1440 to 320 px, click-through 904 clicks, 0 errors). Every ask in `BACKEND_ANSWERS_2026-10-26.md` is met: name vectors run (11/11), the old public code is out of their `SUPPORTER_EXTRAS_PLAN.md` (checked: absent from the plan, `VERIFIED.md` and the app file), badges removed for built features, wording corrected (S5c, S16a, privateNames, Undo, Doctor purge). Their open questions B-10 to B-14 are answered in `BACKEND_ANSWERS_2026-10-27.md`: **the operator relays that file to them** (the one hand-off outstanding). Their only open rows are owned by others.
+
+## Batches (in order)
+
+| # | Batch | Contents | Needs the operator | Evidence to close |
+|---|---|---|---|---|
+| 1 | **B20 merge** (**done 2026-10-30, `d373343`, ADR-092**) | three-way merge of the 2026-10-26 drop into `apps/desktop` (8 template conflicts, 27 logic hunks, 1 CSS line); keep the donation toast, ADR-081/082, the real bridge, the Lock-screen request list, the opaque ids; wire locked Deny to need the passphrase and code (B-10); S5c "Give second factor" with the no-gate answer (B-11); gates | the contrast line (input border `--faint` to `--mute`): take it or not | `compile --check`, unit, e2e, `test:real`, design audit, drift guards, a built-app look (moved into batch 3) |
+| 2 | **Wave leftovers (backend)** (**done 2026-10-30, ADR-093**) | name-length cap for `canonical_name`; interrupted-rotation recovery before a factor decision; per-node gate secret and elevation (decide by ADR: build or keep vault-wide); optional owner-only "is a gate enrolled" read (only if the window needs it after B-11) | the ADR choice on the per-node secret | workspace tests, mutation check on the new refusals, ADR |
+| 3 | **Verification sweep** (**done 2026-10-31, `709840c`/`baf1c5d`; idle timer and real sleep stay with the operator**) (Part 6 leftovers) | workspace tests on both toolchains; the full real-app sweep (light, dark, high contrast, every screen) in the built `.app`; the 5-minute idle lock waited out by hand | away from the keyboard for the sweep; one real sleep/lock test | `RELEASE_VERIFICATION.md` rows filled |
+| 4 | **GitHub and CI** (C5) (**issues and board done 2026-10-31; CI dispatch BLOCKED: account billing, issue #33**) | one issue per open item under `2.0.0-rc.1` / `2.0.0`, the Project board; dispatch `build.yml` and `security.yml` once and read by job | `gh auth refresh -s project` once | issue list, job conclusions |
+| 5 | **Harden, audit, stamp** (C6) | three-pass on README, v2/README, RELEASE, SECURITY, PRIVACY, CHANGELOG, 18, 12, PHASE8; one final adversarial audit on the strongest model; stamp `Approved With Known Risks` with each risk described, bounded, owned, scheduled | none | the stamp lines; audit report with no open P0/P1 |
+| 6 | **Go-live** (C7, operator) | publish go/no-go and path, runner de-registration, Apple Developer ID and notarisation, the local leak-gate blocklist, `xcode-select` fix | yes | operator |
+
+## After beta.1 (milestones exist on GitHub)
+`2.0.0-rc.1`: presence / Touch ID (4.4; needs Developer ID first), aliases and near-duplicates (4.7), `.env` importer (4.8). `2.0.0`: `node.rekey` (4.9; spec first), machine lock, duress, `llm.*` (build or formally drop, owner), security levels, content search, `--age` export, Destroy orphans, `audit.report`, Windows and Linux keystores, org vault.
+
+## Owner decisions open
+Contrast line (batch 1) · per-node gate secret (batch 2) · publish path and signing (batch 6) · the sealed pack's code stays with the owner (four dark-gate assertions need it) · whether the design project's `audit-probe.js` (now 11 KB, was 7 KB) may ship under MIT (it stays out of the release bundle until you say).
+
+## Estimate
+About 4–5 more agent sessions to the stamp (batches 1, 3, 4, 5, plus batch 2 if kept in beta.1); batch 6 is yours.

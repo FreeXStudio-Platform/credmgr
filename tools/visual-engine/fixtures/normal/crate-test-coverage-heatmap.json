@@ -1,0 +1,27 @@
+{
+  "visual_id": "VIS-CRATE-001",
+  "reader_question": "Which crates are proven mostly by real integration tests, and which lean on unit tests alone?",
+  "classification": "internal",
+  "selected_visual": "heatmap",
+  "preset": "crate-test-coverage-heatmap",
+  "title": "CredMgr V2 — test tier by crate",
+  "subtitle": "Percent of each crate's suite that is an integration test (real broker socket, real subprocess) vs. a unit test",
+  "units": ["percent"],
+  "scale_min": 0,
+  "scale_max": 100,
+  "text_summary": "credmgr-cli is proven entirely by integration tests (broker/MCP subprocess round trips, 0% unit). credmgr-keystore and credmgr-store are proven entirely by unit tests (0% integration) — neither needs a live broker to exercise. credmgr-brokerd sits at 84% integration, reflecting the isolation suite's own convention of driving real dispatch calls rather than hand-built scopes.",
+  "data_source_ids": ["cargo-test-workspace-2026-08-17"],
+  "truth_state": "verified-current",
+  "data": {
+    "rows": ["credmgr-brokerd", "credmgr-cli", "credmgr-core", "credmgr-keystore", "credmgr-mcp", "credmgr-store"],
+    "cols": ["unit", "integration"],
+    "matrix": [
+      [15.6, 84.4],
+      [0.0, 100.0],
+      [81.3, 18.7],
+      [100.0, 0.0],
+      [69.2, 30.8],
+      [100.0, 0.0]
+    ]
+  }
+}

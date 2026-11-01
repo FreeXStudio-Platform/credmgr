@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-05-conformance",
+  "selected_visual": "heatmap",
+  "preset": "subsystem-conformance",
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "9d76fa4d7e1617efb35d2d15299972ef3ec3eb850d723558e86637ca4143d340",
+  "option_sha256": "cb50ada161cdef1522ebf95eca9e8612f3668bfb25481e45c70c103e3977ad60",
+  "job_sha256": "133ad0a48ce9f6ba32df5ab2e7cdda832e9688750e9f58ffd1227203bf6664b1",
+  "render_ms": 9,
+  "warnings": []
+}

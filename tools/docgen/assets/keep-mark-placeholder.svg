@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5">
+  <!-- Placeholder mark, not a final logo — the real mark is CredMgr V2's one
+       genuinely open design task (see CredMgr-V2-Design/04_CLAUDE_DESIGN_PROMPT_STRICT.md).
+       A plain monospace bracket, matching KEEP's own "monospace is the voice of the
+       vault" identity line, so the doc-system renders something honest rather than
+       a fabricated brand asset. Replace this file in place once the real mark lands. -->
+  <path d="M6 4 L2 4 L2 24 L6 24" />
+  <path d="M22 4 L26 4 L26 24 L22 24" />
+  <rect x="12" y="11" width="4" height="6" rx="1" fill="currentColor" stroke="none" />
+</svg>

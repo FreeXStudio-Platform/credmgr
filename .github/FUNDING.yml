@@ -1,0 +1,9 @@
+# Donations. GitHub's FUNDING.yml has no crypto field, so the route is `custom:`, pointing at
+# v2/DONATE.md — the file that carries the addresses (EVM, Bitcoin, Solana, Tron, TON) and the
+# steps for verifying one before sending anything. The V1 copy (v1/DONATE.md) lists the same
+# addresses; V2 is the current product, so it is the one linked here.
+#
+# Donations are voluntary gifts, not refundable, and buy no licence, support or feature. Licensing
+# and permissions go through Admin@freexstudio.com.
+
+custom: ["https://github.com/FreeXStudio-Platform/credmgr/blob/main/v2/DONATE.md"]

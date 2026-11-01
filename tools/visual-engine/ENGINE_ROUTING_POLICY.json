@@ -1,0 +1,55 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-08-08",
+  "rule": "AI agents select and specify; approved engines render; project templates remain visual authority.",
+  "routes": [
+    {
+      "when": "document-grade diagram (architecture, workflow, state, sequence, dependency, 2.5D/3D, geo, motion)",
+      "engine": "tools/docgen",
+      "decision": "KEEP_EXISTING",
+      "why": "deterministic hand-built SVG with collision validation, KEEP tokens, leak-gate — the design authority. ECharts does not replace it (spec §5: preserve first)."
+    },
+    {
+      "when": "quantitative data chart for docs/reports/dashboards (compare, trend, distribute, relate, compose, flow, matrix, hierarchy, status)",
+      "engine": "tools/visual-engine (echarts@6.1.0)",
+      "decision": "ADD_ECHARTS",
+      "why": "fulfils the planned local-ECharts dependency in DOCUMENT_REWRITE_PROTOCOL.md; docgen charts.py keeps its 5 forms for fully-token-native document charts; ECharts adds scatter/box/graph/tree/funnel/scorecard breadth + interactive HTML."
+    },
+    {
+      "when": "app product UI",
+      "engine": "frontend Recharts",
+      "decision": "KEEP_EXISTING",
+      "why": "shipping UI, bundle-optimized, Playwright-covered. No migration."
+    },
+    {
+      "when": "markdown drafting stage",
+      "engine": "mermaid fences",
+      "decision": "KEEP_EXISTING",
+      "why": "authoring convenience; converted at final render stage per DOCUMENT_REWRITE_PROTOCOL.md."
+    },
+    {
+      "when": "code-graph exploration",
+      "engine": "tools/graphify (vendored force-graph)",
+      "decision": "KEEP_EXISTING",
+      "why": "local navigation tool outside the design system."
+    },
+    {
+      "when": "agent-driven render via MCP",
+      "engine": "mcp/server.mjs facade",
+      "decision": "ADD_MCP (project-owned facade)",
+      "why": "external MCPs rejected: apache=cloud storage, hustcc=excess surface (mcp/approved-server.json). Direct adapter remains mandatory fallback."
+    },
+    {
+      "when": "3D bars/pies, dual axes, force layouts, >6-slice pies, unconserved sankeys, aggregate health scores",
+      "engine": "REFUSED",
+      "decision": "NOT_REQUIRED",
+      "why": "anti-patterns (knowledge/CHART_ANTI_PATTERNS.json) + T-R3."
+    },
+    {
+      "when": "exact values / 1-2 numbers / procedural logic",
+      "engine": "NO_CHART",
+      "decision": "NOT_REQUIRED",
+      "why": "table, metric card, prose, or docgen diagram answers better (§18)."
+    }
+  ]
+}

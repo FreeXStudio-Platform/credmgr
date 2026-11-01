@@ -1,0 +1,15 @@
+{
+  "id": "incident-timeline",
+  "visual": "timeline",
+  "family": "time",
+  "summary": "Incident event timeline",
+  "canonical_reader_question": "What happened, in what order, during the incident?",
+  "required_fields": [
+    "data.events"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "events need absolute timestamps; annotate detection vs resolution",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

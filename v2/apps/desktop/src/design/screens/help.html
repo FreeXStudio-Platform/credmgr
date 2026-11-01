@@ -1,0 +1,81 @@
+<sc-if value="{{dlgHelp}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S21 Help" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-help-title" style="width:min(720px,94vw);max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:28px;display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <span id="dlg-help-title" class="t-h3" style="font-family:var(--f-mono)">Help</span>
+      <input type="search" data-help-search="true" aria-label="search help topics" value="{{helpQ}}" onChange="{{onHelpQ}}" placeholder="find a feature, e.g. backup, agent, 2fa" style="flex:1;min-width:0;background:var(--steel-2);font-family:var(--f-mono);font-size:var(--fs-base)">
+      <sc-if value="{{helpHasQuery}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{helpClear}}" style="padding:2px 8px;font-size:var(--fs-sm)">Clear</button></sc-if>
+      <button class="k-btn" onClick="{{closeDialog}}" style="min-width:24px;border:none;padding:2px 6px;color:var(--mute)" aria-label="close">✕</button>
+    </div>
+    <div role="status" aria-live="polite" data-help-count="true" class="t-caption">{{helpCountText}}</div>
+    <sc-if value="{{helpNoQuery}}" hint-placeholder-val="{{true}}">
+    <div style="display:flex;flex-direction:column;gap:18px">
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">reading the graph</div>
+      <div class="t-body-sm" style="display:flex;flex-direction:column;gap:6px">
+        <div>Filled circle — <b>global</b>, the one node every other node can read. Ringed circle — a <b>project</b>. Thinner ring — a <b>sub-node</b>. Dashed ring — <b>orphaned</b>, sealed items with nowhere to live.</div>
+        <div>Each project's inner mark is a fingerprint of its name — decorative, not a category. Small dots orbiting a node are its entries; colour is a hash of the entry's id, never its name or value.</div>
+        <div><span style="color:var(--warn)">⌐</span> means the node itself is locked, <span style="color:var(--mute)">‖</span> means the node asks every caller but you for a second factor on reveal (requireTwoFactor, enforced by the broker once a second factor is set up). You, logged in, are already past it; the chip on the node gives the factor on purpose and opens a five-minute window, for the whole vault, for them. A dashed line with an arrowhead is a <b>grant</b> — it points from the trusted node to the node it can see into.</div>
+        <div>Drag one node onto another to propose a grant between them. <span style="font-family:var(--f-mono)">T</span> switches to the tree view — a full keyboard- and screen-reader-accessible peer to the graph, never a fallback.</div>
+      </div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">sealing</div>
+      <div class="t-body-sm">Removing a node never deletes it. "Seal" moves its entries to Orphaned, where names stay visible but the values cannot be opened from this app: that needs presence (Touch ID), which this beta cannot attest yet. A sealed node can be brought back within 7 days; Settings → Nodes offers Restore for nodes sealed since the app started.</div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">grants</div>
+      <div class="t-body-sm">Isolation between nodes is the default — nothing can see into anything else until you say so. A grant names a from-node (the one that receives access), a to-node, which capabilities (read, reveal values, notes) and a reason. It shows as a dashed edge on the graph and can be revoked from Settings → Grants at any time, in either mode. Creating a grant needs presence (Touch ID), which this beta cannot attest yet, so the broker refuses it; grants made elsewhere are listed and can be revoked here.</div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">notes</div>
+      <div class="t-body-sm">+ New note in the inspector adds an entry whose single value is free text — for anything that is not a credential. It is stored, masked until you reveal it, and audited like any other entry.</div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">writing while locked</div>
+      <div class="t-body-sm">An entry added to a locked node is not written to the manifest. It waits in the pending tray — the “held” chip in the header, or Pending writes in the vault menu. When you open the vault, a banner reports how many are waiting; each is accepted or discarded on its own, with its node, name and field count shown and never its values.</div>
+    </div>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">keyboard</div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-family:var(--f-mono);font-size:var(--fs-sm)">
+        <span class="t-kbd">/</span><span>focus search</span>
+        <span class="t-kbd">F</span><span>fit graph to view</span>
+        <span class="t-kbd">G</span><span>jump to global</span>
+        <span class="t-kbd">T</span><span>toggle graph / tree</span>
+        <span class="t-kbd">E</span><span>entries: all nodes ↔ selected only</span>
+        <span class="t-kbd">N</span><span>new entry</span>
+        <span class="t-kbd">⌘L</span><span>lock the vault</span>
+        <span class="t-kbd">⌘⇧O</span><span>Operations panel (pro)</span>
+        <span class="t-kbd">Esc</span><span>close whatever is open</span>
+        <span class="t-kbd">Tab</span><span>cycle fields inside an open dialog</span>
+      </div>
+    </div>
+    <div class="t-caption">Licence, privacy and donation info live in About — <a href="#" onClick="{{helpGoAbout}}">open it</a>.</div>
+    </div>
+    </sc-if>
+    <div>
+      <div class="t-mono-label" style="margin-bottom:8px">everything the app can do, and where it is</div>
+      <div style="display:flex;flex-direction:column;gap:10px" data-help-list="true">
+        <sc-for list="{{helpRows}}" as="r" hint-placeholder-count="3">
+          <sc-if value="{{r.isHead}}" hint-placeholder-val="{{false}}">
+            <div class="t-mono-label" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--hair-strong)">{{r.head}}</div>
+          </sc-if>
+          <sc-if value="{{r.isTopic}}" hint-placeholder-val="{{true}}">
+            <div data-help-topic="true" style="display:flex;flex-direction:column;gap:3px;padding:6px 0">
+              <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+                <span style="font-family:var(--f-mono);font-weight:var(--fw-label)">{{r.title}}</span>
+                <sc-if value="{{r.hasBadge}}" hint-placeholder-val="{{false}}"><span class="k-chip" data-state="{{r.badgeState}}">{{r.badge}}</span></sc-if>
+              </div>
+              <div class="t-body-sm">{{r.summary}}</div>
+              <div class="t-caption" style="color:var(--ash)">Where: {{r.where}}</div>
+              <div class="t-caption">{{r.howText}}</div>
+              <sc-if value="{{r.hasCli}}" hint-placeholder-val="{{false}}"><div class="t-caption" style="font-family:var(--f-mono)">{{r.cli}}</div></sc-if>
+            </div>
+          </sc-if>
+        </sc-for>
+        <sc-if value="{{helpNone}}" hint-placeholder-val="{{false}}"><div class="k-empty" style="padding:16px">Nothing matches. Try a shorter word, or a different one: lock, backup, agent, 2fa, copy.</div></sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>

@@ -1,0 +1,22 @@
+{
+  "installed": "2026-08-08",
+  "command": "npm install (from committed package.json with exact pins)",
+  "environment": {
+    "node": "v26.5.0",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "audit": "npm install reported 0 vulnerabilities (2026-08-08)",
+  "provenance": {
+    "echarts": "registry.npmjs.org, Apache-2.0, published 2026-05-19, verified via npm view",
+    "resvg": "registry.npmjs.org, MPL-2.0",
+    "mcp_sdk": "registry.npmjs.org, MIT",
+    "zod": "registry.npmjs.org, MIT"
+  },
+  "smoke": {
+    "ssr_svg": "PASS (400x300 bar, renderToSVGString)",
+    "png": "PASS (resvg rasterization)",
+    "families": "12/12 render deterministically (see tests/)"
+  },
+  "rollback": "git revert of the feat/visual-engine merge removes the engine atomically; no other package.json, lockfile or build config was modified. Registration edits (CLAUDE.md/.mcp.json/SYSTEM.json/DOCUMENT_REWRITE_PROTOCOL.md/PROJECT_LOG.md) revert in the same commit."
+}

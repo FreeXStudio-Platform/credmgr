@@ -1,0 +1,7 @@
+<sc-if value="{{noticeShow}}" hint-placeholder-val="{{false}}">
+<div data-notice="{{noticeKind}}" role="{{noticeRole}}" aria-live="polite" style="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:120;max-width:min(560px,calc(100vw - 32px));display:flex;align-items:flex-start;gap:12px;padding:10px 14px;background:var(--steel-2);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 12px 32px var(--scrim);font-family:var(--f-mono);font-size:var(--fs-sm)">
+  <span class="k-chip" data-state="{{noticeChipState}}" style="flex:none">{{noticeLabel}}</span>
+  <span style="min-width:0;overflow-wrap:anywhere">{{noticeText}}</span>
+  <button class="k-btn" onClick="{{dismissNotice}}" style="flex:none;border:none;padding:2px 8px;margin-left:auto" aria-label="dismiss notice">✕</button>
+</div>
+</sc-if>

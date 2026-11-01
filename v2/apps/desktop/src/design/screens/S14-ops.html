@@ -1,0 +1,24 @@
+<sc-if value="{{ovOps}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:76;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S14 Operations" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-ops-title" style="width:min(680px,94vw);height:min(640px,90vh);background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:16px 24px;border-bottom:1px solid var(--hair);display:flex;justify-content:space-between;align-items:center"><span id="dlg-ops-title" class="t-eyebrow">operations · pro</span><span class="t-kbd">⌘⇧O</span></div>
+    <div style="flex:1;overflow-y:auto">
+      <sc-for list="{{opsRows}}" as="o" hint-placeholder-count="5">
+        <div style="display:grid;grid-template-columns:170px minmax(0,1fr) auto;gap:16px;align-items:center;width:100%;padding:14px 24px;border-bottom:1px solid var(--hair);color:var(--bone)">
+          <span style="font-family:var(--f-mono);font-size:var(--fs-base);font-weight:var(--fw-label)">{{o.name}}</span>
+          <span style="font-size:var(--fs-base);color:var(--ash)">{{o.desc}}</span>
+          <button class="k-btn" onClick="{{o.run}}" disabled="{{o.disabled}}" aria-label="{{o.name}}" style="min-width:84px">{{o.label}}</button>
+        </div>
+      </sc-for>
+      <sc-if value="{{opsResultShow}}" hint-placeholder-val="{{false}}">
+        <div class="k-note" role="status" aria-live="polite" data-ops-result="true" style="margin:16px 24px;display:flex;flex-direction:column;gap:6px">
+          <span class="t-mono-label">{{opsResultTitle}}</span>
+          <sc-for list="{{opsResultLines}}" as="l" hint-placeholder-count="3"><div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:{{l.tone}};overflow-wrap:anywhere">{{l.text}}</div></sc-for>
+          <sc-if value="{{opsResultHasActions}}" hint-placeholder-val="{{false}}"><div style="display:flex;gap:8px;margin-top:6px"><sc-for list="{{opsResultActions}}" as="x" hint-placeholder-count="2"><button class="k-btn" onClick="{{x.go}}" disabled="{{x.disabled}}">{{x.label}}</button></sc-for></div></sc-if>
+        </div>
+      </sc-if>
+    </div>
+    <div style="padding:12px 24px;border-top:1px solid var(--hair);display:flex;justify-content:flex-end"><button class="k-btn" onClick="{{closeOverlay}}">Close</button></div>
+  </div>
+</div>
+</sc-if>

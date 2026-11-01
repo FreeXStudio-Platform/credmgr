@@ -1,0 +1,17 @@
+{
+  "id": "doc-coverage-matrix",
+  "visual": "heatmap",
+  "family": "matrix",
+  "summary": "Docs × crate coverage matrix",
+  "canonical_reader_question": "Which crates lack current documentation?",
+  "required_fields": [
+    "data.rows",
+    "data.cols",
+    "data.matrix"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "stale docs are their own state (0.5), not missing",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

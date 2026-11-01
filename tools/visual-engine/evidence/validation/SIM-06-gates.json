@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-06-gates",
+  "selected_visual": "heatmap",
+  "preset": "ci-gate-status",
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "5bb3abe0723899289b07cf9e6708c7edfa0f5008da721be3f868ecae779d86d4",
+  "option_sha256": "d76e36c27130d2e0a8d88b6c2d18e91ab96b0fae6e0b4ff408a8d4b9c8f7202d",
+  "job_sha256": "214c465f130d8b26d2d8659fee65d68de38e43227fa92a8cd95f9280d379610d",
+  "render_ms": 14,
+  "warnings": []
+}

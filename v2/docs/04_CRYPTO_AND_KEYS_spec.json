@@ -1,0 +1,247 @@
+[
+  {
+    "kind": "flowchart",
+    "id": "key-hierarchy-built-vs-planned",
+    "title": "Key hierarchy: built vs. planned",
+    "caption": "Complete and tested from the root key downward; every path that would put a root wrap on disk or back it with hardware is absent.",
+    "nodes": [
+      {
+        "id": "hw_keystore",
+        "type": "fallback",
+        "label": "Hardware keystore",
+        "x": 50,
+        "y": 100,
+        "w": 220,
+        "h": 64
+      },
+      {
+        "id": "sw_keystore",
+        "type": "gate",
+        "label": "SoftwareKeystore",
+        "x": 480,
+        "y": 100,
+        "w": 220,
+        "h": 64
+      },
+      {
+        "id": "bootstrap",
+        "type": "fallback",
+        "label": "Vault bootstrap",
+        "x": 215,
+        "y": 340,
+        "w": 320,
+        "h": 64
+      },
+      {
+        "id": "root_key",
+        "type": "process",
+        "label": "Root key (RK)",
+        "x": 275,
+        "y": 580,
+        "w": 240,
+        "h": 64,
+        "note": "held only in broker memory"
+      },
+      {
+        "id": "node_keys",
+        "type": "process",
+        "label": "Node keys",
+        "x": 275,
+        "y": 840,
+        "w": 240,
+        "h": 64,
+        "note": "X25519 per node, wrap/unwrap tested"
+      },
+      {
+        "id": "entry_env",
+        "type": "output",
+        "label": "Entry envelopes",
+        "x": 275,
+        "y": 1100,
+        "w": 240,
+        "h": 64,
+        "note": "CMV2 sealed box, built and tested"
+      },
+      {
+        "id": "orphan_key",
+        "type": "fallback",
+        "label": "Orphan cold key",
+        "x": 660,
+        "y": 1100,
+        "w": 240,
+        "h": 64
+      }
+    ],
+    "edges": [
+      {
+        "src": "hw_keystore",
+        "dst": "bootstrap",
+        "style": "dashed",
+        "condition": "no implementation"
+      },
+      {
+        "src": "sw_keystore",
+        "dst": "bootstrap",
+        "style": "dashed",
+        "condition": "wrap logic built, nothing calls it"
+      },
+      {
+        "src": "bootstrap",
+        "dst": "root_key",
+        "style": "dashed",
+        "condition": "blocked, no init subcommand"
+      },
+      {
+        "src": "root_key",
+        "dst": "node_keys",
+        "label": "HKDF node-wrap",
+        "main": true
+      },
+      {
+        "src": "node_keys",
+        "dst": "entry_env",
+        "label": "ECDH + HKDF entry key",
+        "main": true
+      },
+      {
+        "src": "node_keys",
+        "dst": "orphan_key",
+        "style": "dashed",
+        "condition": "no unseal op, section 5.2"
+      }
+    ],
+    "legend": [
+      {
+        "kind": "line",
+        "key": "solid",
+        "label": "Built and tested"
+      },
+      {
+        "kind": "line",
+        "key": "dashed",
+        "label": "Planned, no code path"
+      },
+      {
+        "kind": "node",
+        "key": "fallback",
+        "label": "Nothing implements this yet"
+      }
+    ],
+    "motion": true,
+    "width": 980,
+    "height": 1340,
+    "data_sources": [
+      {
+        "kind": "cited",
+        "ref": "v2/crates/core/src/keys.rs"
+      },
+      {
+        "kind": "cited",
+        "ref": "v2/crates/keystore/src/software.rs"
+      },
+      {
+        "kind": "cited",
+        "ref": "v2/crates/keystore/src/lib.rs"
+      },
+      {
+        "kind": "cited",
+        "ref": "v2/crates/store/src/paths.rs"
+      }
+    ]
+  },
+  {
+    "kind": "state",
+    "id": "seal-to-orphan-timeline",
+    "title": "Seal to orphan: three states, not two",
+    "caption": "Recovery stops being cheap at day 7, a tested authorization boundary, not merely an expiring flag.",
+    "nodes": [
+      {
+        "id": "active",
+        "type": "state",
+        "label": "Node active",
+        "x": 60,
+        "y": 400,
+        "w": 200,
+        "h": 64
+      },
+      {
+        "id": "sealed",
+        "type": "state",
+        "label": "Sealed, day 0-6",
+        "x": 460,
+        "y": 100,
+        "w": 220,
+        "h": 64,
+        "note": "restore built, ADR-053; reversible by move"
+      },
+      {
+        "id": "expired",
+        "type": "state",
+        "label": "Day 7+, cold copy only",
+        "x": 820,
+        "y": 340,
+        "w": 260,
+        "h": 64,
+        "note": "destruction has no caller, R-10"
+      },
+      {
+        "id": "unseal",
+        "type": "state",
+        "label": "Per-item unseal (planned)",
+        "x": 820,
+        "y": 620,
+        "w": 260,
+        "h": 64
+      }
+    ],
+    "edges": [
+      {
+        "src": "active",
+        "dst": "sealed",
+        "label": "node.seal",
+        "main": true
+      },
+      {
+        "src": "sealed",
+        "dst": "active"
+      },
+      {
+        "src": "sealed",
+        "dst": "expired",
+        "label": "day 7 elapses",
+        "main": true
+      },
+      {
+        "src": "expired",
+        "dst": "unseal",
+        "style": "dashed",
+        "condition": "presence + fresh code, planned"
+      }
+    ],
+    "legend": [
+      {
+        "kind": "line",
+        "key": "solid",
+        "label": "Transition built and tested"
+      },
+      {
+        "kind": "line",
+        "key": "dashed",
+        "label": "Transition planned, no implementation"
+      }
+    ],
+    "motion": true,
+    "width": 1180,
+    "height": 840,
+    "data_sources": [
+      {
+        "kind": "cited",
+        "ref": "v2/crates/store/src/archive.rs"
+      },
+      {
+        "kind": "cited",
+        "ref": "v2/crates/brokerd/tests/isolation.rs"
+      }
+    ]
+  }
+]

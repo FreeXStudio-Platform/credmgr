@@ -1,0 +1,48 @@
+  <main class="cm-main">
+    <div ref="{{graphRef}}" style="position:absolute;inset:0;display:{{graphDisplay}}"></div>
+    <button class="k-chip" onClick="{{toggleEntriesMode}}" style="position:absolute;top:12px;right:16px;cursor:pointer;background:none;display:{{graphDisplay}}" title="E — every node's entries shown by default; toggle to show only the selected node's">{{entriesModeLabel}}</button>
+    <button class="k-chip" onClick="{{openGames}}" style="position:absolute;top:40px;right:16px;cursor:pointer;background:none;display:{{graphDisplay}}" title="CredPong — local, isolated, never reads vault data">bored? there's a game in here →</button>
+    <sc-if value="{{isTreeView}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="S2 Worktree view" style="position:absolute;inset:0;overflow-y:auto;padding:32px 48px;background:var(--void)">
+        <div class="t-eyebrow" style="margin-bottom:16px">worktree · full parity with the graph</div>
+        <div style="display:flex;flex-direction:column;max-width:640px">
+          <sc-for list="{{treeRows}}" as="r" hint-placeholder-count="9">
+            <div style="display:flex;align-items:center;gap:0;padding-left:{{r.indent}};border-left:{{r.guide}};border-bottom:1px solid var(--hair);background:{{r.bg}};border-radius:var(--r-xs)">
+              <button onClick="{{r.select}}" onMouseEnter="{{r.hoverOn}}" onMouseLeave="{{r.hoverOff}}" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;padding:8px 12px;border:0;background:none;font:inherit;text-align:left;color:inherit;cursor:pointer">
+                <svg width="18" height="18" viewBox="0 0 24 24" style="color:{{r.glyphColor}};flex:0 0 auto"><sc-if value="{{r.gCircle}}" hint-placeholder-val="{{true}}"><circle cx="12" cy="12" r="{{r.gr}}" fill="{{r.gfill}}" stroke="currentColor" stroke-width="{{r.gsw}}" stroke-dasharray="{{r.gdash}}"></circle></sc-if><sc-if value="{{r.gPoly}}" hint-placeholder-val="{{false}}"><polygon points="{{r.gpts}}" fill="{{r.gfill}}" stroke="currentColor" stroke-width="{{r.gsw}}" stroke-dasharray="{{r.gdash}}"></polygon></sc-if><sc-if value="{{r.gRect}}" hint-placeholder-val="{{false}}"><rect x="{{r.gx}}" y="{{r.gx}}" width="{{r.gw}}" height="{{r.gw}}" rx="{{r.grx}}" fill="{{r.gfill}}" stroke="currentColor" stroke-width="{{r.gsw}}" stroke-dasharray="{{r.gdash}}"></rect></sc-if></svg>
+                <span style="font-family:var(--f-mono);font-size:var(--fs-md);font-weight:{{r.fw}}">{{r.label}}</span>
+                <span style="color:{{r.lockColor}};font-size:var(--fs-sm)">{{r.badges}}</span>
+                <span style="margin-left:auto;font-family:var(--f-mono);font-size:var(--fs-xs);color:{{r.subColor}}">{{r.counts2}}</span>
+              </button>
+              <button class="k-btn" onClick="{{r.menuBtn}}" style="min-width:24px;border:none;padding:2px 8px;color:{{r.subColor}};flex:0 0 auto" aria-label="node actions">⋮</button>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{hoverVisible}}" hint-placeholder-val="{{false}}">
+      <div class="k-hover" data-screen-label="S3 Hover card" style="left:{{hoverX}};top:{{hoverY}}">
+        <sc-if value="{{hoverIsEntry}}" hint-placeholder-val="{{false}}">
+          <div style="text-align:center;padding:0 4px"><div class="l" style="text-transform:capitalize;white-space:nowrap">{{hoverEntryType}}</div></div>
+        </sc-if>
+        <sc-if value="{{hoverIsNode}}" hint-placeholder-val="{{true}}">
+          <div style="text-align:center"><div class="n">{{hoverEntries}}</div><div class="l">entries</div></div>
+          <div style="text-align:center"><div class="n">{{hoverTotp}}</div><div class="l">2fa</div></div>
+        </sc-if>
+      </div>
+    </sc-if>
+    <sc-if value="{{ctxVisible}}" hint-placeholder-val="{{false}}">
+      <div class="cm-ctxmenu" data-screen-label="S23 Context menu" role="menu" style="position:absolute;left:{{ctxX}};top:{{ctxY}};z-index:70;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-sm);box-shadow:0 8px 24px var(--scrim);min-width:180px;padding:4px;display:flex;flex-direction:column">
+        <sc-for list="{{ctxItems}}" as="m" hint-placeholder-count="6">
+          <button onClick="{{m.go}}" style="padding:6px 10px;border:0;background:none;color:{{m.color}};cursor:pointer;font-family:var(--f-mono);font-size:var(--fs-sm);text-align:left;border-radius:var(--r-xs)" style-hover="background:var(--steel-2)">{{m.label}}</button>
+        </sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{noProjects}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="S1a Empty vault" style="position:absolute;left:50%;top:64%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+        <div class="k-empty" style="padding:0">No projects yet — <span style="color:var(--bone)">global</span> is the only node.</div>
+        <button class="k-btn" data-variant="primary" onClick="{{openAddNodeDlg}}">+ New project</button>
+      </div>
+    </sc-if>
+    <div style="position:absolute;left:16px;right:16px;bottom:12px;text-wrap:balance;font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute);pointer-events:none;display:{{graphDisplay}}">F fit · G global · T view · E entries · / search · ⌘L lock · drag node→node = grant</div>
+  </main>

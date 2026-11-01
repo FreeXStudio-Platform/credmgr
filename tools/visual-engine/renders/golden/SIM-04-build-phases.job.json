@@ -1,0 +1,69 @@
+{
+  "visual_id": "SIM-04-build-phases",
+  "classification": "internal",
+  "theme": "project-theme",
+  "reader_question": "How do the build phases depend on each other?",
+  "text_summary": "Simulation text summary for accessibility gate.",
+  "selected_visual": "graph",
+  "preset": "build-phase-dag",
+  "layout": "circular",
+  "title": "CredMgr V2 build phases",
+  "data": {
+    "nodes": [
+      {
+        "name": "Phase 0: toolchain"
+      },
+      {
+        "name": "Phase 1: core"
+      },
+      {
+        "name": "Phase 2: storage"
+      },
+      {
+        "name": "Phase 3: broker"
+      },
+      {
+        "name": "Phase 4: CLI"
+      },
+      {
+        "name": "Phase 5: 2FA/MCP"
+      },
+      {
+        "name": "Phase 7: hardening"
+      },
+      {
+        "name": "Phase 8: audit"
+      }
+    ],
+    "links": [
+      {
+        "source": "Phase 0: toolchain",
+        "target": "Phase 1: core"
+      },
+      {
+        "source": "Phase 1: core",
+        "target": "Phase 2: storage"
+      },
+      {
+        "source": "Phase 2: storage",
+        "target": "Phase 3: broker"
+      },
+      {
+        "source": "Phase 3: broker",
+        "target": "Phase 4: CLI"
+      },
+      {
+        "source": "Phase 4: CLI",
+        "target": "Phase 5: 2FA/MCP"
+      },
+      {
+        "source": "Phase 5: 2FA/MCP",
+        "target": "Phase 7: hardening"
+      },
+      {
+        "source": "Phase 7: hardening",
+        "target": "Phase 8: audit"
+      }
+    ]
+  }
+}

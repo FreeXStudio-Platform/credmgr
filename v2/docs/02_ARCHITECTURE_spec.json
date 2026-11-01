@@ -1,0 +1,85 @@
+[
+  {
+    "kind": "system_map",
+    "id": "broker-trust-boundary",
+    "title": "Who can reach plaintext, and what each process actually holds",
+    "caption": "credmgrd is the only process that ever holds node keys; every other surface reaches it only as a socket peer holding a path and, for two of the three, a token (ADR-056/057).",
+    "motion": false,
+    "width": 1000,
+    "height": 900,
+    "nodes": [
+      { "id": "cli", "type": "process", "label": "credmgr CLI", "x": 20, "y": 70, "note": "(built) socket + optional token" },
+      { "id": "mcp", "type": "process", "label": "credmgr mcp", "x": 280, "y": 70, "note": "(built) socket, no token" },
+      { "id": "tauri", "type": "process", "label": "Tauri bridge", "x": 540, "y": 70, "note": "(partial) token stays in Rust" },
+      { "id": "ui", "type": "process", "label": "UI screens", "x": 800, "y": 70, "note": "(planned) scaffold only" },
+      { "id": "credmgrd", "type": "gate", "label": "credmgrd", "x": 410, "y": 346, "highlight": true, "alive": true, "note": "only key holder" },
+      { "id": "vault", "type": "datastore", "label": "vault on disk", "x": 410, "y": 622, "note": "ciphertext only" }
+    ],
+    "edges": [
+      { "src": "cli", "dst": "credmgrd" },
+      { "src": "mcp", "dst": "credmgrd" },
+      { "src": "tauri", "dst": "credmgrd" },
+      { "src": "ui", "dst": "tauri" },
+      { "src": "credmgrd", "dst": "vault" }
+    ],
+    "legend": [
+      { "kind": "node", "key": "gate", "label": "credmgrd — the only process that ever holds node keys" },
+      { "kind": "node", "key": "process", "label": "client process — socket peer, no keys" },
+      { "kind": "node", "key": "datastore", "label": "vault on disk — encrypted at rest" }
+    ],
+    "data_sources": [
+      { "kind": "cited", "ref": "crates/brokerd/src/state.rs (hot_keys: RwLock<HashMap<String, [u8; 32]>>)" },
+      { "kind": "cited", "ref": "crates/cli/src/transport.rs (call(op, token: Option<&str>, params); socket_path())" },
+      { "kind": "cited", "ref": "crates/mcp/src/transport.rs (call(op, params) sends token: Value::Null — cwd-scoped, no token, per docs/13_TEST_PLAN.md I-11)" },
+      { "kind": "cited", "ref": "apps/desktop/src-tauri/src/commands.rs (8 #[tauri::command] functions) and src/session.rs (Session holds the ADR-056 token; never returned to the webview)" },
+      { "kind": "cited", "ref": "apps/desktop/src/routes/ (+layout.ts, +page.svelte — unmodified SvelteKit scaffold)" },
+      { "kind": "cited", "ref": "crates/store/src/paths.rs (the on-disk vault tree, per-node envelopes)" }
+    ]
+  },
+  {
+    "kind": "dependency_graph",
+    "id": "crate-dependency-graph",
+    "title": "The workspace crate graph — runtime vs. dev-only edges",
+    "caption": "core is the only crate with no internal dependencies; every other crate depends on it. The only edges into brokerd from a client crate (cli, mcp) are dev-dependencies (dashed) — no shipped client binary links it.",
+    "motion": false,
+    "width": 1080,
+    "height": 960,
+    "nodes": [
+      { "id": "core", "type": "process", "label": "core", "x": 500, "y": 80, "highlight": true, "note": "no internal deps" },
+      { "id": "mcp", "type": "process", "label": "mcp", "x": 500, "y": 320 },
+      { "id": "brokerd", "type": "process", "label": "brokerd", "x": 220, "y": 680 },
+      { "id": "cli", "type": "process", "label": "cli", "x": 780, "y": 680 },
+      { "id": "keystore", "type": "process", "label": "keystore", "x": 0, "y": 460 },
+      { "id": "store", "type": "process", "label": "store", "x": 960, "y": 460 }
+    ],
+    "edges": [
+      { "src": "keystore", "dst": "core", "style": "solid" },
+      { "src": "store", "dst": "core", "style": "solid" },
+      { "src": "brokerd", "dst": "core", "style": "solid" },
+      { "src": "brokerd", "dst": "keystore", "style": "solid" },
+      { "src": "brokerd", "dst": "store", "style": "solid" },
+      { "src": "cli", "dst": "core", "style": "solid" },
+      { "src": "cli", "dst": "mcp", "style": "solid" },
+      { "src": "cli", "dst": "store", "style": "solid" },
+      { "src": "mcp", "dst": "core", "style": "solid" },
+      { "src": "mcp", "dst": "store", "style": "solid" },
+      { "src": "cli", "dst": "brokerd", "style": "dashed", "label": "dev only" },
+      { "src": "cli", "dst": "keystore", "style": "dashed", "label": "dev only" },
+      { "src": "mcp", "dst": "brokerd", "style": "dashed", "label": "dev only" },
+      { "src": "mcp", "dst": "keystore", "style": "dashed", "label": "dev only" }
+    ],
+    "legend": [
+      { "kind": "node", "key": "process", "label": "crate (core highlighted — depended on by all five others)" },
+      { "kind": "line", "key": "solid", "label": "runtime dependency ([dependencies])" },
+      { "kind": "line", "key": "dashed", "label": "dev-dependency only ([dev-dependencies])" }
+    ],
+    "data_sources": [
+      { "kind": "cited", "ref": "crates/core/Cargo.toml ([dependencies]: no internal path deps)" },
+      { "kind": "cited", "ref": "crates/keystore/Cargo.toml ([dependencies]: credmgr-core)" },
+      { "kind": "cited", "ref": "crates/store/Cargo.toml ([dependencies]: credmgr-core)" },
+      { "kind": "cited", "ref": "crates/mcp/Cargo.toml ([dependencies]: credmgr-core, credmgr-store; [dev-dependencies]: credmgr-brokerd, credmgr-keystore)" },
+      { "kind": "cited", "ref": "crates/brokerd/Cargo.toml ([dependencies]: credmgr-core, credmgr-keystore, credmgr-store)" },
+      { "kind": "cited", "ref": "crates/cli/Cargo.toml ([dependencies]: credmgr-core, credmgr-mcp, credmgr-store; [dev-dependencies]: credmgr-brokerd, credmgr-keystore)" }
+    ]
+  }
+]

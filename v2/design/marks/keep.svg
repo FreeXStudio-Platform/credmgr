@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="CredMgr">
+  <title>CredMgr: the KEEP mark</title>
+  <!--
+    The KEEP mark (two concentric squares and a centre dot) as the application icon.
+    Geometry is the mark's own 24-unit grid: outer square 3.5..20.5, inner square 8..16,
+    centre dot 11..13, 1.5-unit square-capped strokes. It is scaled by 26 so the mark
+    fills about 58% of the plate, and placed so its centre is the plate's centre.
+    Colours are the KEEP tokens, written out because a rasteriser has no CSS variables:
+    --night #050506 (plate) and --bone #E9ECF1 (mark). See v2/design/tokens/.
+    The plate follows the macOS app-icon grid: an 824-unit rounded square (corner radius
+    185) centred on the 1024 canvas, leaving 100 units of transparent margin on each side.
+    Rasterised to icon.png by render-icon.mjs; `npx tauri icon` then derives the rest.
+  -->
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="#050506"/>
+  <rect x="103" y="103" width="818" height="818" rx="182" ry="182" fill="none" stroke="#E9ECF1" stroke-opacity="0.14" stroke-width="6"/>
+  <g transform="translate(200 200) scale(26)" fill="none" stroke="#E9ECF1" stroke-width="1.5" stroke-linecap="square">
+    <rect x="3.5" y="3.5" width="17" height="17"/>
+    <rect x="8" y="8" width="8" height="8"/>
+    <rect x="11" y="11" width="2" height="2" fill="#E9ECF1" stroke="none"/>
+  </g>
+</svg>

@@ -1,0 +1,402 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 0,
+      "figures": 1,
+      "sections": 9,
+      "tables": 3
+    },
+    "figures": [
+      "phantom-requirement-propagation"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-061",
+        "ADR-073",
+        "ADR-032",
+        "ADR-063",
+        "ADR-059",
+        "ADR-028",
+        "ADR-034",
+        "ADR-060"
+      ],
+      "code": [
+        "crates/cli/src/main.rs",
+        "crates/brokerd/src/main.rs",
+        "crates/store/src/paths.rs",
+        "crates/brokerd/tests/vault_init.rs",
+        "crates/cli/tests/vault_init.rs",
+        "crates/brokerd/tests/durable_vault.rs",
+        "crates/cli/src/dotenv.rs",
+        "scripts/emergency-decrypt.mjs",
+        "crates/cli/tests/emergency_decrypt.rs",
+        "crates/cli/tests/cli_parity.rs",
+        "crates/brokerd/src/ops.rs",
+        "crates/cli/tests/no_secret_in_argv.rs",
+        "crates/mcp/tests/schemas_match_the_broker.rs",
+        "docs/11_MIGRATION_spec.js"
+      ],
+      "documents": [
+        {
+          "doc": "11_MIGRATION.md"
+        },
+        {
+          "doc": "03_DATA_MODEL.md"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "2"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md"
+        },
+        {
+          "doc": "01_CONCEPT.md",
+          "section": "7"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "12"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "3"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "3"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "2"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "3.5"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "8"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md",
+          "section": "2.5"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-the-decision",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-061"
+          ],
+          "code": [
+            "crates/cli/src/main.rs",
+            "crates/brokerd/src/main.rs",
+            "crates/store/src/paths.rs"
+          ],
+          "documents": []
+        },
+        "title": "1. The decision"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "2-what-exists-today",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-059",
+            "ADR-061",
+            "ADR-063",
+            "ADR-073",
+            "ADR-028",
+            "ADR-034"
+          ],
+          "code": [
+            "crates/store/src/paths.rs",
+            "crates/cli/src/main.rs",
+            "crates/brokerd/tests/vault_init.rs",
+            "crates/cli/tests/vault_init.rs",
+            "crates/brokerd/src/main.rs",
+            "crates/brokerd/tests/durable_vault.rs",
+            "crates/cli/src/dotenv.rs",
+            "scripts/emergency-decrypt.mjs",
+            "crates/cli/tests/emergency_decrypt.rs",
+            "crates/cli/tests/cli_parity.rs"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md"
+            }
+          ]
+        },
+        "title": "2. What exists today"
+      },
+      {
+        "figures": [
+          "phantom-requirement-propagation"
+        ],
+        "headings": [
+          {
+            "id": "3-1-what-it-changes-across-the-corpus",
+            "level": 3,
+            "title": "3.1 What it changes across the corpus"
+          },
+          {
+            "id": "3-2-residue-still-in-the-repository-as-of-this-rewrite",
+            "level": 3,
+            "title": "3.2 Residue still in the repository, as of this rewrite"
+          }
+        ],
+        "id": "3-why-this-document-used-to-say-something-else",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-028",
+            "ADR-034",
+            "ADR-032"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "01_CONCEPT.md",
+              "section": "7"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "12"
+            }
+          ]
+        },
+        "title": "3. Why this document used to say something else"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-names-and-aliases-without-a-migration-planned",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-032"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "3"
+            }
+          ]
+        },
+        "title": "4. Names and aliases, without a migration \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-credmgr-import-the-only-import-v2-will-ever-have-partial",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-073"
+          ],
+          "code": [
+            "crates/cli/src/main.rs",
+            "crates/cli/src/dotenv.rs",
+            "crates/cli/tests/cli_parity.rs",
+            "crates/cli/tests/no_secret_in_argv.rs"
+          ],
+          "documents": [
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "3"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "2"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "3.5"
+            }
+          ]
+        },
+        "title": "5. `credmgr import` \u2014 the only import V2 will ever have \u2014 **`partial`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "6-carrying-one-value-across-by-hand-built",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-061",
+            "ADR-063"
+          ],
+          "code": [
+            "crates/cli/tests/no_secret_in_argv.rs"
+          ],
+          "documents": []
+        },
+        "title": "6. Carrying one value across by hand \u2014 **`built`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-the-bar-for-ever-revisiting-this-not-on-the-roadmap",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "7. The bar for ever revisiting this \u2014 **not on the roadmap**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-028",
+            "ADR-034",
+            "ADR-032",
+            "ADR-059"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "3"
+            },
+            {
+              "doc": "03_DATA_MODEL.md"
+            },
+            {
+              "doc": "11_MIGRATION.md"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "3"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "2"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "8"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "8. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "9-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-028",
+            "ADR-032",
+            "ADR-034",
+            "ADR-059",
+            "ADR-061",
+            "ADR-060"
+          ],
+          "code": [
+            "crates/cli/src/main.rs",
+            "crates/store/src/paths.rs",
+            "scripts/emergency-decrypt.mjs",
+            "crates/cli/tests/no_secret_in_argv.rs",
+            "crates/cli/tests/emergency_decrypt.rs",
+            "crates/brokerd/tests/vault_init.rs",
+            "crates/cli/tests/vault_init.rs",
+            "crates/brokerd/tests/durable_vault.rs",
+            "crates/mcp/tests/schemas_match_the_broker.rs",
+            "docs/11_MIGRATION_spec.js"
+          ],
+          "documents": [
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            },
+            {
+              "doc": "03_DATA_MODEL.md"
+            },
+            {
+              "doc": "11_MIGRATION.md"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "3"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "12"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md",
+              "section": "2.5"
+            }
+          ]
+        },
+        "title": "9. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-011",
+    "last_reviewed": "2026-09-13",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Migration",
+    "variants": []
+  }
+}

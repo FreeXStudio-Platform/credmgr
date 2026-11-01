@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-07-doc-coverage",
+  "selected_visual": "heatmap",
+  "preset": "doc-coverage-matrix",
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "1dace76256c1585fcac717eaadeecbcb74c0b38bd175c775f738ef839810d991",
+  "option_sha256": "a671fabc16cf2c2f99e3fa027e8e8b452e9b5fefef29fcec4f4ffbeadddb2bb9",
+  "job_sha256": "633392472efb92abd4cf0119a190715a84441052b9388a40d8a8dc889c3f99c8",
+  "render_ms": 13,
+  "warnings": []
+}

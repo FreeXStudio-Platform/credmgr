@@ -1,0 +1,42 @@
+{
+  "visual_id": "SIM-02-op-test-matrix",
+  "classification": "internal",
+  "theme": "project-theme",
+  "reader_question": "Which ops lack a given test class?",
+  "text_summary": "Simulation text summary for accessibility gate.",
+  "selected_visual": "heatmap",
+  "preset": "op-test-matrix",
+  "title": "Broker op × test class",
+  "data": {
+    "rows": [
+      "entry.reveal",
+      "vault.unlock",
+      "grant.create"
+    ],
+    "cols": [
+      "unit",
+      "integration",
+      "isolation-suite"
+    ],
+    "matrix": [
+      [
+        1,
+        1,
+        null
+      ],
+      [
+        1,
+        null,
+        -1
+      ],
+      [
+        1,
+        1,
+        1
+      ]
+    ]
+  },
+  "show_values": true,
+  "scale_min": -1,
+  "scale_max": 1
+}

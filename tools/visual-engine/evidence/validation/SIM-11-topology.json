@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-11-topology",
+  "selected_visual": "graph",
+  "preset": "crate-dependency-graph",
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "b0829eeab94dc8be60e12c100283c93b3a7255fbfca616a8ea44792bbcfc3963",
+  "option_sha256": "8909c5487fcd5fafb1247379897424dd34cc442c3447a1a780e853d94a5fba82",
+  "job_sha256": "b2a2da6b90bbc49923ddb6390463a97e82bb9e4b607531090d1052923ac340f2",
+  "render_ms": 4,
+  "warnings": []
+}

@@ -1,0 +1,20 @@
+<sc-if value="{{dlgSeal}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S9 Seal node" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-seal-title" style="width:520px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px">
+    <div id="dlg-seal-title" class="t-h3" style="font-family:var(--f-mono)">⚠ Remove node “{{sealName}}”?</div>
+    <div style="font-size:var(--fs-md);font-weight:var(--fw-body-em)">Nothing is deleted.</div>
+    <ul style="margin:0;padding-left:16px;display:flex;flex-direction:column;gap:6px;font-size:var(--fs-base);color:var(--ash)">
+      <sc-for list="{{sealLines}}" as="l" hint-placeholder-count="5"><li>{{l.text}}</li></sc-for>
+    </ul>
+    <sc-if value="{{sealNoteShow}}" hint-placeholder-val="{{false}}"><div class="k-note" style="margin:0" role="alert"><span class="t-mono-label">cannot seal yet</span>{{sealNote}}</div></sc-if>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+      <span class="t-mono-label">type the node name to confirm</span>
+      <input aria-label="type the node name to confirm" value="{{sealTyped}}" onChange="{{onSealTyped}}" style="font-family:var(--f-mono)" placeholder="{{sealName}}">
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:8px">
+      <button class="k-btn" data-variant="danger" onClick="{{confirmSeal}}" disabled="{{sealDisabled}}">Seal node</button>
+      <button class="k-btn" onClick="{{closeDialog}}">Cancel</button>
+    </div>
+  </div>
+</div>
+</sc-if>

@@ -1,0 +1,16 @@
+{
+  "_about": "Test vectors for the canonical name form (ADR-084). Shared with the design side so the window's fold and the broker's canonical_name cannot drift: the same inputs must give the same canonical string and the same mixed-script verdict on both sides. Strings use \\u escapes so the file shows no look-alike glyph.",
+  "vectors": [
+    { "input": "p\u0430yroll", "canonical": "payroll", "mixedScript": true,  "note": "Cyrillic a inside a Latin word" },
+    { "input": "\u0441loud",   "canonical": "cloud",   "mixedScript": true,  "note": "Cyrillic c" },
+    { "input": "\u03bfpen",    "canonical": "open",    "mixedScript": true,  "note": "Greek omicron" },
+    { "input": "payroll",      "canonical": "payroll", "mixedScript": false, "note": "plain" },
+    { "input": "Payroll",      "canonical": "payroll", "mixedScript": false, "note": "case folds" },
+    { "input": "\uff30\uff21\uff39", "canonical": "pay", "mixedScript": false, "note": "full-width letters fold (NFKC)" },
+    { "input": "pay\u200broll", "canonical": "payroll", "mixedScript": false, "note": "zero-width space is removed" },
+    { "input": "pay\u202eroll", "canonical": "payroll", "mixedScript": false, "note": "bidi override is removed" },
+    { "input": "db01",         "canonical": "db01",    "mixedScript": false, "note": "ASCII 0 and 1 are not folded" },
+    { "input": "v1",           "canonical": "v1",      "mixedScript": false, "note": "ASCII 1 is not folded" },
+    { "input": "\u0434\u043e\u043c", "canonical": "\u0434o\u043c", "mixedScript": false, "note": "pure Cyrillic is not rejected and not warned (only the o folds to Latin)" }
+  ]
+}

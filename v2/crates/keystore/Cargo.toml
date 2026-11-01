@@ -1,0 +1,31 @@
+[package]
+name = "credmgr-keystore"
+description = "PlatformKeystore trait + macOS / Windows / Linux / software implementations. See v2/docs/16_CROSS_PLATFORM.md §3-4."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lib]
+name = "credmgr_keystore"
+
+[lints]
+workspace = true
+
+[dependencies]
+argon2 = "0.5"
+# Pinned below latest for the same edition2024/MSRV reason as ADR-035/036/038:
+# argon2 0.5's `password-hash` dependency pulls base64ct >=1.7 by default,
+# which requires Cargo's edition2024 feature, unavailable below Rust 1.85.
+base64ct = "=1.6.0"
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc", "getrandom"] }
+credmgr-core = { path = "../core", version = "2.0.0-beta.1" }
+rand_core = { version = "0.6", features = ["getrandom"] }
+secrecy = "0.10.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = "1.7"
+
+[dev-dependencies]
+tempfile = "=3.15.0"

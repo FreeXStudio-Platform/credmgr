@@ -1,0 +1,44 @@
+{
+  "visual_id": "SIM-06-gates",
+  "classification": "internal",
+  "theme": "project-theme",
+  "reader_question": "Which gates are red where?",
+  "text_summary": "Simulation text summary for accessibility gate.",
+  "selected_visual": "heatmap",
+  "preset": "ci-gate-status",
+  "title": "Gate status by environment",
+  "subtitle": "1 pass · 0 degraded · -1 fail · empty unknown",
+  "data": {
+    "rows": [
+      "secret-scan",
+      "no-personal-data",
+      "clippy -D warnings",
+      "cargo deny"
+    ],
+    "cols": [
+      "local (pre-push)",
+      "CI (dispatch)"
+    ],
+    "matrix": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        1
+      ]
+    ]
+  },
+  "scale_min": -1,
+  "scale_max": 1,
+  "show_values": true
+}

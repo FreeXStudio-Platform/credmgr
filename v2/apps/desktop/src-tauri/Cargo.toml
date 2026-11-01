@@ -1,0 +1,71 @@
+[package]
+name = "desktop"
+version = "2.0.0-beta.1"
+description = "CredMgr desktop shell: a Tauri 2 window and the bridge to the credmgrd broker"
+authors = ["CredMgr contributors"]
+license-file = "../../../LICENSE"
+publish = false
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Wipes the one plaintext copy the shell holds while it moves a revealed secret
+# from the broker's answer to the pasteboard (src/clipboard.rs, src/transport.rs).
+zeroize = "1"
+# ADR-078: the bulk-paste parser and the field/entry type inference, so the local
+# `fields_preview` command shows exactly what the broker will store - one Rust
+# implementation for every client, not a second one in the webview. **Only
+# `parser`, `fields` and `inference` are used** (a test reads this crate's source
+# and fails on any other `credmgr_core::` path): the shell holds no key and
+# decrypts nothing (ADR-001), and linking the crate must not change that.
+credmgr-core = { path = "../../../crates/core", version = "2.0.0-beta.1" }
+
+# macOS only: the concealed pasteboard (C2) and the sleep / screen-lock
+# observers (C1) have no Tauri API, so they call AppKit directly. Every feature
+# is named, none is a blanket default, so a reader can see exactly which AppKit
+# classes this shell touches. `tests/dependency_policy.rs` and `deny.toml` keep
+# an HTTP client out of this tree.
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSApplication",
+    "NSImage",
+    "NSPasteboard",
+    "NSResponder",
+    "NSWorkspace",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "NSData",
+    "NSDistributedNotificationCenter",
+    "NSNotification",
+    "NSOperation",
+    "NSString",
+] }
+
+# Integration tests only. `tempfile` gives each test its own directory to put
+# a Unix socket in — a fixed path would make two tests in the same run fight
+# over one socket file.
+[dev-dependencies]
+tempfile = "3"
+# `tauri::test` — the mock runtime — so `tests/shell_ipc.rs` can build the very
+# configuration `run()` builds and drive commands through Tauri's real IPC
+# dispatch, with no window and no WebKit. Dev-only: a normal build never sees it.
+tauri = { version = "2", features = ["test"] }

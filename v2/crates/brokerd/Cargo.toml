@@ -1,0 +1,66 @@
+[package]
+name = "credmgr-brokerd"
+description = "credmgrd — the broker daemon: UDS/named-pipe server, peer identification, sessions, scope, 2FA, audit. The single enforcement point (ADR-001)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lib]
+name = "credmgr_brokerd"
+
+[[bin]]
+name = "credmgrd"
+path = "src/main.rs"
+
+[lints.rust]
+# The workspace default is `forbid` — but `forbid` cannot be locally relaxed
+# by a module `#[allow(unsafe_code)]` (unlike `deny`, which can), and this
+# crate's `peer.rs` genuinely needs raw platform syscalls for peer-credential
+# lookup (`LOCAL_PEERCRED`/`LOCAL_PEERPID`/`proc_pidinfo`, no safe crate
+# covers them). `deny` + `peer.rs`'s scoped, justified `#[allow]` is the
+# correct mechanism `BUILD_PROMPT.md §3.5` describes; `forbid` (this crate's
+# original setting, copied from crates with no unsafe code at all) is not
+# achievable with that mechanism — see this session's `BUILD_LOG.md`.
+unsafe_code = "deny"
+
+[features]
+# Exposes hot-key-set inspection so the isolation suite (`tests/isolation.rs`,
+# a separate crate) can assert real zeroisation from outside — `#[cfg(test)]`
+# alone only applies to this crate's own unit tests, not an external
+# integration-test binary. Enabled automatically for `cargo test` via the
+# self-dependency in `[dev-dependencies]` below; never enabled in a release
+# build of `credmgrd` itself.
+#
+# ADR-076: also turns on `credmgr-store`'s own `test-utils`, which carries the
+# roll-forward that stops after N files — the crash-injection suite's way of
+# cutting a root-key rotation off in the middle.
+test-utils = ["credmgr-store/test-utils"]
+
+[dependencies]
+credmgr-core = { path = "../core", version = "2.0.0-beta.1" }
+credmgr-keystore = { path = "../keystore", version = "2.0.0-beta.1" }
+credmgr-store = { version = "2.0.0-beta.1", path = "../store" }
+# UDS + named pipes behind one API (16 §2). This session wires the Unix
+# transport directly over `std::os::unix::net` instead (see peer.rs's module
+# doc) so raw-fd peer-credential syscalls are unambiguous; `interprocess`
+# stays a declared dependency for the Windows named-pipe transport, not yet
+# built.
+interprocess = "2"
+rand_core = { version = "0.6", features = ["getrandom"] }
+secrecy = "0.10.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets", "zeroize"] }
+zeroize = "1.7"
+
+[target.'cfg(unix)'.dependencies]
+# Peer credential + cwd resolution (LOCAL_PEERCRED/LOCAL_PEERPID on macOS,
+# SO_PEERCRED on Linux) — raw syscalls, no cross-platform crate covers them.
+libc = "0.2"
+
+[dev-dependencies]
+credmgr-brokerd = { path = ".", features = ["test-utils"] }
+tempfile = "=3.15.0"

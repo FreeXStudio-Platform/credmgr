@@ -1,0 +1,13 @@
+# Never publish these to npm
+.credmgr/
+store/vault.age
+store/index.json
+tests/
+native/
+kb/
+dev/
+node_modules/
+*.local
+*.env
+.DS_Store
+precommit-scan-*.md

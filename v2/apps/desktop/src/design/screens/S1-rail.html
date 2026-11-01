@@ -1,0 +1,25 @@
+  <nav class="cm-rail {{railOpenClass}}" data-screen-label="S25 Worktree rail">
+    <div style="padding:16px 16px 8px;display:flex;justify-content:space-between;align-items:center"><span class="t-mono-label">worktree</span><button class="k-btn cm-hamburger" onClick="{{closeRail}}" style="min-width:24px;border:none;padding:2px 6px" aria-label="close menu">✕</button></div>
+    <ul class="k-tree" style="flex:1">
+      <sc-for list="{{railRows}}" as="r" hint-placeholder-count="8">
+        <li style="padding-left:{{r.indent}}">
+          <button class="k-tree-row" aria-current="{{r.current}}" onClick="{{r.select}}" onContextMenu="{{r.menu}}" style="border:{{r.border}};color:{{r.color}}">
+            <svg class="k-node-glyph" data-kind="{{r.kind}}" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5"></circle></svg>
+            <sc-if value="{{r.renaming}}" hint-placeholder-val="{{false}}">
+              <input value="{{r.renameVal}}" onChange="{{r.onRenameChange}}" onKeyDown="{{r.cancelRename}}" onBlur="{{r.commitRename}}" onClick="{{stop}}" autoFocus="{{true}}" style="width:100%;background:var(--steel-2);border:1px solid var(--hair-strong);color:var(--bone);font-size:inherit;font-family:inherit;padding:1px 4px">
+            </sc-if>
+            <sc-if value="{{r.notRenaming}}" hint-placeholder-val="{{true}}">
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.label}}</span>
+            </sc-if>
+            <span style="color:{{r.lockColor}};font-size:var(--fs-xs);flex:0 0 auto">{{r.badges}}</span>
+            <span class="k-tree-count">{{r.count}}</span>
+          </button>
+        </li>
+      </sc-for>
+    </ul>
+    <div style="padding:12px;border-top:1px solid var(--hair);display:flex;gap:0">
+      <button class="k-btn" onClick="{{setGraphView}}" style="flex:1;border-radius:2px 0 0 0;background:{{graphBtnBg}};color:{{graphBtnFg}}">graph</button>
+      <button class="k-btn" onClick="{{setTreeView}}" style="flex:1;border-radius:0;border-left:none;background:{{treeBtnBg}};color:{{treeBtnFg}}">tree</button>
+      <button class="k-btn" onClick="{{openGames}}" style="flex:1;border-radius:0 2px 2px 0;border-left:none" title="CredPong — a light arcade game, isolated from your vault">games</button>
+    </div>
+  </nav>

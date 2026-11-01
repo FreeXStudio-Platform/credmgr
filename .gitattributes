@@ -1,0 +1,10 @@
+# Keep every text file LF on every OS: the design compiler and the checksum/drift guards read bytes.
+* text=auto eol=lf
+*.png binary
+*.icns binary
+*.ico binary
+*.dmg binary
+*.zip binary
+*.gz binary
+*.age binary
+*.woff2 binary

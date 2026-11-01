@@ -1,0 +1,17 @@
+CredMgr doc-system vendored fonts — attribution
+
+These font files are bundled under the SIL Open Font License (OFL), version 1.1.
+Full text: https://scripts.sil.org/OFL
+
+Fonts (match v2/design/tokens/keep.css's own --f-display/--f-body/--f-mono stack;
+ported alongside the doc-build engine itself — see tools/PROVENANCE.md):
+  Inter            — Rasmus Andersson <https://rsms.me/inter/>
+                     (static weights 300/400/500/600)
+  JetBrains Mono   — JetBrains s.r.o. <https://www.jetbrains.com/lp/mono/>
+                     (static weight 400 + 400 italic + 500)
+
+The OFL permits embedding and redistribution as part of a larger software
+work (this doc-system's self-contained HTML/PDF renders). CredMgr makes
+no claim of authorship over these fonts. Embedded here as base64 data-URIs
+(tools/docgen/fonts.py) so every rendered document is fully self-contained —
+no CDN request, no system-font substitution risk.

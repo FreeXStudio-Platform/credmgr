@@ -1,0 +1,101 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-08-08",
+  "schema": "schemas/engine-capability.schema.json",
+  "families": {
+    "comparison": {
+      "engine": "echarts",
+      "visuals": [
+        "bar",
+        "bar_horizontal",
+        "bar_grouped",
+        "bar_stacked",
+        "radar"
+      ]
+    },
+    "time-series": {
+      "engine": "echarts",
+      "visuals": [
+        "line",
+        "line_step",
+        "area",
+        "area_stacked",
+        "timeline"
+      ]
+    },
+    "distribution": {
+      "engine": "echarts",
+      "visuals": [
+        "boxplot"
+      ]
+    },
+    "relationship": {
+      "engine": "echarts",
+      "visuals": [
+        "scatter",
+        "bubble"
+      ]
+    },
+    "hierarchy": {
+      "engine": "echarts",
+      "visuals": [
+        "tree",
+        "treemap",
+        "sunburst"
+      ]
+    },
+    "network": {
+      "engine": "echarts (data-annotated, deterministic layouts) | docgen (document-grade)",
+      "visuals": [
+        "graph"
+      ]
+    },
+    "matrix-heat": {
+      "engine": "echarts",
+      "visuals": [
+        "heatmap",
+        "matrix"
+      ]
+    },
+    "flow": {
+      "engine": "echarts (quantitative) | docgen sankey (document-grade)",
+      "visuals": [
+        "sankey",
+        "funnel"
+      ]
+    },
+    "workflow-sequence-state-architecture": {
+      "engine": "docgen (AUTHORITATIVE)",
+      "visuals": [
+        "flowchart",
+        "state_diagram",
+        "system_map",
+        "dependency_graph",
+        "sequence",
+        "layered_workflow"
+      ]
+    },
+    "geography": {
+      "engine": "docgen geo_map (schematic, offline)",
+      "note": "no echarts geo route — would need map assets + network policy review"
+    },
+    "2.5D/3D": {
+      "engine": "docgen isometric3d only",
+      "note": "no echarts-gl — 3D decoratively banned (§23); echarts-gl compatibility with v6 unverified"
+    },
+    "motion": {
+      "engine": "docgen SMIL + assets/animations | interactive HTML (reduced-motion safe)",
+      "note": "no new motion engine"
+    },
+    "app-UI": {
+      "engine": "recharts (frontend)",
+      "note": "product dashboard — out of engine scope"
+    },
+    "print-PDF": {
+      "engine": "SVG (this adapter) embedded via docgen/weasyprint pipelines",
+      "visuals": [
+        "print-theme renders"
+      ]
+    }
+  }
+}

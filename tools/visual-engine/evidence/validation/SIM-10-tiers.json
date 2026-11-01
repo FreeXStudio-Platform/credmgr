@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-10-tiers",
+  "selected_visual": "heatmap",
+  "preset": "tier-entitlement-matrix",
+  "theme": "project-theme",
+  "classification": "public",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "424ca2cc39e8eb0fb97d2c0c3de64efb8ecbba2c4576302be2dfe1c8f3e87fa6",
+  "option_sha256": "d98ad2d6789d8221ed42e95702c3ae36ef1113e0477360e1940e92f5ebf5e6f6",
+  "job_sha256": "19c83c7c1a93317120f2304cb01b024a5246cb335dcbc3a2851000096acce632",
+  "render_ms": 6,
+  "warnings": []
+}

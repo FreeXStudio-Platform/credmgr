@@ -1,0 +1,164 @@
+{
+  "snapshot_date": "2026-08-08",
+  "server": {
+    "name": "credmgr-visuals",
+    "version": "1.0.0"
+  },
+  "protocol": "2024-11-05",
+  "tools": [
+    {
+      "name": "visual_list_capabilities",
+      "description": "List supported visual families, themes, presets, formats and routing policy.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "visual_list_presets",
+      "description": "List project presets (id, visual family, summary, required fields).",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "visual_get_theme",
+      "description": "Return an approved project theme (palette, semantic colors, fonts).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme": {
+            "type": "string",
+            "enum": [
+              "project-theme",
+              "project-theme-dark",
+              "project-theme-light",
+              "print-theme"
+            ],
+            "default": "project-theme"
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "visual_validate_job",
+      "description": "Validate a visual job packet against all gates without rendering. Returns ok/warnings or the failing gate.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "job"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "visual_render",
+      "description": "Render a validated visual job. formats: svg|png|html (any combination). Writes files under renders/current/ and returns paths + hashes + inline SVG.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          },
+          "formats": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "svg",
+                "png",
+                "html"
+              ]
+            },
+            "default": [
+              "svg"
+            ]
+          }
+        },
+        "required": [
+          "job"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "visual_render_batch",
+      "description": "Render up to 20 jobs (svg only). Per-job errors are reported, not thrown.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": true
+            },
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "visual_explain_selection",
+      "description": "Explain which engine owns a visual family and why (docgen vs echarts vs NO_CHART).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "job"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ]
+}

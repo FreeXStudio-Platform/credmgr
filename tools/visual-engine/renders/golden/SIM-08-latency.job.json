@@ -1,0 +1,43 @@
+{
+  "visual_id": "SIM-08-latency",
+  "classification": "internal",
+  "theme": "project-theme",
+  "reader_question": "How would request latency be trended, once measured?",
+  "text_summary": "Simulation text summary for accessibility gate.",
+  "selected_visual": "line",
+  "preset": "broker-latency",
+  "time_axis": true,
+  "title": "Broker request latency (illustrative)",
+  "subtitle": "Illustrative shape only — no benchmark suite exists yet to source real percentiles",
+  "units": [
+    "ms"
+  ],
+  "data": {
+    "dimensions": [
+      "t",
+      "p50",
+      "p95",
+      "p99"
+    ],
+    "source": [
+      [
+        "2026-08-15",
+        2,
+        6,
+        14
+      ],
+      [
+        "2026-08-16",
+        2,
+        5,
+        12
+      ],
+      [
+        "2026-08-17",
+        2,
+        5,
+        11
+      ]
+    ]
+  }
+}

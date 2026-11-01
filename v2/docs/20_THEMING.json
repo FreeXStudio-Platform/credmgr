@@ -1,0 +1,320 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 5,
+      "figures": 2,
+      "sections": 8,
+      "tables": 4
+    },
+    "figures": [
+      "theme-colour-axis-matrix",
+      "hue-derivation-pipeline"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-062",
+        "ADR-071",
+        "ADR-075",
+        "ADR-058",
+        "ADR-059",
+        "ADR-057"
+      ],
+      "code": [
+        "apps/desktop/src/design/logic/core.js",
+        "apps/desktop/src/vault/prefs.ts",
+        "apps/desktop/tests/e2e/wp-d-prefs.spec.ts",
+        "tools/docgen/tokens.py",
+        "tools/docgen/assets/tokens.js",
+        "crates/store/src/manifest.rs",
+        "crates/brokerd/src/ops.rs",
+        "docs/20_THEMING_spec.js",
+        "tools/ENGINE_ROUTING_POLICY.md",
+        "tools/corpus_check.py",
+        "docs/20_THEMING.md"
+      ],
+      "documents": [
+        {
+          "doc": "17_AIRLOCK_AND_LLM.md"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+          "section": "2"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "1"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "7"
+        },
+        {
+          "doc": "02_ARCHITECTURE.md",
+          "section": "6.2"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "14"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+          "section": "8"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "2"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "13_TEST_PLAN.md"
+        },
+        {
+          "doc": "20_THEMING.md"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [
+          "theme-colour-axis-matrix"
+        ],
+        "headings": [],
+        "id": "1-two-independent-axes-not-three-themes-planned",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-075"
+          ],
+          "code": [
+            "apps/desktop/src/vault/prefs.ts",
+            "apps/desktop/tests/e2e/wp-d-prefs.spec.ts"
+          ],
+          "documents": [
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "6.2"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "7"
+            }
+          ]
+        },
+        "title": "1. Two independent axes, not three themes \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "2-dark-light-is-a-real-inversion-partial",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "tools/docgen/tokens.py",
+            "tools/docgen/assets/tokens.js"
+          ],
+          "documents": [
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "7"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "14"
+            }
+          ]
+        },
+        "title": "2. Dark \u21c4 light is a real inversion \u2014 **`partial`**"
+      },
+      {
+        "figures": [
+          "hue-derivation-pipeline"
+        ],
+        "headings": [
+          {
+            "id": "3-1-the-user-will-pick-one-thing-a-hue",
+            "level": 3,
+            "title": "3.1 The user will pick one thing: a hue"
+          },
+          {
+            "id": "3-2-derivation-oklch-so-lightness-is-perceptual",
+            "level": 3,
+            "title": "3.2 Derivation (OKLCH, so lightness is perceptual)"
+          },
+          {
+            "id": "3-3-the-guarantee",
+            "level": 3,
+            "title": "3.3 The guarantee"
+          },
+          {
+            "id": "3-4-colour-auto",
+            "level": 3,
+            "title": "3.4 `colour: 'auto'`"
+          },
+          {
+            "id": "3-5-what-colour-will-never-touch",
+            "level": 3,
+            "title": "3.5 What colour will never touch"
+          }
+        ],
+        "id": "3-colour-the-tricky-part-solved-by-construction-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "3. Colour \u2014 the tricky part, solved by construction \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-storage-and-precedence-planned",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-075"
+          ],
+          "code": [
+            "apps/desktop/src/vault/prefs.ts"
+          ],
+          "documents": []
+        },
+        "title": "4. Storage and precedence \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-deliverables-for-claude-design-planned-and-not-yet-requested-from-anyone",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "8"
+            }
+          ]
+        },
+        "title": "5. Deliverables for Claude Design \u2014 **`planned`**, and not yet requested from anyone"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "6-risks",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "6. Risks"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-058",
+            "ADR-059",
+            "ADR-057"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "14"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "2"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "7"
+            },
+            {
+              "doc": "13_TEST_PLAN.md"
+            },
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "2"
+            },
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "6.2"
+            }
+          ]
+        },
+        "title": "7. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-058",
+            "ADR-059",
+            "ADR-075"
+          ],
+          "code": [
+            "crates/store/src/manifest.rs",
+            "crates/brokerd/src/ops.rs",
+            "docs/20_THEMING_spec.js",
+            "tools/ENGINE_ROUTING_POLICY.md",
+            "tools/corpus_check.py",
+            "docs/20_THEMING.md"
+          ],
+          "documents": [
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "7"
+            },
+            {
+              "doc": "20_THEMING.md"
+            }
+          ]
+        },
+        "title": "8. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-020",
+    "last_reviewed": "2026-08-19",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Theming",
+    "variants": []
+  }
+}

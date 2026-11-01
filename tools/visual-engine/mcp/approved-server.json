@@ -1,0 +1,36 @@
+{
+  "decision": "PROJECT_OWNED_FACADE",
+  "decision_date": "2026-08-08",
+  "selected": {
+    "name": "credmgr-visuals",
+    "path": "tools/visual-engine/mcp/server.mjs",
+    "transport": "stdio",
+    "tools": ["visual_list_capabilities", "visual_list_presets", "visual_get_theme", "visual_validate_job", "visual_render", "visual_render_batch", "visual_explain_selection"],
+    "storage": "local filesystem only — renders/current/ inside the engine folder",
+    "network": "none (no listener, no outbound)"
+  },
+  "candidates_evaluated": [
+    {
+      "name": "apache/echarts-mcp",
+      "verdict": "NOT_SELECTED",
+      "verified": "2026-08-08 via github.com/apache/echarts-mcp",
+      "reasons": [
+        "default storage uploads generated images to Baidu BCE cloud — disqualifying for internal/confidential audit data (spec §7.1, §31)",
+        "supports only 8 series types (bar, line, pie, scatter, funnel, tree, treemap, sunburst)",
+        "run method is npm run dev (not a published package); selecting it means owning a fork"
+      ]
+    },
+    {
+      "name": "hustcc/mcp-echarts",
+      "verdict": "NOT_SELECTED",
+      "verified": "2026-08-08 via github.com/hustcc/mcp-echarts + npm view mcp-echarts@0.7.1",
+      "reasons": [
+        "local generation confirmed (base64 fallback) and actively maintained — the strongest external candidate",
+        "but dependency surface exceeds need: minio (S3 client), express (HTTP server), dotenv, @napi-rs/canvas native binding",
+        "exposes arbitrary full-option rendering — no project-theme enforcement, no confidentiality gate, no preset knowledge",
+        "project facade reuses the direct adapter, adds zero new deps beyond @modelcontextprotocol/sdk+zod (already the tools/mcp-server stack), and keeps validation single-sourced"
+      ]
+    }
+  ],
+  "revisit_when": "external MCP needed by a non-Node consumer, or facade maintenance exceeds the cost of wrapping hustcc/mcp-echarts with a validation proxy"
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "credmgr.engine-capability/v1",
+  "title": "Engine capability record",
+  "type": "object",
+  "required": [
+    "id",
+    "path",
+    "role",
+    "decision"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    },
+    "families": {
+      "type": "array"
+    },
+    "formats": {
+      "type": "array"
+    },
+    "tokens": {
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "KEEP_EXISTING",
+        "KEEP_AND_ADAPT",
+        "UPGRADE_EXISTING",
+        "ADD_ECHARTS",
+        "ADD_SPECIALIST_ENGINE",
+        "ADD_MCP",
+        "DIRECT_ADAPTER_ONLY",
+        "REPLACE_AFTER_VERIFIED_MIGRATION",
+        "NOT_REQUIRED"
+      ]
+    }
+  }
+}

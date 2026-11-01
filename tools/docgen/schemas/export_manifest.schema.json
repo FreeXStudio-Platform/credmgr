@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://credmgr.internal/schemas/export_manifest.schema.json",
+  "title": "ExportManifest",
+  "description": "Written by every export/render pass (CLASSIFICATION.md leak-gate item 5). Records per-file hashes and the verifier-stamp; a missing stamp or created_at blocks release.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["created_at", "doc_id", "files", "verifier_stamp"],
+  "properties": {
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "doc_id": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9-]*[A-Z0-9]-[0-9]+$"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/fileEntry" }
+    },
+    "verifier_stamp": { "$ref": "#/$defs/verifierStamp" }
+  },
+  "$defs": {
+    "fileEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "format", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "format": {
+          "type": "string",
+          "enum": ["html", "json", "pdf", "md"]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "verifierStamp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verified_by", "verified_at", "status"],
+      "properties": {
+        "verified_by": { "type": "string", "minLength": 1 },
+        "verified_at": { "type": "string", "format": "date-time" },
+        "status": {
+          "type": "string",
+          "enum": [
+            "approved",
+            "approved_with_known_risks",
+            "needs_minor_revision",
+            "needs_major_revision",
+            "rejected"
+          ]
+        },
+        "notes": { "type": "string", "default": "" }
+      }
+    }
+  }
+}

@@ -1,0 +1,67 @@
+<sc-if value="{{isFirstRun}}" hint-placeholder-val="{{false}}">
+<div data-screen-label="S17 First run" style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--void);padding:24px;overflow-y:auto">
+  <div style="width:560px;max-width:100%;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);padding:32px;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;gap:8px">
+      <sc-for list="{{frDots}}" as="d" hint-placeholder-count="4"><div style="width:24px;height:2px;background:{{d.bg}}"></div></sc-for>
+    </div>
+    <div class="t-eyebrow">first run · step {{frStepNum}} of 4</div>
+    <div class="t-h2">{{frTitle}}</div>
+    <sc-if value="{{frIs1}}" hint-placeholder-val="{{true}}">
+      <div class="t-body-sm">Choose a passphrase. It opens this vault on this machine; nothing is created anywhere else. Nothing in this version can recover a lost passphrase, so pick one you will remember.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="t-mono-label">passphrase</div>
+        <input type="password" value="{{frPass}}" onChange="{{onFrPass}}" onKeyDown="{{onFrPassKey}}" autoFocus="{{true}}" autoComplete="off" aria-label="new passphrase" style="font-family:var(--f-mono)" placeholder="passphrase">
+        <input type="password" value="{{frPassRepeat}}" onChange="{{onFrPassRepeat}}" onKeyDown="{{onFrPassKey}}" autoComplete="off" aria-label="repeat the passphrase" style="font-family:var(--f-mono)" placeholder="repeat it">
+        <div class="t-caption">at least 4 characters · 8 or more is recommended</div>
+        <sc-if value="{{frPassWeak}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status">Short passphrases are easier to guess. 8 or more is recommended; you can still continue with this one.</div></sc-if>
+        <sc-if value="{{frPassMismatch}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger">Passphrases don't match</div></sc-if>
+      </div>
+    </sc-if>
+    <sc-if value="{{frIs2}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm">Shown once. Write it down and keep it apart from your passphrase. Together they reset your second factor if you lose your authenticator. Retyping it proves you have it, but that is optional: you can skip it, and the vault is created either way. A lost passphrase cannot be recovered.</div>
+      <div data-recovery-code="true" style="font-family:var(--f-mono);font-size:var(--fs-md);letter-spacing:.08em;padding:16px;border:1px dashed var(--faint);text-align:center;overflow-wrap:anywhere;user-select:all">{{frRecoveryCode}}</div>
+      <input value="{{frRetyped}}" onChange="{{onFrRetyped}}" onKeyDown="{{onFrRetypedKey}}" autoComplete="off" aria-label="retype the recovery code" style="font-family:var(--f-mono)" placeholder="retype the recovery code (optional)">
+      <label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-base);color:var(--ash);cursor:pointer"><input type="checkbox" checked="{{frRecOk}}" onChange="{{onFrRec}}" style="width:auto">I have written the recovery code down (optional)</label>
+    </sc-if>
+    <sc-if value="{{frIs3}}" hint-placeholder-val="{{false}}">
+      <sc-if value="{{frEnrolLoading}}" hint-placeholder-val="{{false}}"><div class="t-body-sm" role="status">Preparing the second factor…</div></sc-if>
+      <sc-if value="{{frEnrolError}}" hint-placeholder-val="{{false}}"><div class="t-body-sm">The second factor could not be prepared. Try again, or skip it and enrol later in Settings.</div></sc-if>
+      <sc-if value="{{frEnrolQr}}" hint-placeholder-val="{{false}}">
+        <div class="t-body-sm">Scan this with an authenticator app, then enter one code. Skippable, but until you enrol, the vault rests on your passphrase alone. The code is drawn on this screen; nothing is sent anywhere.</div>
+        <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+          <svg role="img" aria-label="QR code for your authenticator app" viewBox="{{frQrViewBox}}" width="176" height="176" shape-rendering="crispEdges" style="flex:none;background:#fff;border:1px solid var(--faint)"><rect x="0" y="0" width="100%" height="100%" fill="#fff"></rect><path d="{{frQrPath}}" fill="#000"></path></svg>
+          <div style="display:flex;flex-direction:column;gap:8px;flex:1;min-width:200px">
+            <div class="t-mono-label">or type this key in by hand</div>
+            <div data-totp-secret="true" style="font-family:var(--f-mono);font-size:var(--fs-sm);overflow-wrap:anywhere;user-select:all">{{frSecret}}</div>
+            <input value="{{frTotp}}" onChange="{{onFrTotp}}" onKeyDown="{{onFrTotpKey}}" maxLength="6" autoComplete="off" aria-label="authenticator code" style="font-family:var(--f-mono);letter-spacing:.4em;text-align:center" placeholder="confirm one code">
+            <div class="t-caption">10 recovery codes are issued after confirmation</div>
+          </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{frEnrolCodes}}" hint-placeholder-val="{{false}}">
+        <div class="t-body-sm">Second factor enrolled. These 10 recovery codes each work once if you lose your authenticator. They are shown only now; store them apart from your passphrase.</div>
+        <div data-gate-codes="true" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;padding:12px;border:1px dashed var(--faint);font-family:var(--f-mono);font-size:var(--fs-sm)">
+          <sc-for list="{{frCodes}}" as="c" hint-placeholder-count="10"><div style="user-select:all;overflow-wrap:anywhere">{{c.code}}</div></sc-for>
+        </div>
+        <label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-base);color:var(--ash);cursor:pointer"><input type="checkbox" checked="{{frCodesSaved}}" onChange="{{onFrCodesSaved}}" style="width:auto">I have saved these recovery codes (optional)</label>
+      </sc-if>
+    </sc-if>
+    <sc-if value="{{frIs4}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm"><span style="font-family:var(--f-mono)">global</span> is created automatically. Name up to three projects to start with, or leave these blank and add projects later. Each project is its own boundary: what is stored in one is invisible to the others.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{frNames}}" as="n" hint-placeholder-count="3">
+          <input value="{{n.value}}" onChange="{{n.onChange}}" maxLength="120" autoComplete="off" aria-label="{{n.aria}}" style="font-family:var(--f-mono)" placeholder="{{n.placeholder}}">
+        </sc-for>
+      </div>
+      <div class="t-caption">V2 starts empty. Nothing is imported from V1; anything you want here, you add yourself.</div>
+    </sc-if>
+    <sc-if value="{{frErr}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{frErr}}</div></sc-if>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <sc-if value="{{frCanBack}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{frBack}}">Back</button></sc-if>
+      <sc-if value="{{frSkipConfirmShow}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{frSkipConfirm}}">Skip for now</button></sc-if>
+      <sc-if value="{{frSkipShow}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{frSkip}}">Enrol later</button></sc-if>
+      <button class="k-btn" data-variant="primary" onClick="{{frNext}}" disabled="{{frNextDisabled}}">{{frNextLabel}}</button>
+    </div>
+  </div>
+</div>
+</sc-if>

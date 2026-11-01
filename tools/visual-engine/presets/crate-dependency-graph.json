@@ -1,0 +1,18 @@
+{
+  "id": "crate-dependency-graph",
+  "visual": "graph",
+  "family": "architecture",
+  "summary": "Crate dependency topology (data-annotated)",
+  "canonical_reader_question": "Which crates depend on which?",
+  "required_fields": [
+    "data.nodes",
+    "data.links"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {
+    "layout": "circular"
+  },
+  "notes": "document-grade architecture stays on docgen render_system_map; this is for metric-annotated topology",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

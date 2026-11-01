@@ -1,0 +1,15 @@
+{
+  "id": "workflow-sequence",
+  "visual": "timeline",
+  "family": "process",
+  "summary": "Ordered milestone/event sequence on a time axis",
+  "canonical_reader_question": "When did each pipeline event happen?",
+  "required_fields": [
+    "data.events"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "docgen render_timeline is the document-grade equivalent",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

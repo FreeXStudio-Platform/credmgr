@@ -1,0 +1,42 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-08-08",
+  "sources": [
+    {
+      "claim": "ECharts current stable is 6.1.0 (Apache-2.0), published 2026-05-19",
+      "source": "npm view echarts version/time/license",
+      "retrieved": "2026-08-08"
+    },
+    {
+      "claim": "ECharts SSR SVG pattern: init(null,null,{renderer:svg,ssr:true,width,height}) → renderToSVGString(); animations limited in SSR; node-canvas via setPlatformAPI for server PNG",
+      "source": "https://echarts.apache.org/handbook/en/how-to/cross-platform/server/",
+      "retrieved": "2026-08-08"
+    },
+    {
+      "claim": "apache/echarts-mcp: 8 series types, cloud (Baidu BCE) image storage by default, npm run dev runner, storage swappable in src/storage.js",
+      "source": "https://github.com/apache/echarts-mcp",
+      "retrieved": "2026-08-08"
+    },
+    {
+      "claim": "hustcc/mcp-echarts 0.7.1: local generation, png/svg/option outputs, MinIO optional with base64 fallback, deps minio+express+dotenv+@napi-rs/canvas+echarts6+mcp-sdk",
+      "source": "https://github.com/hustcc/mcp-echarts + npm view mcp-echarts",
+      "retrieved": "2026-08-08"
+    },
+    {
+      "claim": "@resvg/resvg-js 2.6.2 (MPL-2.0) rasterizes SVG→PNG with prebuilt binaries",
+      "source": "npm view @resvg/resvg-js",
+      "retrieved": "2026-08-08"
+    },
+    {
+      "claim": "Chart-selection principles: question-first vocabulary (change/compare/rank/distribution/relationship/part-to-whole/flow)",
+      "source": "FT Visual Vocabulary (github.com/Financial-Times/chart-doctor) + data-to-viz.com",
+      "retrieved": "2026-08-08",
+      "note": "principles extracted, not copied verbatim (spec §4)"
+    },
+    {
+      "claim": "Project design tokens: KEEP (v2/design/tokens/keep.tokens.json) mirrored at tools/docgen/assets/tokens.json; docgen/echarts categorical palette = achromatic lightness ramp (bone/ash/mute/steel-3/steel-2/faint); heat ramp steel-2→sig-dim→sig-hi; signal lattice sig/warn/danger",
+      "source": "Phase-0 inventory of tools/docgen (2026-08-08)",
+      "retrieved": "2026-08-08"
+    }
+  ]
+}

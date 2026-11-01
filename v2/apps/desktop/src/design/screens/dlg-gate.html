@@ -1,0 +1,40 @@
+<!-- Enrol or replace the vault's second factor (Settings -> Security).  Like the shared dialogs in dlg-touch.html it sits AHEAD of the settings
+     overlay in the document: the focus trap (core.js trapTab / focusModalFirst) acts on the FIRST .cm-modal-panel in the page, and this opens over Settings.
+     The QR code is drawn here from a path built in the page (src/vault/qr.ts); nothing is sent to any service. -->
+<sc-if value="{{dlgGate}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:92;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{gateScrim}}">
+  <div class="cm-modal-panel" data-screen-label="Second factor" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-gate-title" style="width:520px;max-width:94vw;max-height:90vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px">
+    <span id="dlg-gate-title" class="t-eyebrow">{{gateTitle}}</span>
+    <sc-if value="{{gateReplaceNote}}" hint-placeholder-val="{{false}}"><div class="t-body-sm">A second factor is already in force. Confirming a new one replaces it: the authenticator you use now stops working for this vault.</div></sc-if>
+    <sc-if value="{{gateStepLoading}}" hint-placeholder-val="{{false}}"><div class="t-body-sm" role="status">Preparing the second factor…</div></sc-if>
+    <sc-if value="{{gateStepError}}" hint-placeholder-val="{{false}}"><div class="t-body-sm" role="status" data-gate-error="true">{{gateErrorText}}</div></sc-if>
+    <sc-if value="{{gateStepQr}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm">Scan this with an authenticator app, then enter one code from it. The code is drawn on this screen; nothing is sent anywhere.</div>
+      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        <svg role="img" aria-label="QR code for your authenticator app" viewBox="{{gateQrViewBox}}" width="176" height="176" shape-rendering="crispEdges" style="flex:none;background:#fff;border:1px solid var(--faint)"><rect x="0" y="0" width="100%" height="100%" fill="#fff"></rect><path d="{{gateQrPath}}" fill="#000"></path></svg>
+        <div style="display:flex;flex-direction:column;gap:8px;flex:1;min-width:200px">
+          <div class="t-mono-label">or type this key in by hand</div>
+          <div data-totp-secret="true" style="font-family:var(--f-mono);font-size:var(--fs-sm);overflow-wrap:anywhere;user-select:all">{{gateSecret}}</div>
+          <input value="{{gateTotp}}" onChange="{{onGateTotp}}" onKeyDown="{{onGateTotpKey}}" maxLength="6" autoComplete="off" aria-label="authenticator code" style="font-family:var(--f-mono);letter-spacing:.4em;text-align:center" placeholder="confirm one code">
+          <div class="t-caption">Recovery codes are shown once, right after you confirm.</div>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{gateStepCodes}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm">The second factor is in force. These recovery codes each work once if you lose your authenticator. They are shown only now and cannot be shown again; store them apart from your passphrase. Ticking the box is optional, and you may skip saving them.</div>
+      <div data-gate-codes="true" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;padding:12px;border:1px dashed var(--faint);font-family:var(--f-mono);font-size:var(--fs-sm)">
+        <sc-for list="{{gateCodes}}" as="c" hint-placeholder-count="10"><div style="user-select:all;overflow-wrap:anywhere">{{c.code}}</div></sc-for>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-base);color:var(--ash);cursor:pointer"><input type="checkbox" checked="{{gateCodesSaved}}" onChange="{{onGateCodesSaved}}" style="width:auto">I have saved these recovery codes (optional)</label>
+    </sc-if>
+    <sc-if value="{{gateErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{gateErr}}</div></sc-if>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+      <sc-if value="{{gateCanCancel}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{gateCancel}}">Cancel</button></sc-if>
+      <sc-if value="{{gateCanRetry}}" hint-placeholder-val="{{false}}"><button class="k-btn" data-variant="primary" onClick="{{gateRetry}}">Try again</button></sc-if>
+      <sc-if value="{{gateStepQr}}" hint-placeholder-val="{{false}}"><button class="k-btn" data-variant="primary" onClick="{{gateConfirm}}" disabled="{{gateConfirmDisabled}}">{{gateConfirmLabel}}</button></sc-if>
+      <sc-if value="{{gateStepCodes}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{gateDone}}">Skip for now</button></sc-if>
+      <sc-if value="{{gateStepCodes}}" hint-placeholder-val="{{false}}"><button class="k-btn" data-variant="primary" onClick="{{gateDone}}" disabled="{{gateDoneDisabled}}">Done</button></sc-if>
+    </div>
+  </div>
+</div>
+</sc-if>

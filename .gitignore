@@ -1,0 +1,180 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# credmgr — deny-by-default secret hygiene
+#
+# This file is the SECOND line of defence, not the first. The first is that the
+# vault does not live here at all: lib/paths.js resolves it to the platform's
+# user-data directory (~/Library/Application Support/credmgr, %APPDATA%\credmgr,
+# ~/.local/share/credmgr). A path outside the repository is a guarantee; a
+# .gitignore is only a promise.
+#
+# The third line is scripts/guard-no-secrets.mjs, installed as a pre-commit
+# hook by `npm run hooks:install` and run in CI. It blocks the commit.
+#
+# If you are adding a new file type that could ever hold a secret, add it here
+# FIRST and commit that change on its own.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── The vault itself (belt and braces — it should never be in-tree) ─────────
+.credmgr/
+store/
+backups/
+archive/
+*.age
+*.tar.age
+vault.sha256
+
+# ── Key material, any shape, anywhere ──────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.kubeconfig
+*.asc
+*.gpg
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+*_rsa
+*_ecdsa
+*_ed25519
+!*.pub.example
+
+# ── Environment files ──────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# ── Cloud / service credential files ───────────────────────────────────────
+credentials.json
+service-account*.json
+gcp-key*.json
+firebase-adminsdk-*.json
+aws-credentials*
+.npmrc
+.netrc
+secrets.yaml
+secrets.yml
+secrets.toml
+*.mobileprovision
+
+# ── Wallet / chain material ────────────────────────────────────────────────
+*mnemonic*
+*seed-phrase*
+*seedphrase*
+keystore/
+wallets.json
+**/receive-addresses-*.json
+
+# ── Plaintext credential dumps people accidentally create ──────────────────
+*credential*.txt
+*credentials*.md
+*password*.txt
+*secret*.txt
+*token*.txt
+*.local
+*.rtf
+
+# ── Build / tooling / OS ───────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.swp
+*~
+
+# ── Release and build output (Rust, Tauri, SvelteKit, scripts/release.sh) ──
+# `dist/`, `build/` and `node_modules/` are above. v2/.gitignore repeats the Rust ones for anyone
+# working inside v2/; this block is what protects a root-level `git add`.
+target/
+.svelte-kit/
+*.app/
+*.dmg
+*.dSYM/
+*.tar.gz
+*.tgz
+
+# ── Python build artifacts (tools/docgen) ───────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# ── Local agent / editor state (not secrets, just not for git) ─────────────
+.codemap/
+.remember/
+.planning/
+.cleanup_state/
+
+# ── Local agent context, not product documentation ─────────────────────────
+# CLAUDE.md describes the maintainer's local three-location layout (live vault /
+# public source / V2 design) and their machine's paths. Useful to an agent working
+# here; meaningless and mildly revealing to anyone else. It stays on disk and out
+# of the repository.
+CLAUDE.md
+.claude/
+# Two files under .claude/ (settings.json and hooks/session-start.sh, the Claude Code on the web
+# setup hook) are tracked on purpose; git keeps tracking a tracked file despite the rule above.
+# Other agents' local context and scratch state get the same treatment as CLAUDE.md:
+AGENTS.md
+GEMINI.md
+.cursor/
+.cursorrules
+.windsurf/
+.codex/
+.aider*
+.superpowers/
+graphify-out/
+
+# ── Repo-root additions ────────────────────────────────────────────────────
+# Standalone histories + local agent context, kept on disk, never published.
+.local-history/
+
+# ── Automated build runtime state (logs and control files, not source) ─────
+v2/.autobuild-logs/
+.autobuild-stop
+.autobuild-needs-human
+v2/.build-complete
+v2/.migration-expected
+.autobuild.lock
+
+# ── Visualization-engine scratch and per-run timing churn (tools/) ──────────
+# _sample_out/: upstream build scratch that rode in with the port (untracked).
+# evidence/validation/*.json carries a wall-clock render_ms that changes every
+# run, so a plain `npm test` would otherwise always leave the tree dirty.
+tools/docgen/_sample_out/
+
+# docgen renders of the v2 design corpus. The JSON siblings ARE committed — they are the
+# machine-readable artifact (sections, figures, and each document's outbound document/ADR/code
+# references), ~3KB each and diffable. The HTML is not: it is a pure render of the committed
+# Markdown, and 91% of each file is base64 font data that would be duplicated across all 24
+# documents for roughly 5MB of identical bytes. Regenerate any of them with
+#   python3 -m tools.docgen.cli build v2/docs/<doc>.md --formats html,json
+# docs/blueprints/*.html stays tracked deliberately — one file, and it is the pipeline's own
+# proof-of-work artifact rather than a bulk render.
+v2/docs/*.html
+
+# ── Public-export output ───────────────────────────────────────────────────
+# tools/public-export builds the public tree OUTSIDE this repository and refuses an output directory
+# inside it. These entries are only a backstop, so a tree, a report or a rejected tree can never be
+# committed back by accident if someone points the tool at a path in here.
+/public-export-out/
+/.public-export/
+*.export-report.json
+*.REJECTED-*/

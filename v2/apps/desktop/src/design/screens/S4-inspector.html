@@ -1,0 +1,115 @@
+  <aside class="cm-insp {{inspOpenClass}}">
+    <button class="k-btn cm-insp-close" onClick="{{closeInsp}}" style="border:none;padding:8px 16px;align-self:flex-start" aria-label="close inspector">✕ close</button>
+    <sc-if value="{{inspNode}}" hint-placeholder-val="{{true}}">
+      <div class="k-section" style="padding-bottom:16px">
+        <span class="t-eyebrow">node · {{inspLabel}}</span>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+          <span class="t-mono-data" style="color:var(--ash)">{{inspCounts}}</span>
+          <sc-if value="{{inspLocked}}" hint-placeholder-val="{{false}}"><span class="k-chip">⌐ locked</span><button class="k-btn" onClick="{{lockedUnlock}}" style="padding:2px 6px;font-size:var(--fs-xs)">Unlock node</button></sc-if>
+          <sc-if value="{{insp2fa}}" hint-placeholder-val="{{false}}"><span class="k-chip" title="requireTwoFactor is set on this node. The broker asks agents and other callers for a second factor (level reveal: reveals; level always: reads too). You, logged in, are already past it. Give second factor opens a 5-minute window for agents.">2fa · on reveal</span></sc-if>
+          <sc-if value="{{inspTfBtn}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{inspTfGive}}" title="vault.gate_verify: opens a 5-minute window for agents and other callers, for the whole vault" style="min-height:24px;padding:2px 8px">Give second factor</button></sc-if>
+          <sc-if value="{{inspTf}}" hint-placeholder-val="{{false}}"><span class="k-chip" title="Agents and other callers pass the second factor on every node of this vault until the time runs out. It ends early when the vault locks or any node policy changes.">{{inspTfLabel}}</span></sc-if>
+          <sc-if value="{{inspNameHidden}}" hint-placeholder-val="{{false}}"><span class="k-chip" title="privateNames: agents and other callers get an opaque row with nameHidden true instead of this node's label, entry names and notes. The node id is not hidden.">name hidden</span></sc-if>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="k-btn" onClick="{{openAddEntry}}" style="flex:1;text-align:left">+ New entry</button>
+          <button class="k-btn" onClick="{{openAddNote}}" style="flex:1;text-align:left">+ New note</button>
+        </div>
+      </div>
+      <div data-screen-label="S4 Inspector">
+        <sc-for list="{{inspEntries}}" as="e" hint-placeholder-count="6">
+          <button class="k-entry" onClick="{{e.open}}" style="border-left:{{e.sens}};border-top:0;border-right:0;border-bottom:0;background:none;font:inherit;text-align:left;width:100%;color:inherit;cursor:pointer">
+            <span class="k-entry-name">⌗ {{e.name}}</span>
+            <span style="display:flex;gap:6px;align-items:center"><sc-if value="{{e.totp}}" hint-placeholder-val="{{false}}"><span style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">2FA</span></sc-if><span class="k-type">{{e.type}}</span></span>
+          </button>
+        </sc-for>
+        <sc-if value="{{inspUnreadable}}" hint-placeholder-val="{{false}}">
+          <div class="k-empty" role="status" data-node-unreadable="{{inspUnreadableCode}}">{{inspUnreadableText}}
+            <sc-if value="{{inspUnreadableUnlock}}" hint-placeholder-val="{{false}}"><div style="display:flex;justify-content:center;margin-top:12px"><button class="k-btn" data-variant="primary" onClick="{{unreadableUnlock}}">Unlock node</button></div></sc-if>
+            <sc-if value="{{inspUnreadableFactor}}" hint-placeholder-val="{{false}}"><div style="display:flex;justify-content:center;margin-top:12px"><button class="k-btn" data-variant="primary" onClick="{{unreadableFactor}}">Give second factor</button></div></sc-if>
+          </div>
+        </sc-if>
+        <sc-if value="{{inspEmpty}}" hint-placeholder-val="{{false}}"><div class="k-empty">No entries in this node<br><div style="display:flex;gap:8px;justify-content:center;margin-top:12px"><button class="k-btn" onClick="{{openAddEntry}}">+ New entry</button><button class="k-btn" onClick="{{openAddNote}}">+ New note</button></div></div></sc-if>
+      </div>
+      <div class="k-section">
+        <span class="t-eyebrow">notes</span>
+        <div class="t-body-sm" data-notes="true" style="font-size:var(--fs-base);white-space:pre-wrap;overflow-wrap:anywhere">{{inspNotes}}</div>
+      </div>
+    </sc-if>
+    <sc-if value="{{inspOrphan}}" hint-placeholder-val="{{false}}">
+      <div class="k-sealed-panel" data-screen-label="S10 Orphaned" style="text-align:left">
+        <span class="t-eyebrow">orphaned · {{orphanCount}} items · sealed</span>
+        <div style="margin:16px 0;display:flex;flex-direction:column">
+          <sc-for list="{{orphanItems}}" as="o" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--faint);font-family:var(--f-mono);font-size:var(--fs-base)">
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">⌗ {{o.name}}</span>
+              <button class="k-btn" onClick="{{o.open}}" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="ask the broker to open this sealed item">open</button>
+            </div>
+          </sc-for>
+          <sc-if value="{{orphanUnreadable}}" hint-placeholder-val="{{false}}"><div class="k-empty" role="status" data-node-unreadable="{{orphanUnreadableCode}}">{{orphanUnreadableText}}</div></sc-if>
+          <sc-if value="{{orphanEmpty}}" hint-placeholder-val="{{false}}"><div class="k-empty">Nothing is orphaned</div></sc-if>
+        </div>
+        <div style="font-size:var(--fs-sm);line-height:var(--lh-base)">Values are sealed and human-only; no agent can read this node. Opening an item needs presence (Touch ID), which this beta cannot attest yet, so the broker refuses and nothing is shown.</div>
+      </div>
+    </sc-if>
+    <sc-if value="{{inspEntry}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="S5 Entry detail">
+        <div class="k-section" style="padding-bottom:12px">
+          <button class="k-btn" onClick="{{closeEntry}}" style="border:none;padding:2px 0;color:var(--mute)">← {{inspLabel}}</button>
+          <div style="display:flex;gap:8px;align-items:baseline;margin-top:8px">
+            <span style="font-family:var(--f-mono);font-size:var(--fs-lg);font-weight:var(--fw-label)">{{entryName}}</span>
+            <span class="k-type">{{entryType}}</span>
+          </div>
+          <div class="t-caption" style="margin-top:4px">{{entryMeta}}</div>
+        </div>
+        <sc-if value="{{entryUnlocked}}" hint-placeholder-val="{{true}}">
+        <sc-if value="{{fieldsLoading}}" hint-placeholder-val="{{false}}"><div class="k-section"><div class="k-empty" role="status" aria-busy="true" data-fields-state="loading">Reading the fields…</div></div></sc-if>
+        <sc-if value="{{fieldsFailed}}" hint-placeholder-val="{{false}}"><div class="k-section"><div class="k-empty" role="status" data-fields-state="failed" style="display:flex;flex-direction:column;gap:12px;align-items:center"><span>{{fieldsFailedText}}</span><button class="k-btn" onClick="{{retryFields}}">Try again</button></div></div></sc-if>
+        <sc-if value="{{fieldsShow}}" hint-placeholder-val="{{true}}">
+        <div class="k-section" data-fields="true">
+          <sc-for list="{{entryFields}}" as="f" hint-placeholder-count="4">
+            <div class="k-field {{f.sensClass}}" role="group" aria-label="{{f.groupLabel}}" data-field-id="{{f.id}}" style="grid-template-columns:140px 1fr;align-items:start">
+              <div style="display:flex;flex-direction:column;gap:2px;min-width:0;margin-top:3px">
+                <span class="k-type" style="font-size:var(--fs-sm);text-transform:none;letter-spacing:normal;color:var(--ash);width:fit-content;max-width:100%;word-break:break-word" data-field-label="true">{{f.label}}</span>
+                <span class="t-caption" data-field-type="true">{{f.type}}</span>
+              </div>
+              <div style="min-width:0;display:flex;flex-direction:column;gap:6px">
+                <div class="k-field-value" data-masked="{{f.masked}}" style="overflow-wrap:anywhere;white-space:pre-wrap">{{f.display}}</div>
+                <sc-if value="{{f.counting}}" hint-placeholder-val="{{false}}"><div style="height:1px;background:var(--faint)"><div style="height:1px;background:var(--sig);width:{{f.pct}}"></div></div><div class="t-kbd" role="status" aria-live="polite" style="color:var(--sig)">re-masks in {{f.secs}}s</div></sc-if>
+                <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-start">
+                  <sc-if value="{{f.maskable}}" hint-placeholder-val="{{true}}"><button class="k-btn" onClick="{{f.reveal}}" aria-live="polite" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="{{f.revealTitle}}">{{f.revealLabel}}</button></sc-if>
+                  <sc-if value="{{f.canCopy}}" hint-placeholder-val="{{true}}"><button class="k-btn" onClick="{{f.copy}}" aria-live="polite" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="concealed clipboard · cleared after 30 s · the value never reaches this window">{{f.copyLabel}}</button></sc-if>
+                  <sc-if value="{{f.isTotp}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{f.showSeed}}" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="the seed needs presence (Touch ID), which this beta cannot attest yet">show seed</button></sc-if>
+                  <sc-if value="{{f.canMenu}}" hint-placeholder-val="{{true}}">
+                  <div style="position:relative;margin-left:auto">
+                    <button class="k-btn cm-fieldmenu-btn" onClick="{{f.toggleMenu}}" aria-label="field menu" aria-haspopup="menu" aria-expanded="{{f.menuOpen}}" style="min-width:24px;border:none;padding:0 8px;font-size:var(--fs-md);line-height:1.4;color:var(--ash)">⋮</button>
+                    <sc-if value="{{f.menuOpen}}" hint-placeholder-val="{{false}}">
+                      <div class="cm-fieldmenu" data-screen-label="S5b Field menu" role="menu" aria-label="{{f.menuLabel}}" style="position:absolute;right:0;top:26px;z-index:70;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-sm);box-shadow:0 8px 24px var(--scrim);min-width:180px;padding:4px;display:flex;flex-direction:column">
+                        <sc-for list="{{f.menuItems}}" as="m" hint-placeholder-count="4">
+                          <button role="menuitem" onClick="{{m.go}}" disabled="{{m.disabled}}" title="{{m.title}}" style="padding:6px 10px;border:0;background:none;color:{{m.color}};cursor:pointer;font-family:var(--f-mono);font-size:var(--fs-sm);text-align:left;border-radius:var(--r-xs)" style-hover="background:var(--steel-2)">{{m.label}}</button>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                  </sc-if>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+          <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-top:12px">
+            <sc-if value="{{fieldsEditable}}" hint-placeholder-val="{{true}}"><button class="k-btn cm-addfield-btn" onClick="{{addFieldOpen}}">+ Add field</button></sc-if>
+            <sc-if value="{{undoShow}}" hint-placeholder-val="{{false}}"><button class="k-btn cm-undo-btn" onClick="{{undoField}}" title="entry.undo: one step, the most recent change on this node, for 7 days, and only while nothing else has changed the node" style="border:none;color:var(--ash);text-decoration:underline">Undo {{undoText}}</button></sc-if>
+            <sc-if value="{{undoMsgShow}}" hint-placeholder-val="{{false}}"><span class="t-caption" role="status" aria-live="polite">{{undoMsg}}</span></sc-if>
+          </div>
+        </div>
+        <div class="k-section"><div class="t-caption">every reveal and copy writes an audit record</div></div>
+        </sc-if>
+        </sc-if>
+        <sc-if value="{{entryLockedShow}}" hint-placeholder-val="{{false}}">
+          <div class="k-section" data-screen-label="S5 Entry detail — locked">
+            <div class="k-empty" style="padding:24px 8px;display:flex;flex-direction:column;gap:12px;align-items:center"><span>This node is locked. Names and types stay visible; values need the node unlocked.</span><button class="k-btn" data-variant="primary" onClick="{{lockedUnlock}}">Unlock node</button></div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+  </aside>

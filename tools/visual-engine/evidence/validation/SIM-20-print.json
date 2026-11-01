@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-20-print",
+  "selected_visual": "bar",
+  "preset": null,
+  "theme": "print-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "4d4e512767d551ea98622c20ca86ba9862180eaecf8808934572b981c07b3fb3",
+  "option_sha256": "63693a51de5474e5100c407a5e17d3d32690ce0c7b4a965ceb9548ae79990400",
+  "job_sha256": "79635092b1cf888fa7d1d85f301b8c780ebcffef3c030e4b91a2fef842046a90",
+  "render_ms": 10,
+  "warnings": []
+}

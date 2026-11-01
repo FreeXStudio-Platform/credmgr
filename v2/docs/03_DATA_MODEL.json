@@ -1,0 +1,653 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 8,
+      "figures": 2,
+      "sections": 11,
+      "tables": 4
+    },
+    "figures": [
+      "plaintext-boundary",
+      "rollback-defence"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-059",
+        "ADR-062",
+        "ADR-071",
+        "ADR-078",
+        "ADR-072",
+        "ADR-067",
+        "ADR-040",
+        "ADR-064",
+        "ADR-066",
+        "ADR-063",
+        "ADR-030",
+        "ADR-033",
+        "ADR-079",
+        "ADR-039",
+        "ADR-029",
+        "ADR-011",
+        "ADR-038",
+        "ADR-012",
+        "ADR-048",
+        "ADR-054",
+        "ADR-032",
+        "ADR-073",
+        "ADR-027",
+        "ADR-007",
+        "ADR-024",
+        "ADR-055"
+      ],
+      "code": [
+        "crates/brokerd/src/ops.rs",
+        "crates/store/src/paths.rs",
+        "crates/core/src/registry.rs",
+        "crates/store/src/registry_file.rs",
+        "crates/core/src/fields.rs",
+        "crates/core/src/inference.rs",
+        "crates/core/src/envelope.rs",
+        "crates/brokerd/tests/durable_vault.rs",
+        "crates/core/src/access.rs",
+        "crates/brokerd/src/scope.rs",
+        "crates/brokerd/src/state.rs",
+        "crates/brokerd/tests/phase5_gate.rs",
+        "crates/store/src/generation.rs",
+        "crates/store/src/manifest.rs",
+        "crates/core/tests/no_field_schema.rs",
+        "crates/core/src/parser.rs",
+        "crates/brokerd/src/state/durable.rs",
+        "crates/store/src/verify.rs",
+        "crates/core/tests/properties.rs",
+        "crates/cli/src/main.rs",
+        "crates/brokerd/tests/grant_ops.rs",
+        "crates/store/src/hexutil.rs",
+        "crates/store/tests/alpha6_golden.rs",
+        "crates/store/src/audit.rs",
+        "crates/brokerd/tests/audit_ops.rs",
+        "crates/brokerd/src/server.rs",
+        "crates/mcp/src/tools.rs",
+        "crates/store/src/archive.rs",
+        "crates/store/src/entry_archive.rs",
+        "crates/brokerd/tests/isolation.rs",
+        "crates/brokerd/tests/entry_lifecycle.rs",
+        "crates/core/tests/field_doc.rs",
+        "crates/brokerd/tests/field_model.rs",
+        "docs/03_DATA_MODEL.md",
+        "tools/ENGINE_ROUTING_POLICY.md",
+        "docs/03_DATA_MODEL_spec.js"
+      ],
+      "documents": [
+        {
+          "doc": "05_THREAT_MODEL.md"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "1"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "3"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "10.1"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "2"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "3"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "2"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "5.1"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "7"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "4.4"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "6"
+        },
+        {
+          "doc": "02_ARCHITECTURE.md",
+          "section": "7"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "3"
+        },
+        {
+          "doc": "11_MIGRATION.md",
+          "section": "4"
+        },
+        {
+          "doc": "11_MIGRATION.md"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "2"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "6.2"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "3"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "6"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "3"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "6"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "4"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "6"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "1"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "3"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1.2"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "03_DATA_MODEL.md"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-node",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-071",
+            "ADR-064",
+            "ADR-066",
+            "ADR-063",
+            "ADR-030",
+            "ADR-033",
+            "ADR-079"
+          ],
+          "code": [
+            "crates/core/src/registry.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/tests/durable_vault.rs",
+            "crates/core/src/access.rs",
+            "crates/brokerd/src/scope.rs",
+            "crates/brokerd/src/state.rs",
+            "crates/brokerd/tests/phase5_gate.rs"
+          ],
+          "documents": [
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "10.1"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "2"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "3"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "2"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md"
+            }
+          ]
+        },
+        "title": "1. Node"
+      },
+      {
+        "figures": [
+          "plaintext-boundary"
+        ],
+        "headings": [],
+        "id": "2-the-node-registry-and-the-metadata-it-deliberately-leaks",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-063",
+            "ADR-079",
+            "ADR-039",
+            "ADR-029",
+            "ADR-072"
+          ],
+          "code": [
+            "crates/store/src/registry_file.rs",
+            "crates/store/src/generation.rs",
+            "crates/store/src/paths.rs"
+          ],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "5.1"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "7"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "4.4"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "6"
+            },
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "7"
+            }
+          ]
+        },
+        "title": "2. The node registry \u2014 and the metadata it deliberately leaks"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "3-entry",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078",
+            "ADR-079",
+            "ADR-011",
+            "ADR-038",
+            "ADR-012",
+            "ADR-048",
+            "ADR-054",
+            "ADR-063",
+            "ADR-032"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs",
+            "crates/store/src/manifest.rs",
+            "crates/core/src/fields.rs",
+            "crates/core/tests/no_field_schema.rs",
+            "crates/core/src/parser.rs",
+            "crates/brokerd/src/state/durable.rs"
+          ],
+          "documents": [
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "3"
+            },
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "4"
+            },
+            {
+              "doc": "11_MIGRATION.md"
+            }
+          ]
+        },
+        "title": "3. Entry"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-note",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-072",
+            "ADR-063",
+            "ADR-067"
+          ],
+          "code": [
+            "crates/brokerd/tests/durable_vault.rs",
+            "crates/store/src/verify.rs",
+            "crates/core/src/registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "4. Note"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-types-the-categorisation-layer",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078",
+            "ADR-012",
+            "ADR-011"
+          ],
+          "code": [
+            "crates/core/src/inference.rs",
+            "crates/core/tests/properties.rs",
+            "crates/cli/src/main.rs"
+          ],
+          "documents": [
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "6.2"
+            }
+          ]
+        },
+        "title": "5. Types \u2014 the categorisation layer"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "6-grant",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/brokerd/tests/grant_ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "3"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "6"
+            }
+          ]
+        },
+        "title": "6. Grant"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-on-disk-envelope",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078"
+          ],
+          "code": [
+            "crates/core/src/envelope.rs"
+          ],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "3"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "3"
+            }
+          ]
+        },
+        "title": "7. On-disk envelope"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-manifest",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-072",
+            "ADR-067",
+            "ADR-048",
+            "ADR-078",
+            "ADR-073"
+          ],
+          "code": [
+            "crates/store/src/manifest.rs",
+            "crates/store/src/hexutil.rs",
+            "crates/store/tests/alpha6_golden.rs",
+            "crates/store/src/verify.rs"
+          ],
+          "documents": []
+        },
+        "title": "8. Manifest"
+      },
+      {
+        "figures": [
+          "rollback-defence"
+        ],
+        "headings": [],
+        "id": "9-audit-log",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-027",
+            "ADR-048"
+          ],
+          "code": [
+            "crates/store/src/audit.rs",
+            "crates/brokerd/tests/audit_ops.rs",
+            "crates/brokerd/src/server.rs",
+            "crates/mcp/src/tools.rs",
+            "crates/store/src/archive.rs",
+            "crates/store/src/entry_archive.rs"
+          ],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "6"
+            }
+          ]
+        },
+        "title": "9. Audit log"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "10-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-007",
+            "ADR-011",
+            "ADR-012",
+            "ADR-024",
+            "ADR-039",
+            "ADR-027",
+            "ADR-048",
+            "ADR-029",
+            "ADR-030",
+            "ADR-033",
+            "ADR-040",
+            "ADR-055",
+            "ADR-059",
+            "ADR-071",
+            "ADR-072",
+            "ADR-073"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "3"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "6"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "7"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "6"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "4"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "3"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "6"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "3"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.2"
+            },
+            {
+              "doc": "11_MIGRATION.md"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "10. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "11-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-007",
+            "ADR-011",
+            "ADR-012",
+            "ADR-024",
+            "ADR-027",
+            "ADR-029",
+            "ADR-030",
+            "ADR-033",
+            "ADR-039",
+            "ADR-040",
+            "ADR-048",
+            "ADR-054",
+            "ADR-055",
+            "ADR-063",
+            "ADR-064",
+            "ADR-066",
+            "ADR-071",
+            "ADR-072",
+            "ADR-073",
+            "ADR-078",
+            "ADR-079"
+          ],
+          "code": [
+            "crates/core/src/registry.rs",
+            "crates/core/src/envelope.rs",
+            "crates/core/src/inference.rs",
+            "crates/core/src/access.rs",
+            "crates/store/src/registry_file.rs",
+            "crates/store/src/manifest.rs",
+            "crates/store/src/generation.rs",
+            "crates/store/src/audit.rs",
+            "crates/store/src/verify.rs",
+            "crates/store/src/paths.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/src/scope.rs",
+            "crates/brokerd/src/server.rs",
+            "crates/core/tests/properties.rs",
+            "crates/brokerd/tests/isolation.rs",
+            "crates/brokerd/tests/entry_lifecycle.rs",
+            "crates/core/tests/field_doc.rs",
+            "crates/store/tests/alpha6_golden.rs",
+            "crates/brokerd/tests/field_model.rs",
+            "docs/03_DATA_MODEL.md",
+            "tools/ENGINE_ROUTING_POLICY.md",
+            "docs/03_DATA_MODEL_spec.js"
+          ],
+          "documents": [
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "03_DATA_MODEL.md"
+            }
+          ]
+        },
+        "title": "11. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-003",
+    "last_reviewed": "2026-08-18",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Data model",
+    "variants": []
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "id": "op-test-matrix",
+  "visual": "heatmap",
+  "family": "matrix",
+  "summary": "Broker op × test-class pass/fail/unknown matrix",
+  "canonical_reader_question": "Which broker ops lack a given test class?",
+  "required_fields": [
+    "data.rows",
+    "data.cols",
+    "data.matrix"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "encode pass=1 fail=-1 unknown=null; label shows state glyph not color alone",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

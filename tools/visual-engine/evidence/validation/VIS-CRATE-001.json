@@ -1,0 +1,15 @@
+{
+  "visual_id": "VIS-CRATE-001",
+  "selected_visual": "heatmap",
+  "preset": "crate-test-coverage-heatmap",
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "1ae8882262cb6b5d888e22c056065df64e2800b57294234522e7ca02ef0dab12",
+  "option_sha256": "b43464eb3341daedee1083724a413d3dd43c79c2a9b02c2f691e72f55af6d80d",
+  "job_sha256": "636a79e01de69cce6edd4c8edcaaa8fd87b69968274a1ab78893fb80f03c1578",
+  "warnings": []
+}

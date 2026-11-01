@@ -1,0 +1,12 @@
+{
+  "tested": "2026-08-08",
+  "method": "scripted stdio JSON-RPC session against mcp/server.mjs (see tests/test_mcp.mjs for the repeatable version)",
+  "results": {
+    "initialize": "PASS — serverInfo credmgr-visuals@1.0.0",
+    "tools_list": "PASS — 7 tools, snapshot in tool-schema-snapshot.json",
+    "visual_render": "PASS — VIS-DET-001 heatmap, svg+png written under renders/current/, hashes returned",
+    "restricted_refusal": "PASS — classification:restricted → isError, gate G-CONF, no render",
+    "injection_rejection": "PASS — <script> in title → gate G-SEC",
+    "parity_with_direct_adapter": "PASS — same svg_sha256 as direct renderSVG for identical job (simulation 21)"
+  }
+}

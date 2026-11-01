@@ -1,0 +1,55 @@
+{
+  "kind": "state",
+  "id": "build-phase-ledger",
+  "title": "The phase ledger, as a map, not a percentage",
+  "caption": "One partial phase inside the closed chain, a built bridge outside it, three partial phases beyond it (the UI hosted and wired but not yet verified by a person, integration, an unsigned release path), and two unstarted phases blocked by two different kinds of thing — none of which is more engineering effort.",
+  "nodes": [
+    { "id": "p0", "type": "state", "label": "Phase 0 · Toolchain", "x": 40, "y": 320, "w": 220, "h": 64, "note": "built — CI green, cargo build clean" },
+    { "id": "p1", "type": "state", "label": "Phase 1 · Core primitives", "x": 380, "y": 320, "w": 220, "h": 64, "note": "built — pure, I/O-free crate" },
+    { "id": "p2", "type": "state", "label": "Phase 2 · Storage & registry", "x": 720, "y": 320, "w": 220, "h": 64, "note": "built — 15 modules, unit-tested" },
+    { "id": "p3", "type": "state", "label": "Phase 3 · Broker", "x": 1060, "y": 320, "w": 220, "h": 64, "note": "built — 27 of 28 isolation tests" },
+    { "id": "p4", "type": "state", "label": "Phase 4 · CLI", "x": 1620, "y": 140, "w": 220, "h": 64, "note": "built — 23 subcommands, real socket" },
+    { "id": "p5", "type": "state", "label": "Phase 5 · 2FA & keystore", "x": 1620, "y": 320, "w": 220, "h": 64, "note": "partial — 2 of 7 gate lines met", "highlight": true },
+    { "id": "bridge", "type": "state", "label": "Tauri ↔ broker bridge", "x": 1620, "y": 500, "w": 220, "h": 64, "note": "built — 53 of 53 ops wired" },
+    { "id": "p7", "type": "state", "label": "Phase 7 · Hardening", "x": 2180, "y": 320, "w": 220, "h": 64, "note": "built — Semgrep + guards clean" },
+    { "id": "p8", "type": "state", "label": "Phase 8 · Final audit", "x": 2740, "y": 320, "w": 220, "h": 64, "note": "built — Approved With Known Risks" },
+    { "id": "p6", "type": "state", "label": "Phase 6 · UI", "x": 40, "y": 700, "w": 240, "h": 64, "note": "partial — wired; checklist unsigned", "highlight": true },
+    { "id": "p9", "type": "state", "label": "Phase 9 · Integration", "x": 400, "y": 700, "w": 240, "h": 64, "note": "partial — wired; evidence missing", "highlight": true },
+    { "id": "p10", "type": "state", "label": "Phase 10 · Native platform", "x": 760, "y": 700, "w": 240, "h": 64, "note": "planned — blocked: Win+Linux hosts, human factor" },
+    { "id": "p11", "type": "state", "label": "Phase 11 · Release & integrity", "x": 1120, "y": 700, "w": 240, "h": 64, "note": "partial — unsigned path; no signing certs", "highlight": true },
+    { "id": "p12", "type": "state", "label": "Phase 12 · Org vault & licensing", "x": 1480, "y": 700, "w": 240, "h": 64, "note": "planned — blocked: operator's 22 §3 decision" }
+  ],
+  "edges": [
+    { "src": "p0", "dst": "p1" },
+    { "src": "p1", "dst": "p2" },
+    { "src": "p2", "dst": "p3" },
+    { "src": "p3", "dst": "p4" },
+    { "src": "p3", "dst": "p5" },
+    { "src": "p3", "dst": "bridge" },
+    { "src": "p4", "dst": "p7" },
+    { "src": "p5", "dst": "p7" },
+    { "src": "bridge", "dst": "p7" },
+    { "src": "p7", "dst": "p8" },
+    { "src": "p6", "dst": "p9", "style": "dashed" },
+    { "src": "p9", "dst": "p10", "style": "dashed" },
+    { "src": "p10", "dst": "p11", "style": "dashed" },
+    { "src": "p11", "dst": "p12", "style": "dashed" }
+  ],
+  "legend": [
+    { "kind": "line", "key": "solid", "label": "Sequencing already crossed — phase built and tested" },
+    { "kind": "line", "key": "dashed", "label": "Sequencing not yet crossed — phase planned" },
+    { "kind": "swatch", "key": "var(--sig)", "label": "Partial — exit gate not fully met" }
+  ],
+  "motion": false,
+  "width": 3000,
+  "height": 1000,
+  "data_sources": [
+    { "kind": "cited", "ref": "v2/docs/12_BUILD_PLAN.md §0 (the phase ledger)", "retrieved": "2026-08-23" },
+    { "kind": "cited", "ref": "v2/crates/keystore/src/ (lib.rs, error.rs, backup_passphrase.rs, software.rs only — no hardware module)", "retrieved": "2026-08-23" },
+    { "kind": "cited", "ref": "v2/apps/desktop/src-tauri/src/commands.rs (8 hand-written handlers + 45 bridge_ops! rows = 53)", "retrieved": "2026-10-03" },
+    { "kind": "cited", "ref": "v2/crates/brokerd/src/ops.rs (53 dispatched ops, counted with tools.corpus_check.broker_ops())", "retrieved": "2026-10-03" },
+    { "kind": "cited", "ref": "v2/crates/brokerd/tests/isolation.rs (I-1..I-25 minus I-10, plus I-27..I-29; I-13/I-17 live elsewhere)", "retrieved": "2026-10-03" },
+    { "kind": "cited", "ref": "v2/docs/14_DECISIONS.md ADR-046, ADR-057" },
+    { "kind": "cited", "ref": "v2/docs/PHASE8_AUDIT_REPORT.md §4 (K-1..K-4)" }
+  ]
+}

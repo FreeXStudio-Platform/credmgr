@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://credmgr.internal/schemas/visual_spec.schema.json",
+  "title": "VisualSpec",
+  "description": "A renderable diagram specification (VISUAL_LIBRARY.md; MOTION_SPEC.md). Mirrors tools/docgen/models.py VisualSpec/Node/Edge/LegendEntry/DataSource.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "title", "caption", "nodes", "edges"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "caption": { "type": "string" },
+    "motion": { "type": "boolean", "default": true },
+    "width": { "type": "number", "exclusiveMinimum": 0, "default": 720.0 },
+    "height": { "type": "number", "exclusiveMinimum": 0, "default": 420.0 },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "legend": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/legendEntry" },
+      "default": []
+    },
+    "data_sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dataSource" },
+      "default": []
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "label", "x", "y"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": [
+            "source",
+            "process",
+            "decision",
+            "gate",
+            "datastore",
+            "output",
+            "fallback",
+            "attacker",
+            "junction"
+          ]
+        },
+        "label": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "w": { "type": "number", "exclusiveMinimum": 0, "default": 120.0 },
+        "h": { "type": "number", "exclusiveMinimum": 0, "default": 56.0 },
+        "note": { "type": "string", "default": "" },
+        "highlight": { "type": "boolean", "default": false },
+        "alive": { "type": "boolean", "default": false }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["src", "dst"],
+      "properties": {
+        "src": { "type": "string", "minLength": 1 },
+        "dst": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "default": "" },
+        "style": { "type": "string", "enum": ["solid", "dashed"], "default": "solid" },
+        "condition": { "type": "string", "default": "" },
+        "main": { "type": "boolean", "default": false }
+      }
+    },
+    "legendEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "key", "label"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["node", "line", "swatch"] },
+        "key": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 }
+      }
+    },
+    "dataSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["metric", "scraped", "cited"] },
+        "ref": { "type": "string", "minLength": 1 },
+        "retrieved": { "type": "string", "default": "" },
+        "url": { "type": "string", "default": "" }
+      }
+    }
+  }
+}

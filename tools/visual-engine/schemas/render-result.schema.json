@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "credmgr.render-result/v1",
+  "title": "Render result metadata (Gate G9 evidence)",
+  "type": "object",
+  "required": [
+    "visual_id",
+    "selected_visual",
+    "theme",
+    "engine",
+    "adapter",
+    "svg_sha256",
+    "option_sha256",
+    "job_sha256"
+  ],
+  "properties": {
+    "visual_id": {
+      "type": "string"
+    },
+    "selected_visual": {
+      "type": "string"
+    },
+    "preset": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "theme": {
+      "type": "string"
+    },
+    "classification": {
+      "type": "string"
+    },
+    "engine": {
+      "type": "string"
+    },
+    "adapter": {
+      "type": "string"
+    },
+    "width": {
+      "type": "integer"
+    },
+    "height": {
+      "type": "integer"
+    },
+    "svg_sha256": {
+      "type": "string"
+    },
+    "option_sha256": {
+      "type": "string"
+    },
+    "job_sha256": {
+      "type": "string"
+    },
+    "png_sha256": {
+      "type": "string"
+    },
+    "png_bytes": {
+      "type": "integer"
+    },
+    "html_sha256": {
+      "type": "string"
+    },
+    "render_ms": {
+      "type": "integer"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_path": {
+      "type": "string"
+    }
+  }
+}

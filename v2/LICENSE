@@ -1,0 +1,129 @@
+FreexStudio Source-Available Licence, version 1.0
+SPDX-style identifier: LicenseRef-FreexStudio-SA-1.0
+
+Copyright (c) 2026 FreexStudio. All rights reserved.
+
+CredMgr ("the Software") is SOURCE-AVAILABLE, not open source. The source code is
+published so that anyone can read it, audit it, check that it is safe, report
+problems and propose fixes. Publishing the source does not give anyone the right
+to copy, change or redistribute it. Every right that this licence does not grant
+expressly is reserved by the FreexStudio team ("FreexStudio", "we").
+
+By installing, running, building or reading the Software you accept this licence.
+If you do not accept it, do not use the Software.
+
+1. WHAT YOU MAY DO (the "Permitted Use")
+
+   FreexStudio grants you a non-exclusive, non-transferable, non-sublicensable,
+   worldwide, royalty-free licence, for as long as this licence applies to the
+   version you hold, to:
+
+   a. install and run the official, unmodified release of the Software that
+      FreexStudio publishes as the current stable version, on devices you own or
+      control, for personal or internal business use;
+   b. read, study, audit and test the published source code in order to check its
+      security and behaviour, and keep a private copy for that purpose;
+   c. build the unmodified source of the current stable version yourself, to check
+      that it matches the official release, and run the result for your own use;
+   d. make one backup copy of the official release for your own use;
+   e. report problems and vulnerabilities (see SECURITY.md), and propose changes
+      to FreexStudio under section 4.
+
+2. WHAT YOU MAY NOT DO
+
+   Except where section 1 or a separate written permission from FreexStudio says
+   so, you may not:
+
+   a. copy, mirror, republish or redistribute the Software or any part of it, in
+      source or binary form, including on package registries, app stores or
+      file-sharing sites;
+   b. modify, adapt, translate, port or create derivative works of the Software,
+      or publish or run a fork, "unofficial" build or "remix" of it;
+   c. offer the Software, or a service built on it, to third parties, whether
+      hosted, resold, bundled, white-labelled or as part of another product;
+   d. remove, hide or change copyright, licence, trademark or attribution notices;
+   e. disable, bypass or tamper with any licence, entitlement, integrity or
+      security mechanism of the Software, or help anyone else do so;
+   f. use the CredMgr or FreexStudio names, logos or other brand assets, except as
+      TRADEMARKS.md allows;
+   g. use the Software to build or train a competing credential manager.
+
+   Only the current stable version, as published unchanged by FreexStudio, is
+   approved for use. No one has FreexStudio's approval to duplicate, change or
+   redistribute the Software in any other way.
+
+   GitHub's own terms let people who can see a public repository view it and fork
+   it on GitHub for the purpose of proposing changes. That platform permission
+   does not widen this licence: a fork may exist only to prepare a contribution
+   under section 4 and may not be used, run in production or distributed.
+
+3. VERSIONS, PRICING AND FUTURE TERMS
+
+   Releases of CredMgr published up to now, including every 2.0.x pre-release and
+   release, are free of charge under this licence. Future versions, and
+   additional features, platforms, devices or services, may be offered under
+   different terms, including paid licences or subscriptions. FreexStudio may
+   change these terms for future versions at any time. A version you already hold
+   stays under the licence that came with it. No version is promised to be free
+   forever, and nothing here is a commitment to publish any particular feature or
+   to publish it on any date.
+
+   Some features may need a licence key or entitlement. Those mechanisms are
+   protected by section 2e. A missing or invalid entitlement never prevents you
+   from opening, reading or exporting your own vault.
+
+4. CONTRIBUTIONS
+
+   If you send FreexStudio a change, idea, bug report or other contribution, you
+   confirm that you wrote it or have the right to share it, and you grant
+   FreexStudio a perpetual, worldwide, irrevocable, royalty-free, sublicensable
+   licence to use, modify, publish and distribute it as part of the Software, and
+   under any other terms FreexStudio chooses. You keep your own copyright. You
+   receive no payment and no ownership of the Software. See CONTRIBUTING.md.
+
+5. THIRD-PARTY COMPONENTS
+
+   The Software includes components written by others, each under its own licence.
+   They are listed in THIRD_PARTY_NOTICES.md and ACKNOWLEDGEMENTS.md. This licence
+   does not change those licences and does not claim those components as ours.
+
+6. YOUR DATA AND YOUR RESPONSIBILITY
+
+   Your vault stays on your device, encrypted. FreexStudio does not receive your
+   credentials, cannot recover a lost password or recovery code, and cannot open
+   your vault. You are responsible for keeping your own backups and your recovery
+   material safe. See PRIVACY.md.
+
+7. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+   KIND, EXPRESS OR IMPLIED, INCLUDING THE WARRANTIES OF MERCHANTABILITY, FITNESS
+   FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT AND SECURITY. Pre-release versions
+   (alpha, beta, release candidate) may contain defects, including defects that
+   lose or expose data. Do not rely on a pre-release version as your only copy of
+   anything you cannot afford to lose.
+
+8. LIMITATION OF LIABILITY
+
+   TO THE FULLEST EXTENT PERMITTED BY LAW, FREEXSTUDIO AND ITS CONTRIBUTORS ARE NOT
+   LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE DAMAGES,
+   OR FOR LOSS OF DATA, CREDENTIALS, FUNDS, PROFITS OR BUSINESS, ARISING FROM THE
+   USE OF OR INABILITY TO USE THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY.
+   OUR TOTAL LIABILITY FOR ANY CLAIM IS LIMITED TO THE AMOUNT YOU PAID FOR THE
+   SOFTWARE IN THE TWELVE MONTHS BEFORE THE CLAIM, OR ZERO IF YOU PAID NOTHING.
+   Nothing in this licence limits liability that cannot be limited by law.
+
+9. TERMINATION
+
+   This licence ends automatically if you breach it. When it ends you must stop
+   using the Software and delete your copies of the source and binaries; your
+   encrypted vault data stays yours and you may export it first. Sections 2, 4, 5,
+   7, 8, 9 and 10 survive termination.
+
+10. GENERAL
+
+   Donations are voluntary gifts. They buy no rights, no support and no promise of
+   any feature. If a part of this licence is unenforceable, the rest stays in
+   force. FreexStudio's failure to enforce a right is not a waiver of it. This
+   licence is the whole agreement about the Software between you and FreexStudio.
+   Questions about permissions or commercial arrangements: Admin@freexstudio.com

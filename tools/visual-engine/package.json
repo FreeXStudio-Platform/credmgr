@@ -1,0 +1,24 @@
+{
+  "name": "@credmgr/visual-engine",
+  "version": "1.0.0",
+  "description": "CredMgr AI Visualization Engine — ECharts SSR adapter, project-theme reskin layer, constrained MCP facade. Data charts only; docgen remains the authority for documents and diagrams.",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "build:themes": "node adapters/echarts/theme-adapter.mjs --build",
+    "render": "node adapters/echarts/cli.mjs",
+    "simulate": "node tests/run_simulations.mjs",
+    "mcp": "node mcp/server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@resvg/resvg-js": "2.6.2",
+    "echarts": "6.1.0",
+    "zod": "4.6.6"
+  }
+}

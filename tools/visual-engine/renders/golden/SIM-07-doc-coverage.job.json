@@ -1,0 +1,53 @@
+{
+  "visual_id": "SIM-07-doc-coverage",
+  "classification": "internal",
+  "theme": "project-theme",
+  "reader_question": "Which crates lack current documentation?",
+  "text_summary": "Simulation text summary for accessibility gate.",
+  "selected_visual": "heatmap",
+  "preset": "doc-coverage-matrix",
+  "title": "Docs coverage by crate",
+  "data": {
+    "rows": [
+      "core",
+      "store",
+      "brokerd",
+      "cli",
+      "mcp"
+    ],
+    "cols": [
+      "module docs",
+      "ADR coverage",
+      "BUILD_LOG mentions"
+    ],
+    "matrix": [
+      [
+        95,
+        100,
+        90
+      ],
+      [
+        90,
+        85,
+        85
+      ],
+      [
+        95,
+        100,
+        100
+      ],
+      [
+        85,
+        90,
+        80
+      ],
+      [
+        85,
+        80,
+        75
+      ]
+    ]
+  },
+  "scale_min": 0,
+  "scale_max": 100
+}

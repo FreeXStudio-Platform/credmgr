@@ -1,0 +1,115 @@
+{
+  "kind": "flowchart",
+  "id": "release-trust-boundary",
+  "title": "Where each release artefact and key lives",
+  "caption": "The signing key never enters CI, so the trust boundary sits between built and signed: CI (real, running today) can only ever produce an unsigned artefact; signing happens only on the maintainer's machine, and it is planned, not built.",
+  "motion": false,
+  "width": 1860,
+  "height": 880,
+  "nodes": [
+    {
+      "id": "repo",
+      "type": "source",
+      "label": "GitHub repo (main)",
+      "x": 40,
+      "y": 340,
+      "w": 240,
+      "h": 64,
+      "note": "pushed commits"
+    },
+    {
+      "id": "ci_build",
+      "type": "process",
+      "label": "CI: build.yml",
+      "x": 460,
+      "y": 100,
+      "w": 280,
+      "h": 64,
+      "note": "(built) workflow_dispatch only, no signing"
+    },
+    {
+      "id": "attacker",
+      "type": "attacker",
+      "label": "Compromised CI",
+      "x": 460,
+      "y": 340,
+      "w": 280,
+      "h": 64,
+      "note": "can still only emit this"
+    },
+    {
+      "id": "ci_security",
+      "type": "process",
+      "label": "CI: security.yml",
+      "x": 460,
+      "y": 600,
+      "w": 280,
+      "h": 64,
+      "note": "(built) push/PR/schedule, no signing"
+    },
+    {
+      "id": "artifact",
+      "type": "output",
+      "label": "Unsigned artifact",
+      "x": 980,
+      "y": 340,
+      "w": 280,
+      "h": 64,
+      "highlight": true,
+      "note": "dmg/msi/AppImage + SHA256SUMS"
+    },
+    {
+      "id": "maintainer",
+      "type": "fallback",
+      "label": "Maintainer's machine",
+      "x": 1500,
+      "y": 100,
+      "w": 300,
+      "h": 64,
+      "note": "(planned) signing key lives here only"
+    },
+    {
+      "id": "signing",
+      "type": "fallback",
+      "label": "Platform signing",
+      "x": 1500,
+      "y": 340,
+      "w": 300,
+      "h": 64,
+      "note": "(planned) Developer ID / Authenticode / GPG"
+    },
+    {
+      "id": "release",
+      "type": "fallback",
+      "label": "Signed release",
+      "x": 1500,
+      "y": 600,
+      "w": 300,
+      "h": 64,
+      "note": "(planned) SHA256SUMS.asc + SBOM"
+    }
+  ],
+  "edges": [
+    { "src": "repo", "dst": "ci_build", "label": "push / dispatch", "main": true },
+    { "src": "repo", "dst": "ci_security", "label": "push / PR / schedule" },
+    { "src": "ci_build", "dst": "artifact", "label": "build, test, clippy, fmt", "main": true },
+    { "src": "ci_security", "dst": "artifact", "label": "secrets, audit, isolation, semgrep" },
+    { "src": "attacker", "dst": "artifact", "label": "can still only emit this" },
+    { "src": "artifact", "dst": "maintainer", "style": "dashed", "condition": "planned hand-off, not built" },
+    { "src": "maintainer", "dst": "signing", "style": "dashed", "condition": "key never leaves this machine" },
+    { "src": "signing", "dst": "release", "style": "dashed", "condition": "planned; blocked on O-3 certs", "main": true }
+  ],
+  "legend": [
+    { "kind": "line", "key": "solid", "label": "built and running today (CI)" },
+    { "kind": "line", "key": "dashed", "label": "target design — planned, no code path yet" },
+    { "kind": "node", "key": "fallback", "label": "planned — nothing implements this yet" },
+    { "kind": "node", "key": "attacker", "label": "the threat this boundary defends against" }
+  ],
+  "data_sources": [
+    { "kind": "cited", "ref": ".github/workflows/build.yml (workflow_dispatch only; core-workspace + desktop-app jobs; no signing step)" },
+    { "kind": "cited", "ref": ".github/workflows/security.yml (push/PR/schedule/dispatch; secrets guard, npm audit, v1 tests, cargo deny, cargo audit, isolation suite, semgrep; no signing step)" },
+    { "kind": "cited", "ref": "v2/docs/21_RELEASE_AND_INTEGRITY.md §2.2 (key custody: signing key lives on the maintainer's machine, never in CI -- target design)" },
+    { "kind": "cited", "ref": "v2/docs/16_CROSS_PLATFORM.md §8.3 (packaging and signing table -- macOS Developer ID/notarisation/stapling, Windows Authenticode, Linux detached GPG; all planned)" },
+    { "kind": "cited", "ref": "v2/docs/14_DECISIONS.md O-3 / PHASE8_AUDIT_REPORT.md K-4 (Apple Developer ID + Windows code-signing cert, outstanding operator purchases)" }
+  ]
+}

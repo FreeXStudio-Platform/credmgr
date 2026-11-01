@@ -1,0 +1,61 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-08-08",
+  "anti_patterns": [
+    {
+      "id": "AP-3D-DECOR",
+      "rule": "No 3D bars/pies — 3D only for genuine spatial/3-axis structure (docgen isometric3d owns document 2.5D)",
+      "enforcement": "no 3D route exists in this adapter; requests → NO_CHART or docgen"
+    },
+    {
+      "id": "AP-PIE-MANY",
+      "rule": "No pies >6 slices",
+      "enforcement": "validator G-CHART hard-fails (mirrors docgen _PIE_MAX_SLICES)"
+    },
+    {
+      "id": "AP-TRUNC-BAR",
+      "rule": "No truncated bar baselines",
+      "enforcement": "validator G-CHART requires zero baseline unless allow_negative deltas"
+    },
+    {
+      "id": "AP-HAIRBALL",
+      "rule": "No network hairballs",
+      "enforcement": "validator G-SIZE caps nodes at 1500; catalog routes dense graphs to adjacency heatmap"
+    },
+    {
+      "id": "AP-FAKE-SANKEY",
+      "rule": "No Sankey without conservation meaning",
+      "enforcement": "validator G-CHART requires positive, endpoint-valid flows; catalog requires reconciliation"
+    },
+    {
+      "id": "AP-DUAL-AXIS",
+      "rule": "No dual y-axes (ambiguity)",
+      "enforcement": "no builder emits a second y-axis"
+    },
+    {
+      "id": "AP-COLOR-ONLY",
+      "rule": "Color never the only critical signal",
+      "enforcement": "heatmap value labels default on; status presets label states; a11y decal available"
+    },
+    {
+      "id": "AP-SCORE-AGG",
+      "rule": "No aggregate health percentages",
+      "enforcement": "T-R3 project law — scorecards show per-item status counts"
+    },
+    {
+      "id": "AP-FORCE-LAYOUT",
+      "rule": "No force layouts in SSR",
+      "enforcement": "graph builder allows circular/none/preset only — force is non-deterministic"
+    },
+    {
+      "id": "AP-CLOUD-LEAK",
+      "rule": "No cloud-backed chart storage for internal data",
+      "enforcement": "engine is local-only; apache/echarts-mcp rejected on this ground (mcp/approved-server.json)"
+    },
+    {
+      "id": "AP-MOTION-DECOR",
+      "rule": "Motion only when it explains sequence/direction/change",
+      "enforcement": "SSR always static; interactive HTML ships a static fallback via prefers-reduced-motion/print"
+    }
+  ]
+}

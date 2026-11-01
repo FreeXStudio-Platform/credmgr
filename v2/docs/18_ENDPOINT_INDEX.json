@@ -1,0 +1,417 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 0,
+      "figures": 1,
+      "sections": 9,
+      "tables": 14
+    },
+    "figures": [
+      "op-surface-built-vs-planned"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-062",
+        "ADR-071",
+        "ADR-076",
+        "ADR-078",
+        "ADR-019",
+        "ADR-077",
+        "ADR-061",
+        "ADR-079",
+        "ADR-073",
+        "ADR-072",
+        "ADR-007",
+        "ADR-067",
+        "ADR-047",
+        "ADR-011",
+        "ADR-064",
+        "ADR-066",
+        "ADR-055",
+        "ADR-056",
+        "ADR-042",
+        "ADR-069",
+        "ADR-059",
+        "ADR-057",
+        "ADR-075"
+      ],
+      "code": [
+        "tools/corpus_check.py",
+        "crates/brokerd/src/ops.rs",
+        "crates/cli/src/main.rs",
+        "apps/desktop/src-tauri/src/commands.rs",
+        "apps/desktop/src/lib/bridge.ts",
+        "apps/desktop/README.md",
+        "crates/mcp/src/tools.rs",
+        "tools/visual-engine/renders/golden/VIS-ENDPOINT-001.job.js",
+        "docs/18_ENDPOINT_INDEX_spec.js"
+      ],
+      "documents": [
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "4"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "1"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "2.1"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "3.1"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+          "section": "3.3"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "1"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "3"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+          "section": "2"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "4.1"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "1-1-vault-lifecycle",
+            "level": 3,
+            "title": "1.1 Vault lifecycle"
+          },
+          {
+            "id": "1-2-credentials-entries",
+            "level": 3,
+            "title": "1.2 Credentials \u2192 entries"
+          },
+          {
+            "id": "1-3-projects-nodes",
+            "level": 3,
+            "title": "1.3 Projects \u2192 nodes"
+          },
+          {
+            "id": "1-4-maintenance",
+            "level": 3,
+            "title": "1.4 Maintenance"
+          },
+          {
+            "id": "1-5-merge-suggestions-engine",
+            "level": 3,
+            "title": "1.5 Merge / suggestions engine"
+          },
+          {
+            "id": "1-6-changelog-undo-the-7-day-isolation",
+            "level": 3,
+            "title": "1.6 Changelog / undo \u2014 the 7-day isolation"
+          },
+          {
+            "id": "1-7-agents-integrations",
+            "level": 3,
+            "title": "1.7 Agents & integrations"
+          },
+          {
+            "id": "1-8-operations-with-no-v1-ancestor-built-and-previously-indexed-nowhere",
+            "level": 3,
+            "title": "1.8 Operations with no V1 ancestor \u2014 `built`, and previously indexed nowhere"
+          }
+        ],
+        "id": "1-http-api-v1-broker-operations-v2",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-019",
+            "ADR-077",
+            "ADR-061",
+            "ADR-078",
+            "ADR-079",
+            "ADR-073",
+            "ADR-072",
+            "ADR-071",
+            "ADR-007",
+            "ADR-067",
+            "ADR-076",
+            "ADR-047",
+            "ADR-011",
+            "ADR-064",
+            "ADR-066",
+            "ADR-055",
+            "ADR-056",
+            "ADR-042"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs",
+            "tools/corpus_check.py"
+          ],
+          "documents": [
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "4"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "1. HTTP API (V1) \u2192 Broker operations (V2)"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "2-cli-48-commands",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-064",
+            "ADR-066",
+            "ADR-069",
+            "ADR-071",
+            "ADR-078",
+            "ADR-059"
+          ],
+          "code": [
+            "crates/cli/src/main.rs"
+          ],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "2.1"
+            }
+          ]
+        },
+        "title": "2. CLI \u2014 48 commands"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "3-mcp-tools",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "3.1"
+            }
+          ]
+        },
+        "title": "3. MCP tools"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-tauri-ipc-commands-v2-new-surface",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-057",
+            "ADR-062",
+            "ADR-071",
+            "ADR-076",
+            "ADR-078",
+            "ADR-077"
+          ],
+          "code": [
+            "apps/desktop/src-tauri/src/commands.rs",
+            "apps/desktop/src/lib/bridge.ts",
+            "crates/brokerd/src/ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "3.3"
+            }
+          ]
+        },
+        "title": "4. Tauri IPC commands (V2, new surface)"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-ui-routes",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-075"
+          ],
+          "code": [
+            "apps/desktop/README.md"
+          ],
+          "documents": []
+        },
+        "title": "5. UI routes"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "6-coverage-assertion",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/brokerd/src/ops.rs",
+            "crates/mcp/src/tools.rs",
+            "crates/cli/src/main.rs"
+          ],
+          "documents": [
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md"
+            }
+          ]
+        },
+        "title": "6. Coverage assertion"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-019",
+            "ADR-055",
+            "ADR-056",
+            "ADR-059",
+            "ADR-071",
+            "ADR-073",
+            "ADR-076",
+            "ADR-077",
+            "ADR-078",
+            "ADR-079"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "3"
+            },
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "2"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "4.1"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "7. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-019",
+            "ADR-059",
+            "ADR-061",
+            "ADR-062",
+            "ADR-064",
+            "ADR-066",
+            "ADR-071",
+            "ADR-072",
+            "ADR-073",
+            "ADR-076",
+            "ADR-077",
+            "ADR-078",
+            "ADR-079"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs",
+            "crates/mcp/src/tools.rs",
+            "crates/cli/src/main.rs",
+            "apps/desktop/src-tauri/src/commands.rs"
+          ],
+          "documents": []
+        },
+        "title": "8. Source"
+      },
+      {
+        "figures": [
+          "op-surface-built-vs-planned"
+        ],
+        "headings": [],
+        "id": "9-operation-surface-built-vs-documented-by-namespace",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078",
+            "ADR-076",
+            "ADR-071",
+            "ADR-072",
+            "ADR-061",
+            "ADR-064",
+            "ADR-066"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs",
+            "tools/visual-engine/renders/golden/VIS-ENDPOINT-001.job.js",
+            "tools/corpus_check.py",
+            "docs/18_ENDPOINT_INDEX_spec.js"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "9. Operation surface: built vs. documented, by namespace"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-018",
+    "last_reviewed": "2026-09-13",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Endpoint index",
+    "variants": []
+  }
+}

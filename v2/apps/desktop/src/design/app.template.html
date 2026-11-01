@@ -1,0 +1,53 @@
+<div style="height:100vh;display:flex;flex-direction:column;background:var(--night);color:var(--bone);filter:{{gsFilter}}" tabIndex="-1" data-contrast="{{contrastAttr}}" data-reduced-motion="{{reducedMotionAttr}}">
+
+<sc-include src="./screens/boot.html"></sc-include>
+
+<sc-include src="./screens/S16-lock.html"></sc-include>
+
+<sc-include src="./screens/S17-firstrun.html"></sc-include>
+
+<sc-if value="{{isApp}}" hint-placeholder-val="{{true}}">
+<div class="cm-shell" data-screen-label="S1 Main">
+<sc-include src="./screens/S1-header.html"></sc-include>
+<sc-include src="./screens/S20-banner.html"></sc-include>
+  <div class="cm-body">
+  <div class="cm-scrim {{scrimShow}}" onClick="{{closeSheets}}"></div>
+<sc-include src="./screens/S1-rail.html"></sc-include>
+
+<sc-include src="./screens/S1-main.html"></sc-include>
+
+<sc-include src="./screens/S4-inspector.html"></sc-include>
+  </div>
+</div>
+
+<sc-include src="./screens/S6-add-entry.html"></sc-include>
+
+<sc-include src="./screens/dlg-field.html"></sc-include>
+
+<sc-include src="./screens/S20-tray.html"></sc-include>
+
+<sc-include src="./screens/S9-seal.html"></sc-include>
+
+<sc-include src="./screens/S11-grant.html"></sc-include>
+
+<sc-include src="./screens/S8-add-node.html"></sc-include>
+
+
+<sc-include src="./screens/dlg-touch.html"></sc-include>
+
+<sc-include src="./screens/dlg-gate.html"></sc-include>
+
+
+<sc-include src="./screens/help.html"></sc-include>
+
+<sc-include src="./screens/S18-about.html"></sc-include>
+
+<sc-include src="./screens/S19-games.html"></sc-include>
+
+<sc-include src="./screens/S12-settings.html"></sc-include>
+
+<sc-include src="./screens/S14-ops.html"></sc-include>
+</sc-if>
+
+<sc-include src="./screens/notice.html"></sc-include>
+</div>

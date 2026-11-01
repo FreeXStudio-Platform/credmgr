@@ -1,0 +1,25 @@
+[package]
+name = "credmgr-mcp"
+description = "MCP stdio server library, exposed as the `credmgr mcp` subcommand of the CLI binary. See v2/docs/16_CROSS_PLATFORM.md §2 and docs/10_API_AND_MCP.md."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lib]
+name = "credmgr_mcp"
+
+[lints]
+workspace = true
+
+[dependencies]
+credmgr-core = { path = "../core", version = "2.0.0-beta.1" }
+credmgr-store = { path = "../store", version = "2.0.0-beta.1" }
+serde_json = "1"
+
+[dev-dependencies]
+credmgr-brokerd = { path = "../brokerd", version = "2.0.0-beta.1" }
+credmgr-keystore = { path = "../keystore", version = "2.0.0-beta.1" }
+secrecy = "0.10.3"
+tempfile = "=3.15.0"

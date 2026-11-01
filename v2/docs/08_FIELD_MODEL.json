@@ -1,0 +1,448 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 6,
+      "figures": 1,
+      "sections": 10,
+      "tables": 5
+    },
+    "figures": [
+      "paste-to-sealed-document"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-058",
+        "ADR-073",
+        "ADR-078",
+        "ADR-011",
+        "ADR-038",
+        "ADR-014",
+        "ADR-013",
+        "ADR-048",
+        "ADR-012",
+        "ADR-059",
+        "ADR-060"
+      ],
+      "code": [
+        "crates/core/src/parser.rs",
+        "crates/core/src/inference.rs",
+        "crates/core/tests/no_field_schema.rs",
+        "crates/core/tests/properties.rs",
+        "crates/cli/src/fields.rs",
+        "apps/desktop/src-tauri/src/fields_preview.rs",
+        "crates/mcp/src/tools.rs",
+        "crates/core/tests/field_doc.rs",
+        "crates/store/src/entry_archive.rs",
+        "crates/store/src/audit.rs",
+        "crates/store/tests/alpha6_golden.rs",
+        "crates/core/src/fields.rs",
+        "crates/core/src/envelope.rs",
+        "crates/brokerd/src/entry_doc.rs",
+        "crates/brokerd/src/ops.rs",
+        "crates/store/src/manifest.rs",
+        "crates/brokerd/tests/field_model.rs",
+        "crates/cli/tests/fields_cli.rs",
+        "apps/desktop/src-tauri/tests/fields_preview.rs",
+        "docs/08_FIELD_MODEL_spec.js",
+        "docs/08_FIELD_MODEL.md"
+      ],
+      "documents": [
+        {
+          "doc": "17_AIRLOCK_AND_LLM.md"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "5"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md"
+        },
+        {
+          "doc": "00_README_START_HERE.md"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "2.3"
+        },
+        {
+          "doc": "11_MIGRATION.md",
+          "section": "5"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "4.1b"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "3"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "8"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "6"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1.2"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "3"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-what-is-deleted",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-011"
+          ],
+          "code": [
+            "crates/core/tests/no_field_schema.rs"
+          ],
+          "documents": []
+        },
+        "title": "1. What is deleted"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "2-the-add-field-control",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "2. The add-field control"
+      },
+      {
+        "figures": [
+          "paste-to-sealed-document"
+        ],
+        "headings": [
+          {
+            "id": "3-1-normative-grammar",
+            "level": 3,
+            "title": "3.1 Normative grammar"
+          },
+          {
+            "id": "3-2-why-colon-space-and-not-just-colon",
+            "level": 3,
+            "title": "3.2 Why \"colon **space**\" and not just \"colon\""
+          },
+          {
+            "id": "3-3-worked-examples",
+            "level": 3,
+            "title": "3.3 Worked examples"
+          },
+          {
+            "id": "3-4-guarantees-the-parser-holds-and-the-evidence-for-each",
+            "level": 3,
+            "title": "3.4 Guarantees the parser holds, and the evidence for each"
+          },
+          {
+            "id": "3-5-deliberate-non-features",
+            "level": 3,
+            "title": "3.5 Deliberate non-features"
+          }
+        ],
+        "id": "3-the-bulk-grammar",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-038",
+            "ADR-014",
+            "ADR-078",
+            "ADR-073"
+          ],
+          "code": [
+            "crates/core/src/parser.rs",
+            "crates/core/tests/properties.rs",
+            "crates/cli/src/fields.rs",
+            "apps/desktop/src-tauri/src/fields_preview.rs",
+            "crates/mcp/src/tools.rs",
+            "crates/core/tests/field_doc.rs"
+          ],
+          "documents": [
+            {
+              "doc": "00_README_START_HERE.md"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "2.3"
+            },
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "5"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "4.1b"
+            }
+          ]
+        },
+        "title": "3. The bulk grammar"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-one-entry-or-many",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-013",
+            "ADR-073",
+            "ADR-078"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "4.1b"
+            }
+          ]
+        },
+        "title": "4. One entry or many?"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-the-preview-is-the-contract",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078",
+            "ADR-048"
+          ],
+          "code": [
+            "crates/store/src/entry_archive.rs"
+          ],
+          "documents": []
+        },
+        "title": "5. The preview is the contract"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "6-1-the-eleven-field-types-and-the-exact-order-they-are-tried-in",
+            "level": 3,
+            "title": "6.1 The eleven field types, and the exact order they are tried in"
+          },
+          {
+            "id": "6-2-entry-type-twelve-variants-six-an-inference-path-can-reach",
+            "level": 3,
+            "title": "6.2 Entry type: twelve variants, six an inference path can reach"
+          },
+          {
+            "id": "6-3-sensitivity-floor-and-lowering",
+            "level": 3,
+            "title": "6.3 Sensitivity floor and lowering"
+          }
+        ],
+        "id": "6-type-inference",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078",
+            "ADR-012"
+          ],
+          "code": [
+            "crates/core/src/inference.rs"
+          ],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "5"
+            }
+          ]
+        },
+        "title": "6. Type inference"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-editing-an-existing-entry",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078",
+            "ADR-048"
+          ],
+          "code": [
+            "crates/store/src/entry_archive.rs",
+            "crates/store/src/audit.rs"
+          ],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "3"
+            }
+          ]
+        },
+        "title": "7. Editing an existing entry"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-what-must-be-tested-and-what-already-is",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078"
+          ],
+          "code": [
+            "crates/core/tests/no_field_schema.rs",
+            "crates/store/tests/alpha6_golden.rs"
+          ],
+          "documents": []
+        },
+        "title": "8. What must be tested, and what already is"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "9-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-011",
+            "ADR-012",
+            "ADR-013",
+            "ADR-014",
+            "ADR-038",
+            "ADR-048",
+            "ADR-058",
+            "ADR-059",
+            "ADR-060",
+            "ADR-073",
+            "ADR-078"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "5"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "3"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "8"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "6"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "4.1b"
+            },
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "5"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.2"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "3"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "9. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "10-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-011",
+            "ADR-012",
+            "ADR-013",
+            "ADR-014",
+            "ADR-038",
+            "ADR-048",
+            "ADR-073",
+            "ADR-078",
+            "ADR-058",
+            "ADR-059",
+            "ADR-060"
+          ],
+          "code": [
+            "crates/core/src/parser.rs",
+            "crates/core/src/fields.rs",
+            "crates/core/src/inference.rs",
+            "crates/core/src/envelope.rs",
+            "crates/brokerd/src/entry_doc.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/store/src/manifest.rs",
+            "crates/cli/src/fields.rs",
+            "apps/desktop/src-tauri/src/fields_preview.rs",
+            "crates/mcp/src/tools.rs",
+            "crates/core/tests/field_doc.rs",
+            "crates/core/tests/no_field_schema.rs",
+            "crates/core/tests/properties.rs",
+            "crates/brokerd/tests/field_model.rs",
+            "crates/cli/tests/fields_cli.rs",
+            "crates/store/tests/alpha6_golden.rs",
+            "apps/desktop/src-tauri/tests/fields_preview.rs",
+            "docs/08_FIELD_MODEL_spec.js",
+            "docs/08_FIELD_MODEL.md"
+          ],
+          "documents": [
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md"
+            }
+          ]
+        },
+        "title": "10. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-008",
+    "last_reviewed": "2026-08-18",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Field model and bulk parser",
+    "variants": []
+  }
+}

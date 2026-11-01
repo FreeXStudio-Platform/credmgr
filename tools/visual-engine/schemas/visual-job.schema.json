@@ -1,0 +1,188 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "credmgr.visual-job/v1",
+  "title": "CredMgr normalized visual job packet",
+  "type": "object",
+  "required": [
+    "visual_id",
+    "reader_question",
+    "selected_visual",
+    "classification"
+  ],
+  "properties": {
+    "visual_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "parent_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reader_question": {
+      "type": "string",
+      "minLength": 8
+    },
+    "audience": {
+      "type": "string"
+    },
+    "classification": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ]
+    },
+    "truth_state": {
+      "type": "string",
+      "description": "e.g. verified-current | draft | CANNOT_VERIFY"
+    },
+    "data_source_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "data_snapshot_hash": {
+      "type": "string"
+    },
+    "data_shape": {
+      "enum": [
+        "table",
+        "items",
+        "matrix",
+        "flow",
+        "graph",
+        "tree",
+        "events",
+        "boxplot",
+        "radar"
+      ]
+    },
+    "selected_visual": {
+      "type": "string",
+      "description": "see validate.mjs SUPPORTED_VISUALS; \"none\" = NO_CHART"
+    },
+    "no_chart_reason": {
+      "type": "string"
+    },
+    "selection_reason": {
+      "type": "string"
+    },
+    "preset": {
+      "type": "string"
+    },
+    "theme": {
+      "enum": [
+        "project-theme",
+        "project-theme-dark",
+        "project-theme-light",
+        "print-theme"
+      ],
+      "default": "project-theme"
+    },
+    "title": {
+      "type": "string"
+    },
+    "subtitle": {
+      "type": "string"
+    },
+    "units": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 4000
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 4000
+    },
+    "scale_min": {
+      "type": "number"
+    },
+    "scale_max": {
+      "type": "number"
+    },
+    "log_scale": {
+      "type": "boolean"
+    },
+    "time_axis": {
+      "type": "boolean"
+    },
+    "stack": {
+      "type": "boolean"
+    },
+    "legend": {
+      "type": "boolean"
+    },
+    "show_values": {
+      "type": "boolean"
+    },
+    "allow_negative": {
+      "type": "boolean"
+    },
+    "layout": {
+      "enum": [
+        "circular",
+        "none",
+        "preset"
+      ]
+    },
+    "interactive": {
+      "type": "boolean"
+    },
+    "static_fallback": {
+      "type": "boolean",
+      "default": true
+    },
+    "exports": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "svg",
+          "png",
+          "html"
+        ]
+      }
+    },
+    "text_summary": {
+      "type": "string",
+      "description": "required before entering a source-of-truth document (Gate G7)"
+    },
+    "accessibility": {
+      "type": "object",
+      "properties": {
+        "text_summary_required": {
+          "type": "boolean"
+        },
+        "color_not_only_signal": {
+          "type": "boolean"
+        },
+        "aria_label": {
+          "type": "string"
+        },
+        "decal": {
+          "type": "boolean"
+        }
+      }
+    },
+    "validation": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "data": {
+      "type": "object",
+      "description": "shape-specific: {dimensions,source} | {items} | {rows,cols,matrix} | {nodes,links} | {root} | {events} | {categories,values} | {axes,series}"
+    }
+  }
+}

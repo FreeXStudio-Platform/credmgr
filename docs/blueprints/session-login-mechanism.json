@@ -1,0 +1,189 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 1,
+      "figures": 1,
+      "sections": 7,
+      "tables": 0
+    },
+    "figures": [
+      "login-funnel"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-056",
+        "ADR-047",
+        "ADR-065",
+        "ADR-077",
+        "ADR-051",
+        "ADR-041",
+        "ADR-049"
+      ],
+      "code": [
+        "tools/PROVENANCE.md",
+        "docs/14_DECISIONS.md",
+        "crates/cli/tests/broker_integration.rs",
+        "tools/ENGINE_ROUTING_POLICY.md",
+        "crates/brokerd/src/ops.rs",
+        "crates/brokerd/src/state.rs",
+        "crates/cli/src/main.rs",
+        "crates/brokerd/tests/session_login.rs"
+      ],
+      "documents": [
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "3"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "1"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-what-changed",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-051",
+            "ADR-056"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "1. What changed"
+      },
+      {
+        "figures": [
+          "login-funnel"
+        ],
+        "headings": [],
+        "id": "2-the-five-step-flow",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-041"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "3"
+            }
+          ]
+        },
+        "title": "2. The five-step flow"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "2a-sequence-of-the-wire-calls-docgen-the-document-diagram-authority",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "2a. Sequence of the wire calls (docgen \u2014 the document-diagram authority)"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "3-what-this-closes",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-049",
+            "ADR-051"
+          ],
+          "code": [
+            "crates/cli/tests/broker_integration.rs"
+          ],
+          "documents": []
+        },
+        "title": "3. What this closes"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-the-named-limitation-not-hidden",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-047"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "4. The named limitation, not hidden"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-what-this-blueprint-does-not-yet-claim",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "tools/ENGINE_ROUTING_POLICY.md"
+          ],
+          "documents": []
+        },
+        "title": "5. What this blueprint does not yet claim"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "6-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-056"
+          ],
+          "code": [
+            "docs/14_DECISIONS.md",
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/src/state.rs",
+            "crates/cli/src/main.rs",
+            "crates/brokerd/tests/session_login.rs",
+            "crates/cli/tests/broker_integration.rs"
+          ],
+          "documents": [
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "6. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal+run_gates",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "BP-V2-001",
+    "last_reviewed": "2026-10-02",
+    "owner": "doc-system",
+    "status": "needs-verification",
+    "surface": "repo",
+    "title": "The session/login mechanism (ADR-056)",
+    "variants": []
+  }
+}

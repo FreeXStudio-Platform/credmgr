@@ -1,0 +1,54 @@
+{
+  "theme": {
+    "editor": "enum",
+    "options": [
+      "dark",
+      "light"
+    ],
+    "default": "dark",
+    "tsType": "'dark'|'light'",
+    "section": "Theme"
+  },
+  "colourOn": {
+    "editor": "boolean",
+    "default": false,
+    "tsType": "boolean",
+    "section": "Theme"
+  },
+  "hue": {
+    "editor": "range",
+    "default": 198,
+    "min": 0,
+    "max": 360,
+    "step": 1,
+    "unit": "°",
+    "tsType": "number",
+    "section": "Theme"
+  },
+  "intensity": {
+    "editor": "range",
+    "default": 32,
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "unit": "%",
+    "tsType": "number",
+    "section": "Theme"
+  },
+  "greyscale": {
+    "editor": "boolean",
+    "default": false,
+    "tsType": "boolean",
+    "section": "Theme"
+  },
+  "mode": {
+    "editor": "enum",
+    "options": [
+      "lite",
+      "pro"
+    ],
+    "default": "pro",
+    "tsType": "'lite'|'pro'",
+    "section": "Product"
+  }
+}

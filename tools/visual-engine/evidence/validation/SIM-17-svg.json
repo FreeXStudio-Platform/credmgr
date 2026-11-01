@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-17-svg",
+  "selected_visual": "bar_horizontal",
+  "preset": null,
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "db9cd161dcd6f68c15aff36953f111a6641eda303c6f2661510ca17048aa62f1",
+  "option_sha256": "ce8795ada85c133ce902bfba9519986200b8b9c9c1d854b75c305332151262bf",
+  "job_sha256": "ee54eec4c9a1b97bdf74054ff1e5126cd9a99117c5b0fb0ac9708d0b8104207f",
+  "render_ms": 6,
+  "warnings": []
+}

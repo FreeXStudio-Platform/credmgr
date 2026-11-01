@@ -1,0 +1,38 @@
+[package]
+name = "credmgr-store"
+description = "On-disk layout, atomic writes, the signed registry/manifest pair, the hash-chained audit log, and the seal archive. See v2/docs/02_ARCHITECTURE.md §7 and 03_DATA_MODEL.md §2, §8, §9."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lib]
+name = "credmgr_store"
+
+[lints]
+workspace = true
+
+[features]
+# ADR-076: exposes `rotation::roll_forward_first`, a roll-forward that stops
+# after N files — the crash-injection suites' way of cutting a rotation off
+# in the middle. Enabled through `credmgr-brokerd`'s own `test-utils` feature
+# (itself switched on by that crate's test self-dependency), so
+# `cargo test --workspace` runs this crate's feature-gated tests too; never in
+# a release build.
+test-utils = []
+
+[dependencies]
+credmgr-core = { path = "../core", version = "2.0.0-beta.1" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[target.'cfg(unix)'.dependencies]
+# File-mode assertions (0700 dirs, 0600 files) — Unix permission bits have no
+# Windows equivalent; the Windows story is ACLs, asserted separately in
+# Phase 5 alongside the named-pipe DACL (16_CROSS_PLATFORM.md §4.2).
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "=3.15.0"

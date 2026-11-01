@@ -1,0 +1,84 @@
+{
+  "kind": "system_map",
+  "id": "org-hierarchy-vs-grants",
+  "title": "Depth is the ownership skeleton; grants are everything else",
+  "caption": "GLOBAL -> Department -> Team is the whole tree (D-03, hard-capped at depth 2). A cross-department access is one grant (R7), never a relocated node -- and a deeper layer is rejected outright.",
+  "width": 1240,
+  "height": 980,
+  "motion": false,
+  "nodes": [
+    {
+      "id": "org-global",
+      "type": "source",
+      "label": "example.com -- GLOBAL (depth 0)",
+      "x": 460,
+      "y": 100,
+      "w": 300,
+      "h": 76,
+      "highlight": true
+    },
+    {
+      "id": "dept-engineering",
+      "type": "process",
+      "label": "Engineering -- Department (depth 1)",
+      "x": 90,
+      "y": 326,
+      "w": 320,
+      "h": 76
+    },
+    {
+      "id": "dept-finance",
+      "type": "process",
+      "label": "Finance -- Department (depth 1)",
+      "x": 810,
+      "y": 326,
+      "w": 320,
+      "h": 76
+    },
+    {
+      "id": "team-platform",
+      "type": "process",
+      "label": "Platform Team (depth 2)",
+      "x": 20,
+      "y": 552,
+      "w": 280,
+      "h": 76
+    },
+    {
+      "id": "team-payroll",
+      "type": "process",
+      "label": "Payroll Team (depth 2)",
+      "x": 920,
+      "y": 552,
+      "w": 280,
+      "h": 76
+    },
+    {
+      "id": "rejected-depth3",
+      "type": "fallback",
+      "label": "Sub-team under a Team -- rejected",
+      "x": 20,
+      "y": 778,
+      "w": 360,
+      "h": 76
+    }
+  ],
+  "edges": [
+    { "src": "org-global", "dst": "dept-engineering", "label": "owns" },
+    { "src": "org-global", "dst": "dept-finance", "label": "owns" },
+    { "src": "dept-engineering", "dst": "team-platform", "label": "owns" },
+    { "src": "dept-finance", "dst": "team-payroll", "label": "owns" },
+    { "src": "team-platform", "dst": "rejected-depth3", "label": "depth cap (D-03)", "style": "dashed" },
+    { "src": "team-platform", "dst": "team-payroll", "label": "grant: one credential (R7)", "style": "dashed" }
+  ],
+  "legend": [
+    { "kind": "swatch", "key": "var(--sig)", "label": "GLOBAL -- Main Vault Owner" },
+    { "kind": "line", "key": "solid", "label": "hierarchy (owns)" },
+    { "kind": "line", "key": "dashed", "label": "grant (R7), or rejected by node.create" }
+  ],
+  "data_sources": [
+    { "kind": "cited", "ref": "v2/docs/01_CONCEPT.md D-03 (hard cap at depth 2, ADR-004)" },
+    { "kind": "cited", "ref": "v2/docs/03_DATA_MODEL.md §1 (depth 0 == global, singular; kind=sub requires depth 2 and a depth-1 parent)" },
+    { "kind": "cited", "ref": "v2/docs/06_ACCESS_GRAPH.md §1 R7 (grant from subject or a strict ancestor, to a target, scoped by capability)" }
+  ]
+}

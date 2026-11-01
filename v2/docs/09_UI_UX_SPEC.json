@@ -1,0 +1,648 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 10,
+      "figures": 0,
+      "sections": 17,
+      "tables": 8
+    },
+    "figures": [],
+    "references": {
+      "adrs": [
+        "ADR-052",
+        "ADR-057",
+        "ADR-062",
+        "ADR-071",
+        "ADR-075",
+        "ADR-078",
+        "ADR-073",
+        "ADR-076",
+        "ADR-032",
+        "ADR-042",
+        "ADR-058",
+        "ADR-059",
+        "ADR-035"
+      ],
+      "code": [
+        "apps/desktop/src/design/logic/graph.js",
+        "apps/desktop/src/lib/bridge.ts",
+        "apps/desktop/design-upstream/PROVENANCE.md",
+        "crates/brokerd/src/ops.rs",
+        "crates/brokerd/tests/grant_ops.rs",
+        "apps/desktop/README.md",
+        "apps/desktop/src-tauri/src/commands.rs",
+        "docs/09_UI_UX_SPEC.md"
+      ],
+      "documents": [
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md"
+        },
+        {
+          "doc": "11_MIGRATION.md"
+        },
+        {
+          "doc": "11_MIGRATION.md",
+          "section": "3.2"
+        },
+        {
+          "doc": "02_ARCHITECTURE.md",
+          "section": "6.2"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+          "section": "2"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+          "section": "4"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "2"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "6"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "5"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "6"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "6.1"
+        },
+        {
+          "doc": "20_THEMING.md",
+          "section": "1"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "6.3"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "7"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "4.3"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "6"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "1"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "5"
+        },
+        {
+          "doc": "11_MIGRATION.md",
+          "section": "1"
+        },
+        {
+          "doc": "11_MIGRATION.md",
+          "section": "6"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "3"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "5"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "5"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "6"
+        },
+        {
+          "doc": "01_CONCEPT.md",
+          "section": "6"
+        },
+        {
+          "doc": "02_ARCHITECTURE.md",
+          "section": "2.4"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "10.6"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md",
+          "section": "4"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "7"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "3"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "5"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+          "section": "3.3"
+        },
+        {
+          "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+          "section": "2"
+        },
+        {
+          "doc": "01_CONCEPT.md",
+          "section": "5"
+        },
+        {
+          "doc": "11_MIGRATION.md",
+          "section": "4"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+          "section": "12"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-product-posture-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "1. Product posture \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "2-1-the-inspector-will-show-one-node-s-own-data-nothing-else",
+            "level": 3,
+            "title": "2.1 The inspector will show one node's own data. Nothing else."
+          }
+        ],
+        "id": "2-the-shell-planned",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-075"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "2. The shell \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "3-node-states-expressed-without-colour-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "4"
+            }
+          ]
+        },
+        "title": "3. Node states, expressed without colour \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-the-hover-card-exactly-two-numbers-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "4"
+            }
+          ]
+        },
+        "title": "4. The hover card \u2014 exactly two numbers \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-pro-and-lite-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "5. Pro and Lite \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "6-1-what-v1-did-wrong",
+            "level": 3,
+            "title": "6.1 What V1 did wrong"
+          },
+          {
+            "id": "6-2-what-v2-will-do",
+            "level": 3,
+            "title": "6.2 What V2 will do"
+          }
+        ],
+        "id": "6-search-and-the-removal-of-the-noisy-palette-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "6. Search, and the removal of the noisy palette \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-adding-a-credential-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/brokerd/src/ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "7. Adding a credential \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "8-1-a-totp-seed-field-will-reveal-as-a-live-code-not-raw-text-planned-gated-on-partial-backend-work",
+            "level": 3,
+            "title": "8.1 A `totp-seed` field will reveal as a live code, not raw text \u2014 **`planned`**, gated on `partial` backend work"
+          },
+          {
+            "id": "8-2-the-six-unmasked-types-skip-the-dots-never-the-gate-planned",
+            "level": 3,
+            "title": "8.2 The six unmasked types skip the dots, never the gate \u2014 **`planned`**"
+          },
+          {
+            "id": "8-3-sensitivity-will-render-as-a-border-not-a-label-planned",
+            "level": 3,
+            "title": "8.3 Sensitivity will render as a border, not a label \u2014 **`planned`**"
+          },
+          {
+            "id": "8-4-entry-detail-viewing-and-editing-a-saved-entry-planned",
+            "level": 3,
+            "title": "8.4 Entry detail \u2014 viewing and editing a saved entry \u2014 **`planned`**"
+          }
+        ],
+        "id": "8-revealing-a-value-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/brokerd/src/ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "6"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "5"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "6"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "6.1"
+            },
+            {
+              "doc": "20_THEMING.md",
+              "section": "1"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "6.3"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "7"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "4.3"
+            }
+          ]
+        },
+        "title": "8. Revealing a value \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "9-nodes-add-and-remove-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/brokerd/src/ops.rs"
+          ],
+          "documents": []
+        },
+        "title": "9. Nodes: add and remove \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "10-grants-pro-planned-over-a-partial-backend",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-062"
+          ],
+          "code": [
+            "crates/brokerd/tests/grant_ops.rs",
+            "crates/brokerd/src/ops.rs"
+          ],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "6"
+            }
+          ]
+        },
+        "title": "10. Grants (Pro) \u2014 **`planned`**, over a **`partial`** backend"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "11-lock-and-unlock-planned-over-a-partial-node-lock-and-approval-backend",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "5"
+            }
+          ]
+        },
+        "title": "11. Lock and unlock \u2014 **`planned`**, over a `partial` node-lock and approval backend"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "12-first-run-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "1"
+            },
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "6"
+            },
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "3.2"
+            }
+          ]
+        },
+        "title": "12. First run \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "13-states-that-must-be-designed-not-improvised-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "13. States that must be designed, not improvised \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "14-accessibility-non-negotiable-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "14. Accessibility \u2014 non-negotiable \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "15-responsive-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "15. Responsive \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "16-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-057",
+            "ADR-062",
+            "ADR-075"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "2"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "3"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "5"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "5"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "6"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "5"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "6"
+            },
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "1"
+            },
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md"
+            },
+            {
+              "doc": "01_CONCEPT.md",
+              "section": "6"
+            },
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "2.4"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "10.6"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md",
+              "section": "4"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "7"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "3"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "5"
+            },
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "3.3"
+            },
+            {
+              "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "16. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "17-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-032",
+            "ADR-042",
+            "ADR-057",
+            "ADR-058",
+            "ADR-059",
+            "ADR-062",
+            "ADR-035"
+          ],
+          "code": [
+            "apps/desktop/README.md",
+            "crates/brokerd/src/ops.rs",
+            "apps/desktop/src-tauri/src/commands.rs",
+            "docs/09_UI_UX_SPEC.md"
+          ],
+          "documents": [
+            {
+              "doc": "01_CONCEPT.md",
+              "section": "5"
+            },
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "4"
+            },
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "12"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md"
+            }
+          ]
+        },
+        "title": "17. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-009",
+    "last_reviewed": "2026-08-18",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "UI / UX specification",
+    "variants": []
+  }
+}

@@ -1,0 +1,23 @@
+# Code owners — who is asked to review a change. Requests are automatic for pull requests;
+# whether an approval from an owner is *required* is a branch-protection setting, not this file.
+#
+# CredMgr currently has a single code owner, so one rule covers the repository. The paths below
+# are listed anyway so that, if a second owner is added, the security-critical surfaces are
+# already marked and can be reassigned without a search.
+
+*                                   @Cryptosours
+
+# The vault itself: key hierarchy, envelope format, access decisions, the broker and its wire protocol.
+/v2/crates/                         @Cryptosours
+/v1/lib/                            @Cryptosours
+
+# CI, release and supply-chain policy: a change here changes what "green" means.
+/.github/                           @Cryptosours
+/v2/deny.toml                       @Cryptosours
+/v2/scripts/release.sh              @Cryptosours
+
+# Security and licence documents.
+/SECURITY.md                        @Cryptosours
+/LICENSE                            @Cryptosours
+/v2/DONATE.md                       @Cryptosours
+/v1/DONATE.md                       @Cryptosours

@@ -1,0 +1,387 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 0,
+      "figures": 1,
+      "sections": 7,
+      "tables": 4
+    },
+    "figures": [
+      "org-hierarchy-vs-grants"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-065",
+        "ADR-074",
+        "ADR-047",
+        "ADR-050",
+        "ADR-001",
+        "ADR-052",
+        "ADR-053",
+        "ADR-054",
+        "ADR-055",
+        "ADR-056",
+        "ADR-077",
+        "ADR-078",
+        "ADR-079",
+        "ADR-080",
+        "ADR-031"
+      ],
+      "code": [
+        "docs/03_DATA_MODEL.md",
+        "docs/22_ORG_VAULT_SYNC_AND_LICENSING_spec.js"
+      ],
+      "documents": [
+        {
+          "doc": "01_CONCEPT.md"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md"
+        },
+        {
+          "doc": "17_AIRLOCK_AND_LLM.md"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "9"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "3.2"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1.6"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "5"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "5"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "1"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "4"
+        },
+        {
+          "doc": "17_AIRLOCK_AND_LLM.md",
+          "section": "1"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "1.1"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "9.4"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md",
+          "section": "5.3"
+        },
+        {
+          "doc": "01_CONCEPT.md",
+          "section": "3"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "2"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "2"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "0-how-this-file-was-built-and-what-not-hardened-means-here",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "0. How this file was built, and what \"not hardened\" means here"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-requirements-verbatim-operator-live-chat-2026-08-10",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-074"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "1. Requirements, verbatim (operator, live chat, 2026-08-10)"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "2-ground-truth-corrections-read-before-touching-any-proposal-below",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-074",
+            "ADR-047",
+            "ADR-050",
+            "ADR-001",
+            "ADR-052",
+            "ADR-053",
+            "ADR-054",
+            "ADR-055",
+            "ADR-056",
+            "ADR-077",
+            "ADR-078",
+            "ADR-079",
+            "ADR-080"
+          ],
+          "code": [
+            "docs/03_DATA_MODEL.md"
+          ],
+          "documents": [
+            {
+              "doc": "01_CONCEPT.md"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md"
+            },
+            {
+              "doc": "17_AIRLOCK_AND_LLM.md"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "9"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "3.2"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.6"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "5"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "2. Ground-truth corrections \u2014 read before touching any proposal below"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "3-the-one-decision-that-is-the-operator-s-not-this-design-s",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "5"
+            }
+          ]
+        },
+        "title": "3. The one decision that is the operator's, not this design's"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "4-1-organisation-hierarchy-planned",
+            "level": 3,
+            "title": "4.1 Organisation hierarchy \u2014 **`planned`**"
+          },
+          {
+            "id": "4-2-vault-to-vault-sync-planned-and-gated-on-3",
+            "level": 3,
+            "title": "4.2 Vault-to-vault sync \u2014 **`planned`**, and gated on \u00a73"
+          },
+          {
+            "id": "4-3-retention-deletion-and-purge-scope-planned",
+            "level": 3,
+            "title": "4.3 Retention, deletion and purge scope \u2014 **`planned`**"
+          },
+          {
+            "id": "4-4-licensing-planned-the-optional-part-only-mit-for-everyone-a-commercial-licence-certificate-is-optional",
+            "level": 3,
+            "title": "4.4 Licensing \u2014 **`planned`** (the optional part only). MIT for everyone; a commercial-licence certificate is optional"
+          },
+          {
+            "id": "4-5-additional-organisation-features-planned",
+            "level": 3,
+            "title": "4.5 Additional organisation features \u2014 **`planned`**"
+          }
+        ],
+        "id": "4-the-resolved-design",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-056",
+            "ADR-065",
+            "ADR-074",
+            "ADR-031"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "4"
+            },
+            {
+              "doc": "17_AIRLOCK_AND_LLM.md",
+              "section": "1"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "9"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "1.1"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "9.4"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "5"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md",
+              "section": "5.3"
+            }
+          ]
+        },
+        "title": "4. The resolved design"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-031",
+            "ADR-056",
+            "ADR-074"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "01_CONCEPT.md",
+              "section": "3"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "9"
+            },
+            {
+              "doc": "17_AIRLOCK_AND_LLM.md",
+              "section": "1"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "2"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "5"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "5. Connections"
+      },
+      {
+        "figures": [
+          "org-hierarchy-vs-grants"
+        ],
+        "headings": [],
+        "id": "6-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-074"
+          ],
+          "code": [
+            "docs/22_ORG_VAULT_SYNC_AND_LICENSING_spec.js"
+          ],
+          "documents": [
+            {
+              "doc": "01_CONCEPT.md"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "2"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "6. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-022",
+    "last_reviewed": "2026-08-18",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Organisation vault, sync and licensing",
+    "variants": []
+  }
+}

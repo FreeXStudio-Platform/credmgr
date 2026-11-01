@@ -1,0 +1,18 @@
+{
+  "locked": "2026-08-08",
+  "node_tested": "v26.5.0",
+  "npm_lockfile_sha256": "3dfa2026f532df25c861fb5566a1571482dcd6db69de42a7f371e6cf6aeb5028",
+  "pinned": {
+    "echarts": "6.1.0",
+    "@resvg/resvg-js": "2.6.2",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.6"
+  },
+  "policy": "Exact pins, no floating ranges (spec \u00a76). Upgrades run tests/ + visual regression (renders/golden) and record diffs under renders/diffs/ before re-pinning.",
+  "lockfile_updates": [
+    {
+      "date": "2026-09-24",
+      "why": "Dependabot security: fast-uri 3.1.5->3.1.8 (4 HIGH advisories), hono 4.13.2->4.13.8, qs 6.15.3->6.16.0 \u2014 all transitive via @modelcontextprotocol/sdk; direct pins unchanged. npm audit: 0 vulnerabilities. tests 30/30, simulations 22/22 incl. SIM 22 visual-regression baseline reproduced byte-identical (svg_sha256 unchanged). The previous npm_lockfile_sha256 was already stale against the committed lockfile before this update."
+    }
+  ]
+}

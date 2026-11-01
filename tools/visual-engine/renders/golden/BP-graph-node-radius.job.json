@@ -1,0 +1,31 @@
+{
+  "visual_id": "BP-graph-node-radius",
+  "classification": "public",
+  "theme": "project-theme",
+  "reader_question": "How does a graph node's on-screen radius change as its entry count grows?",
+  "text_summary": "Both curves are the real radius(node) formula from VAULT_GRAPH_SPEC.md §3, evaluated at entries = 0..40 in steps of 4 — not measured or sampled data, the exact function that will govern the shipped graph. radius = band_min + (band_max - band_min) * sqrt(clamp(entries, 0, cap) / cap). Project nodes range 12–20px (cap 40 entries); sub nodes range 8–14px (same cap). The square root keeps growth front-loaded: a node's radius reaches ~71% of its full range by 20 entries (half the cap), and the cap means a 40-entry node and an 80-entry node render identically — entry count differentiates small nodes from large ones, it does not linearly dominate the canvas.",
+  "selected_visual": "line",
+  "preset": "broker-latency",
+  "time_axis": false,
+  "title": "Graph node radius vs. entry count",
+  "subtitle": "VAULT_GRAPH_SPEC.md §3 — project and sub-node size bands, cap = 40 entries",
+  "units": [
+    "px"
+  ],
+  "data": {
+    "dimensions": ["entries", "project_radius_px", "sub_radius_px"],
+    "source": [
+      [0, 12.0, 8.0],
+      [4, 14.53, 9.90],
+      [8, 15.58, 10.68],
+      [12, 16.38, 11.29],
+      [16, 17.06, 11.80],
+      [20, 17.66, 12.24],
+      [24, 18.20, 12.65],
+      [28, 18.69, 13.02],
+      [32, 19.16, 13.37],
+      [36, 19.59, 13.69],
+      [40, 20.0, 14.0]
+    ]
+  }
+}

@@ -1,0 +1,433 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 2,
+      "figures": 1,
+      "sections": 10,
+      "tables": 6
+    },
+    "figures": [
+      "gate-unlock-sequence"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-052",
+        "ADR-057",
+        "ADR-062",
+        "ADR-070",
+        "ADR-071",
+        "ADR-079",
+        "ADR-056",
+        "ADR-064",
+        "ADR-076",
+        "ADR-046",
+        "ADR-063",
+        "ADR-061",
+        "ADR-044",
+        "ADR-065",
+        "ADR-075",
+        "ADR-077",
+        "ADR-078",
+        "ADR-059",
+        "ADR-045",
+        "ADR-060"
+      ],
+      "code": [
+        "crates/core/src/totp.rs",
+        "docs/05_THREAT_MODEL.md",
+        "crates/brokerd/src/ops.rs",
+        "crates/brokerd/tests/phase5_gate.rs",
+        "crates/brokerd/tests/phase5_totp_items.rs",
+        "crates/mcp/tests/i13_tool_registry.rs",
+        "crates/brokerd/tests/durable_vault.rs",
+        "scripts/emergency-decrypt.mjs",
+        "crates/core/src/recovery.rs",
+        "crates/brokerd/src/state.rs",
+        "crates/keystore/src/lib.rs",
+        "crates/core/src/registry.rs",
+        "crates/brokerd/src/auth_backoff.rs",
+        "crates/core/src/inference.rs",
+        "crates/brokerd/tests/isolation.rs",
+        "crates/brokerd/src/server.rs",
+        "crates/store/src/manifest.rs",
+        "crates/store/src/registry_file.rs",
+        "crates/brokerd/src/state/durable.rs",
+        "crates/cli/src/main.rs",
+        "crates/brokerd/tests/session_login.rs",
+        "crates/brokerd/tests/approval_locked.rs",
+        "tools/docgen/sequence_diagram.py",
+        "crates/brokerd/src/protocol.rs"
+      ],
+      "documents": [
+        {
+          "doc": "07_TWO_FACTOR.md"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "3"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "2"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "8.1"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "4"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "2"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "4"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "1"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "3"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "7"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "3"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "4"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "11"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-two-different-things-are-called-2fa-name-them-apart",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/core/src/totp.rs",
+            "crates/core/src/recovery.rs"
+          ],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "1. Two different things are called \"2FA\". Name them apart."
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "2-gate-2fa-what-it-protects",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-076",
+            "ADR-046",
+            "ADR-071"
+          ],
+          "code": [
+            "crates/brokerd/src/state.rs",
+            "crates/keystore/src/lib.rs",
+            "crates/core/src/registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "3"
+            }
+          ]
+        },
+        "title": "2. Gate 2FA \u2014 what it protects"
+      },
+      {
+        "figures": [
+          "gate-unlock-sequence"
+        ],
+        "headings": [],
+        "id": "3-where-gate-secrets-live-resolving-the-chicken-and-egg",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-064",
+            "ADR-063"
+          ],
+          "code": [
+            "crates/brokerd/src/state.rs"
+          ],
+          "documents": []
+        },
+        "title": "3. Where gate secrets live \u2014 resolving the chicken-and-egg"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-enrolment-recovery-and-the-lockout-trap",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-064",
+            "ADR-056",
+            "ADR-061"
+          ],
+          "code": [
+            "scripts/emergency-decrypt.mjs"
+          ],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "4. Enrolment, recovery, and the lockout trap"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "5a-approval-on-demand-the-answer-to-long-agent-sessions",
+            "level": 3,
+            "title": "5a \u00b7 Approval on demand \u2014 the answer to long agent sessions"
+          },
+          {
+            "id": "5b-when-codes-fail-because-the-clock-is-wrong",
+            "level": 3,
+            "title": "5b \u00b7 When codes fail because the clock is wrong"
+          }
+        ],
+        "id": "5-verification-rules",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-064",
+            "ADR-070",
+            "ADR-044",
+            "ADR-056",
+            "ADR-065",
+            "ADR-071",
+            "ADR-079",
+            "ADR-063",
+            "ADR-057",
+            "ADR-062",
+            "ADR-075"
+          ],
+          "code": [
+            "crates/core/src/totp.rs",
+            "crates/brokerd/src/state.rs",
+            "crates/brokerd/src/auth_backoff.rs",
+            "crates/core/src/registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "8.1"
+            }
+          ]
+        },
+        "title": "5. Verification rules"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "6-totp-items-2fa-seeds-you-store",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-077",
+            "ADR-078"
+          ],
+          "code": [
+            "crates/core/src/inference.rs",
+            "crates/mcp/tests/i13_tool_registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "4"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "6. TOTP items \u2014 2FA seeds you store"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-security-key-support",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "4"
+            }
+          ]
+        },
+        "title": "7. Security-key support"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-what-must-be-tested-and-what-is",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-064"
+          ],
+          "code": [
+            "crates/brokerd/tests/durable_vault.rs",
+            "crates/brokerd/tests/isolation.rs"
+          ],
+          "documents": []
+        },
+        "title": "8. What must be tested, and what is"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "9-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-044",
+            "ADR-070",
+            "ADR-046",
+            "ADR-056",
+            "ADR-059",
+            "ADR-063",
+            "ADR-064"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "2"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "3"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "7"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "3"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "4"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "11"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "3"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "9. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "10-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-044",
+            "ADR-070",
+            "ADR-046",
+            "ADR-056",
+            "ADR-063",
+            "ADR-064",
+            "ADR-071",
+            "ADR-045",
+            "ADR-059",
+            "ADR-079",
+            "ADR-060"
+          ],
+          "code": [
+            "crates/core/src/totp.rs",
+            "crates/brokerd/src/state.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/src/auth_backoff.rs",
+            "crates/brokerd/src/server.rs",
+            "crates/core/src/inference.rs",
+            "crates/store/src/manifest.rs",
+            "crates/store/src/registry_file.rs",
+            "crates/brokerd/src/state/durable.rs",
+            "crates/cli/src/main.rs",
+            "crates/brokerd/tests/phase5_gate.rs",
+            "crates/brokerd/tests/phase5_totp_items.rs",
+            "crates/brokerd/tests/session_login.rs",
+            "crates/brokerd/tests/durable_vault.rs",
+            "crates/mcp/tests/i13_tool_registry.rs",
+            "crates/brokerd/tests/approval_locked.rs",
+            "tools/docgen/sequence_diagram.py",
+            "crates/brokerd/src/protocol.rs"
+          ],
+          "documents": []
+        },
+        "title": "10. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-007",
+    "last_reviewed": "2026-08-19",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Two-factor authentication",
+    "variants": []
+  }
+}

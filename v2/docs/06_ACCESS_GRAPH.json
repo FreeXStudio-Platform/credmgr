@@ -1,0 +1,628 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 7,
+      "figures": 2,
+      "sections": 12,
+      "tables": 4
+    },
+    "figures": [
+      "access-rule-ladder",
+      "grant-lifecycle-built-vs-planned"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-057",
+        "ADR-062",
+        "ADR-071",
+        "ADR-077",
+        "ADR-078",
+        "ADR-075",
+        "ADR-072",
+        "ADR-066",
+        "ADR-056",
+        "ADR-065",
+        "ADR-047",
+        "ADR-068",
+        "ADR-050",
+        "ADR-051",
+        "ADR-079",
+        "ADR-053",
+        "ADR-059",
+        "ADR-060"
+      ],
+      "code": [
+        "crates/core/src/access.rs",
+        "crates/keystore/src/lib.rs",
+        "crates/keystore/src/software.rs",
+        "crates/core/tests/access_matrix.rs",
+        "crates/core/tests/properties.rs",
+        "crates/core/tests/isolation_i17.rs",
+        "crates/brokerd/src/state.rs",
+        "crates/brokerd/tests/phase3_exit_gate.rs",
+        "crates/brokerd/src/ops.rs",
+        "crates/brokerd/tests/isolation.rs",
+        "crates/core/src/registry.rs",
+        "crates/brokerd/tests/durable_vault.rs",
+        "crates/brokerd/src/scope.rs",
+        "crates/cli/src/main.rs",
+        "crates/brokerd/src/protocol.rs",
+        "crates/brokerd/tests/phase5_gate.rs",
+        "crates/brokerd/src/rate_limit.rs",
+        "crates/brokerd/src/server.rs",
+        "crates/brokerd/tests/grant_ops.rs",
+        "tools/ENGINE_ROUTING_POLICY.md"
+      ],
+      "documents": [
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "7"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "3"
+        },
+        {
+          "doc": "00_README_START_HERE.md",
+          "section": "6"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "5"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "3"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "6"
+        },
+        {
+          "doc": "01_CONCEPT.md",
+          "section": "5"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "4"
+        },
+        {
+          "doc": "01_CONCEPT.md",
+          "section": "3"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "3"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "1"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "8"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "4"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "2"
+        },
+        {
+          "doc": "03_DATA_MODEL.md"
+        },
+        {
+          "doc": "11_MIGRATION.md"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "9"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "10"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "1"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "3"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "4.1"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1"
+        },
+        {
+          "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+          "section": "4"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "15_PASS2_REVIEW.md"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [
+          "access-rule-ladder"
+        ],
+        "headings": [
+          {
+            "id": "1a-node-level-lock-built-the-lock-itself-planned-the-way-a-human-sets-it",
+            "level": 3,
+            "title": "1a \u00b7 Node-level lock \u2014 **built** (the lock itself), **planned** (the way a human sets it)"
+          },
+          {
+            "id": "1b-an-entry-grant-is-not-a-directory-listing-built",
+            "level": 3,
+            "title": "1b \u00b7 An entry grant is not a directory listing \u2014 **built**"
+          },
+          {
+            "id": "1c-mutual-grants-built-and-previously-undocumented-here",
+            "level": 3,
+            "title": "1c \u00b7 Mutual grants \u2014 **built**, and previously undocumented here"
+          }
+        ],
+        "id": "1-the-rules-in-precedence-order-built",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-057",
+            "ADR-062",
+            "ADR-075",
+            "ADR-071"
+          ],
+          "code": [
+            "crates/core/src/access.rs",
+            "crates/core/tests/access_matrix.rs",
+            "crates/core/tests/isolation_i17.rs",
+            "crates/core/tests/properties.rs",
+            "crates/brokerd/src/state.rs",
+            "crates/brokerd/tests/phase3_exit_gate.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/tests/isolation.rs",
+            "crates/core/src/registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "5"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "3"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "6"
+            }
+          ]
+        },
+        "title": "1. The rules, in precedence order \u2014 **built**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "2-the-brief-s-example-resolved-exactly-built",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/core/tests/access_matrix.rs"
+          ],
+          "documents": [
+            {
+              "doc": "01_CONCEPT.md",
+              "section": "5"
+            }
+          ]
+        },
+        "title": "2. The brief's example, resolved exactly \u2014 **built**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "3-capabilities-partial",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078",
+            "ADR-072",
+            "ADR-071",
+            "ADR-066",
+            "ADR-056",
+            "ADR-065",
+            "ADR-047"
+          ],
+          "code": [
+            "crates/core/src/registry.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/core/src/access.rs",
+            "crates/brokerd/tests/durable_vault.rs"
+          ],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "4"
+            },
+            {
+              "doc": "01_CONCEPT.md",
+              "section": "3"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "3"
+            }
+          ]
+        },
+        "title": "3. Capabilities \u2014 **partial**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-subject-scope-where-a-caller-s-node-comes-from-partial",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-065",
+            "ADR-068",
+            "ADR-066"
+          ],
+          "code": [
+            "crates/brokerd/src/scope.rs",
+            "crates/brokerd/tests/isolation.rs"
+          ],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "1"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "8"
+            }
+          ]
+        },
+        "title": "4. Subject scope \u2014 where a caller's node comes from \u2014 **partial**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-denials-must-be-legible-built",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/cli/src/main.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/src/protocol.rs",
+            "crates/brokerd/tests/isolation.rs"
+          ],
+          "documents": []
+        },
+        "title": "5. Denials must be legible \u2014 **built**"
+      },
+      {
+        "figures": [
+          "grant-lifecycle-built-vs-planned"
+        ],
+        "headings": [
+          {
+            "id": "6a-re-parenting-is-a-scope-widening-operation-partial",
+            "level": 3,
+            "title": "6a \u00b7 Re-parenting is a scope-widening operation \u2014 **partial**"
+          }
+        ],
+        "id": "6-grant-lifecycle-partial",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-050"
+          ],
+          "code": [
+            "crates/brokerd/tests/isolation.rs"
+          ],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "4"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "2"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "6"
+            }
+          ]
+        },
+        "title": "6. Grant lifecycle \u2014 **partial**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-worked-traces-partial",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "crates/brokerd/tests/phase5_gate.rs",
+            "crates/brokerd/src/rate_limit.rs",
+            "crates/brokerd/tests/isolation.rs",
+            "crates/brokerd/src/server.rs"
+          ],
+          "documents": [
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "7. Worked traces \u2014 **partial**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-a-real-requirement-worked-through-infrastructure-that-belongs-to-no-project-partial",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-051"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md"
+            },
+            {
+              "doc": "11_MIGRATION.md"
+            }
+          ]
+        },
+        "title": "8. A real requirement, worked through: infrastructure that belongs to no project \u2014 **partial**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "9-sealing-the-orphan-node-and-the-restore-window-built",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-079",
+            "ADR-053"
+          ],
+          "code": [
+            "crates/brokerd/tests/isolation.rs"
+          ],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "9"
+            }
+          ]
+        },
+        "title": "9. Sealing, the orphan node, and the restore window \u2014 **built**"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "10-1-node-policy-is-writable-by-partial-patch-partial",
+            "level": 3,
+            "title": "10.1 Node policy is writable by partial patch \u2014 `partial`"
+          },
+          {
+            "id": "10-2-grant-create-will-execute-planned",
+            "level": 3,
+            "title": "10.2 `grant.create` will execute \u2014 `planned`"
+          },
+          {
+            "id": "10-3-the-native-origin-and-presence-attestation-planned",
+            "level": 3,
+            "title": "10.3 The native origin and presence attestation \u2014 `planned`"
+          },
+          {
+            "id": "10-4-per-node-two-factor-on-reveal-planned",
+            "level": 3,
+            "title": "10.4 Per-node two-factor on reveal \u2014 `planned`"
+          },
+          {
+            "id": "10-5-anomalies-will-be-emitted-not-only-counted-planned",
+            "level": 3,
+            "title": "10.5 Anomalies will be emitted, not only counted \u2014 `planned`"
+          },
+          {
+            "id": "10-6-the-graph-will-show-grants-planned",
+            "level": 3,
+            "title": "10.6 The graph will show grants \u2014 `planned`"
+          },
+          {
+            "id": "10-7-delegated-administration-and-the-r3-question-it-reopens-planned",
+            "level": 3,
+            "title": "10.7 Delegated administration, and the R3 question it reopens \u2014 `planned`"
+          }
+        ],
+        "id": "10-the-finished-access-graph-what-is-designed-and-not-yet-built",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-071",
+            "ADR-066",
+            "ADR-057"
+          ],
+          "code": [
+            "crates/brokerd/tests/durable_vault.rs"
+          ],
+          "documents": [
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "5"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "8"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "10"
+            }
+          ]
+        },
+        "title": "10. The finished access graph \u2014 what is designed and not yet built"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "11-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-050",
+            "ADR-051",
+            "ADR-053",
+            "ADR-056",
+            "ADR-057",
+            "ADR-059",
+            "ADR-065",
+            "ADR-066",
+            "ADR-071",
+            "ADR-072"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "3"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "4"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "1"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "6"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "8"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "2"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "3"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "4.1"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "10"
+            },
+            {
+              "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+              "section": "4"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "11. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "12-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-050",
+            "ADR-051",
+            "ADR-053",
+            "ADR-056",
+            "ADR-057",
+            "ADR-062",
+            "ADR-065",
+            "ADR-066",
+            "ADR-071",
+            "ADR-072",
+            "ADR-078",
+            "ADR-060"
+          ],
+          "code": [
+            "crates/core/src/access.rs",
+            "crates/core/src/registry.rs",
+            "crates/brokerd/src/scope.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/src/protocol.rs",
+            "crates/brokerd/src/rate_limit.rs",
+            "crates/brokerd/src/server.rs",
+            "crates/core/tests/access_matrix.rs",
+            "crates/core/tests/isolation_i17.rs",
+            "crates/core/tests/properties.rs",
+            "crates/brokerd/tests/isolation.rs",
+            "crates/brokerd/tests/grant_ops.rs",
+            "tools/ENGINE_ROUTING_POLICY.md"
+          ],
+          "documents": [
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "15_PASS2_REVIEW.md"
+            }
+          ]
+        },
+        "title": "12. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-006",
+    "last_reviewed": "2026-08-19",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "The access graph",
+    "variants": []
+  }
+}

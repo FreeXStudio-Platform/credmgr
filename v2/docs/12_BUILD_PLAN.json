@@ -1,0 +1,896 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 1,
+      "figures": 1,
+      "sections": 11,
+      "tables": 3
+    },
+    "figures": [
+      "build-phase-ledger"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-059",
+        "ADR-062",
+        "ADR-071",
+        "ADR-064",
+        "ADR-046",
+        "ADR-075",
+        "ADR-078",
+        "ADR-057",
+        "ADR-008",
+        "ADR-035",
+        "ADR-061",
+        "ADR-053",
+        "ADR-054",
+        "ADR-055",
+        "ADR-056",
+        "ADR-073",
+        "ADR-076",
+        "ADR-047",
+        "ADR-074",
+        "ADR-009",
+        "ADR-041",
+        "ADR-063"
+      ],
+      "code": [
+        "crates/core/Cargo.toml",
+        "crates/brokerd/tests/isolation.rs",
+        "crates/mcp/tests/i13_tool_registry.rs",
+        "apps/desktop/src-tauri/src/commands.rs",
+        "crates/cli/tests/success_criteria.rs",
+        "docs/PHASE8_AUDIT_REPORT.md",
+        "scripts/emergency-decrypt.mjs",
+        "scripts/guard-no-secrets.mjs",
+        "scripts/guard-no-personal-data.mjs",
+        "crates/core/tests/access_matrix.rs",
+        "crates/core/tests/properties.rs",
+        "crates/core/tests/isolation_i17.rs",
+        "crates/cli/tests/broker_integration.rs",
+        "crates/cli/tests/no_secret_in_argv.rs",
+        "crates/cli/tests/emergency_decrypt.rs",
+        "crates/brokerd/tests/vault_init.rs",
+        "crates/core/src/recovery.rs",
+        "tools/corpus_check.py",
+        "crates/brokerd/src/ops.rs",
+        "crates/cli/src/main.rs",
+        "crates/brokerd/tests/phase3_exit_gate.rs",
+        "docs/12_BUILD_PLAN_spec.js",
+        "tools/ENGINE_ROUTING_POLICY.md",
+        "docs/14_DECISIONS.md"
+      ],
+      "documents": [
+        {
+          "doc": "12_BUILD_PLAN.md"
+        },
+        {
+          "doc": "13_TEST_PLAN.md"
+        },
+        {
+          "doc": "11_MIGRATION.md",
+          "section": "1"
+        },
+        {
+          "doc": "00_README_START_HERE.md"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "2"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "1"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "1"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "1"
+        },
+        {
+          "doc": "08_FIELD_MODEL.md",
+          "section": "3"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "8"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "2"
+        },
+        {
+          "doc": "02_ARCHITECTURE.md",
+          "section": "7"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "2"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "8"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "9"
+        },
+        {
+          "doc": "02_ARCHITECTURE.md",
+          "section": "1"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "4"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "1"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "5"
+        },
+        {
+          "doc": "10_API_AND_MCP.md",
+          "section": "2"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "2.3"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "3"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "6"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "4"
+        },
+        {
+          "doc": "02_ARCHITECTURE.md",
+          "section": "6.2"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "3"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "2"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "8"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "2"
+        },
+        {
+          "doc": "11_MIGRATION.md"
+        },
+        {
+          "doc": "01_CONCEPT.md",
+          "section": "7"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md"
+        },
+        {
+          "doc": "20_THEMING.md"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "4"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "14"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "4"
+        },
+        {
+          "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+          "section": "5"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md",
+          "section": "13"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "7"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "8"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "9"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "7"
+        },
+        {
+          "doc": "21_RELEASE_AND_INTEGRITY.md"
+        },
+        {
+          "doc": "21_RELEASE_AND_INTEGRITY.md",
+          "section": "1"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "8"
+        },
+        {
+          "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+          "section": "3"
+        },
+        {
+          "doc": "17_AIRLOCK_AND_LLM.md"
+        },
+        {
+          "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+          "section": "2"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "10"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md"
+        },
+        {
+          "doc": "21_RELEASE_AND_INTEGRITY.md",
+          "section": "6"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "4"
+        },
+        {
+          "doc": "21_RELEASE_AND_INTEGRITY.md",
+          "section": "2"
+        },
+        {
+          "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+          "section": "4"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [
+          "build-phase-ledger"
+        ],
+        "headings": [],
+        "id": "0-where-the-plan-stands-the-phase-ledger",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-059",
+            "ADR-064",
+            "ADR-046",
+            "ADR-075",
+            "ADR-057",
+            "ADR-062",
+            "ADR-078"
+          ],
+          "code": [
+            "crates/mcp/tests/i13_tool_registry.rs",
+            "apps/desktop/src-tauri/src/commands.rs",
+            "crates/cli/tests/success_criteria.rs",
+            "docs/PHASE8_AUDIT_REPORT.md"
+          ],
+          "documents": []
+        },
+        "title": "0. Where the plan stands \u2014 the phase ledger"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-how-to-run-this-plan",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-046",
+            "ADR-075",
+            "ADR-008"
+          ],
+          "code": [
+            "scripts/emergency-decrypt.mjs"
+          ],
+          "documents": [
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "1"
+            },
+            {
+              "doc": "00_README_START_HERE.md"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "1. How to run this plan"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "2-1-phase-0-toolchain-and-skeleton-built",
+            "level": 3,
+            "title": "2.1 Phase 0 \u00b7 Toolchain and skeleton \u2014 **`built`**"
+          },
+          {
+            "id": "2-2-phase-1-core-primitives-built",
+            "level": 3,
+            "title": "2.2 Phase 1 \u00b7 Core primitives \u2014 **`built`**"
+          },
+          {
+            "id": "2-3-phase-2-storage-and-the-registry-built",
+            "level": 3,
+            "title": "2.3 Phase 2 \u00b7 Storage and the registry \u2014 **`built`**"
+          },
+          {
+            "id": "2-4-phase-3-broker-built",
+            "level": 3,
+            "title": "2.4 Phase 3 \u00b7 Broker \u2014 **`built`**"
+          },
+          {
+            "id": "2-5-phase-4-cli-built",
+            "level": 3,
+            "title": "2.5 Phase 4 \u00b7 CLI \u2014 **`built`**"
+          },
+          {
+            "id": "2-6-phase-5-gate-2fa-totp-items-and-the-native-shell-partial",
+            "level": 3,
+            "title": "2.6 Phase 5 \u00b7 Gate 2FA, TOTP items, and the native shell \u2014 **`partial`**"
+          }
+        ],
+        "id": "2-the-construction-phases-phase-0-to-phase-5",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-075",
+            "ADR-035",
+            "ADR-078",
+            "ADR-061",
+            "ADR-064",
+            "ADR-046"
+          ],
+          "code": [
+            "scripts/guard-no-secrets.mjs",
+            "scripts/guard-no-personal-data.mjs",
+            "crates/core/Cargo.toml",
+            "crates/core/tests/access_matrix.rs",
+            "crates/core/tests/properties.rs",
+            "crates/core/tests/isolation_i17.rs",
+            "crates/brokerd/tests/isolation.rs",
+            "scripts/emergency-decrypt.mjs",
+            "crates/cli/tests/broker_integration.rs",
+            "crates/cli/tests/no_secret_in_argv.rs",
+            "crates/cli/tests/emergency_decrypt.rs",
+            "crates/brokerd/tests/vault_init.rs",
+            "crates/core/src/recovery.rs"
+          ],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "1"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "1"
+            },
+            {
+              "doc": "08_FIELD_MODEL.md",
+              "section": "3"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "8"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "2"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "2"
+            },
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "7"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "2"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "8"
+            },
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "9"
+            },
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "4"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "5"
+            },
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "1"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "2"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "2.3"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "3"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "6"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "4"
+            },
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "6.2"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "3"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "2"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "8"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "2"
+            }
+          ]
+        },
+        "title": "2. The construction phases \u2014 Phase 0 to Phase 5"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "3-1-phase-7-hardening-and-closeout-built",
+            "level": 3,
+            "title": "3.1 Phase 7 \u00b7 Hardening and closeout \u2014 **`built`**"
+          },
+          {
+            "id": "3-2-phase-8-final-adversarial-audit-built",
+            "level": 3,
+            "title": "3.2 Phase 8 \u00b7 Final adversarial audit \u2014 **`built`**"
+          },
+          {
+            "id": "3-3-how-the-audit-switch-fired",
+            "level": 3,
+            "title": "3.3 How the audit switch fired"
+          }
+        ],
+        "id": "3-closeout-phases-7-and-8",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-053",
+            "ADR-054",
+            "ADR-055",
+            "ADR-056"
+          ],
+          "code": [
+            "tools/corpus_check.py",
+            "crates/cli/tests/success_criteria.rs",
+            "docs/PHASE8_AUDIT_REPORT.md"
+          ],
+          "documents": [
+            {
+              "doc": "11_MIGRATION.md"
+            },
+            {
+              "doc": "01_CONCEPT.md",
+              "section": "7"
+            }
+          ]
+        },
+        "title": "3. Closeout \u2014 Phases 7 and 8"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-phase-6-the-ui-partial-hosted-and-wired-over-a-built-bridge-not-yet-verified-by-a-person",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-075",
+            "ADR-057",
+            "ADR-062",
+            "ADR-071",
+            "ADR-073",
+            "ADR-076",
+            "ADR-078",
+            "ADR-035"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "09_UI_UX_SPEC.md"
+            },
+            {
+              "doc": "20_THEMING.md"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "4"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "14"
+            },
+            {
+              "doc": "01_CONCEPT.md",
+              "section": "7"
+            }
+          ]
+        },
+        "title": "4. Phase 6 \u00b7 The UI \u2014 **`partial`**: hosted and wired, over a **`built`** bridge, not yet verified by a person"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "5-1-phase-9-integration-the-delivered-screens-and-the-full-command-surface-partial",
+            "level": 3,
+            "title": "5.1 Phase 9 \u00b7 Integration \u2014 the delivered screens, and the full command surface \u2014 **`partial`**"
+          },
+          {
+            "id": "5-2-phase-10-native-platform-completion-planned",
+            "level": 3,
+            "title": "5.2 Phase 10 \u00b7 Native platform completion \u2014 **`planned`**"
+          },
+          {
+            "id": "5-3-phase-11-release-and-integrity-partial",
+            "level": 3,
+            "title": "5.3 Phase 11 \u00b7 Release and integrity \u2014 **`partial`**"
+          },
+          {
+            "id": "5-4-phase-12-organisation-vault-sync-and-licensing-planned",
+            "level": 3,
+            "title": "5.4 Phase 12 \u00b7 Organisation vault, sync and licensing \u2014 **`planned`**"
+          },
+          {
+            "id": "5-5-work-that-is-real-but-is-not-a-phase",
+            "level": 3,
+            "title": "5.5 Work that is real but is not a phase"
+          }
+        ],
+        "id": "5-the-ultimate-destination-the-four-phases-after-the-ui-lands",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-075",
+            "ADR-057",
+            "ADR-062",
+            "ADR-078",
+            "ADR-046",
+            "ADR-047",
+            "ADR-053",
+            "ADR-064",
+            "ADR-074"
+          ],
+          "code": [
+            "tools/corpus_check.py"
+          ],
+          "documents": [
+            {
+              "doc": "09_UI_UX_SPEC.md"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "4"
+            },
+            {
+              "doc": "10_API_AND_MCP.md",
+              "section": "1"
+            },
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "5"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "13"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "7"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "8"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "9"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "4"
+            },
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "6.2"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "3"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "2"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "2"
+            },
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "7"
+            },
+            {
+              "doc": "21_RELEASE_AND_INTEGRITY.md"
+            },
+            {
+              "doc": "21_RELEASE_AND_INTEGRITY.md",
+              "section": "1"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "8"
+            },
+            {
+              "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+              "section": "3"
+            },
+            {
+              "doc": "17_AIRLOCK_AND_LLM.md"
+            },
+            {
+              "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+              "section": "2"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "10"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            }
+          ]
+        },
+        "title": "5. The ultimate destination \u2014 the four phases after the UI lands"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "6-sequencing",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "6. Sequencing"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-estimates",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-062"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "7. Estimates"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-explicitly-deferred-to-v2-1",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-009"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "21_RELEASE_AND_INTEGRITY.md",
+              "section": "6"
+            }
+          ]
+        },
+        "title": "8. Explicitly deferred to V2.1+"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "9-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-035",
+            "ADR-046",
+            "ADR-053",
+            "ADR-057",
+            "ADR-059",
+            "ADR-062",
+            "ADR-064",
+            "ADR-078"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "4"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "4"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "2"
+            },
+            {
+              "doc": "01_CONCEPT.md",
+              "section": "7"
+            },
+            {
+              "doc": "21_RELEASE_AND_INTEGRITY.md",
+              "section": "2"
+            },
+            {
+              "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md",
+              "section": "4"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "4"
+            },
+            {
+              "doc": "19_FRONTEND_DELIVERY_SCOPE.md",
+              "section": "5"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md",
+              "section": "13"
+            }
+          ]
+        },
+        "title": "9. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "10-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-035",
+            "ADR-041",
+            "ADR-046",
+            "ADR-047",
+            "ADR-053",
+            "ADR-056",
+            "ADR-057",
+            "ADR-059",
+            "ADR-062",
+            "ADR-063",
+            "ADR-064"
+          ],
+          "code": [
+            "crates/core/Cargo.toml",
+            "apps/desktop/src-tauri/src/commands.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/cli/src/main.rs",
+            "crates/brokerd/tests/isolation.rs",
+            "crates/brokerd/tests/phase3_exit_gate.rs",
+            "crates/cli/tests/success_criteria.rs",
+            "crates/mcp/tests/i13_tool_registry.rs",
+            "docs/PHASE8_AUDIT_REPORT.md",
+            "tools/corpus_check.py",
+            "docs/12_BUILD_PLAN_spec.js",
+            "tools/ENGINE_ROUTING_POLICY.md",
+            "docs/14_DECISIONS.md"
+          ],
+          "documents": [
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "10. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-012",
+    "last_reviewed": "2026-08-19",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "Build plan",
+    "variants": []
+  }
+}

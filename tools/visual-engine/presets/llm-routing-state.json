@@ -1,0 +1,18 @@
+{
+  "id": "llm-routing-state",
+  "visual": "graph",
+  "family": "state",
+  "summary": "LLM routing state machine (data-annotated)",
+  "canonical_reader_question": "Which model routes serve which request classes?",
+  "required_fields": [
+    "data.nodes",
+    "data.links"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {
+    "layout": "circular"
+  },
+  "notes": "document-grade state diagrams stay on docgen render_state_diagram",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

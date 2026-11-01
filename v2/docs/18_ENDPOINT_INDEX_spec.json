@@ -1,0 +1,116 @@
+{
+  "kind": "echarts",
+  "id": "op-surface-built-vs-planned",
+  "caption": "Every operation named in section 1, grouped by namespace and split into built (crates/brokerd/src/ops.rs) vs. planned. 38 of 77 documented operations are dispatched today; the gap concentrates in seven zero-built namespaces (merge, agent, field, llm, keystore, notes, util), not thin spread. Rendered by tools/visual-engine (ECharts, bar_grouped) from tools/visual-engine/renders/golden/VIS-ENDPOINT-001.job.json \u2014 reproducible byte-for-byte.",
+  "job": {
+    "visual_id": "VIS-ENDPOINT-001",
+    "reader_question": "How much of the operation surface 18_ENDPOINT_INDEX.md describes actually exists?",
+    "classification": "public",
+    "theme": "project-theme",
+    "selected_visual": "bar_horizontal",
+    "title": "V2 broker operations \u2014 built vs. documented, by namespace",
+    "subtitle": "38 of 77 documented operations are dispatched today (crates/brokerd/src/ops.rs)",
+    "width": 780,
+    "height": 620,
+    "truth_state": "verified-current",
+    "data_source_ids": [
+      "credmgr-v2-ops-rs-2026-08-23",
+      "credmgr-v2-endpoint-index-section-1-2026-08-23"
+    ],
+    "text_summary": "38 broker operations are dispatched today against 77 named in the index (built + planned; removed rows excluded) \u2014 the built surface is roughly half the documented one. The gap is not spread thinly: seven namespaces \u2014 merge, agent, field, llm, keystore, notes, util \u2014 have zero built operations, together accounting for 26 of the 39 planned operations, two-thirds of all undispatched work. entry (8 built / 7 planned) and vault (12 built / 1 planned) carry the largest raw counts and are both mostly built; node (5 built / 3 planned, corrected 2026-08-23 from a table row that had understated it) is the only mid-size namespace with any built operations at all. Counts are re-derived directly from crates/brokerd/src/ops.rs's dispatch arms and 18_ENDPOINT_INDEX.md \u00a71's mapping tables, not hand-entered \u2014 a table row can drift from the broker (as node's did) but this figure cannot, because it is generated from the same source ops.rs is.",
+    "data": {
+      "dimensions": [
+        "namespace",
+        "built",
+        "planned"
+      ],
+      "source": [
+        [
+          "entry",
+          8,
+          7
+        ],
+        [
+          "vault",
+          12,
+          1
+        ],
+        [
+          "merge",
+          0,
+          8
+        ],
+        [
+          "node",
+          5,
+          3
+        ],
+        [
+          "agent",
+          0,
+          4
+        ],
+        [
+          "audit",
+          2,
+          2
+        ],
+        [
+          "field",
+          0,
+          4
+        ],
+        [
+          "llm",
+          0,
+          4
+        ],
+        [
+          "grant",
+          3,
+          0
+        ],
+        [
+          "keystore",
+          0,
+          3
+        ],
+        [
+          "maintenance",
+          3,
+          0
+        ],
+        [
+          "notes",
+          0,
+          2
+        ],
+        [
+          "totp",
+          2,
+          0
+        ],
+        [
+          "graph",
+          1,
+          0
+        ],
+        [
+          "search",
+          1,
+          0
+        ],
+        [
+          "util",
+          0,
+          1
+        ],
+        [
+          "whoami",
+          1,
+          0
+        ]
+      ]
+    }
+  }
+}

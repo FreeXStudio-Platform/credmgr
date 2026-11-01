@@ -1,0 +1,30 @@
+[package]
+name = "credmgr-cli"
+description = "credmgr — the single-binary CLI, MCP server (`credmgr mcp`) and client to credmgrd."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "credmgr"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+credmgr-core = { path = "../core", version = "2.0.0-beta.1" }
+credmgr-mcp = { path = "../mcp", version = "2.0.0-beta.1" }
+credmgr-store = { path = "../store", version = "2.0.0-beta.1" }
+serde_json = "1"
+
+[dev-dependencies]
+# ADR-061's `crates/cli/tests/vault_init.rs` needs `set_state_dir_for_test`
+# to keep its fixture broker off the real machine's state directory — same
+# `test-utils` feature `crates/brokerd`'s own tests already build with.
+credmgr-brokerd = { path = "../brokerd", version = "2.0.0-beta.1", features = ["test-utils"] }
+credmgr-keystore = { path = "../keystore", version = "2.0.0-beta.1" }
+secrecy = "0.10.3"
+tempfile = "=3.15.0"

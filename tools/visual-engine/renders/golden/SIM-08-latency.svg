@@ -1,0 +1,104 @@
+<svg role="img" aria-label="Broker request latency (illustrative)" width="800" height="480" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" baseProfile="full" viewBox="0 0 800 480">
+<rect width="800" height="480" x="0" y="0" fill="none"></rect>
+<path d="M84 420.5L776 420.5" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M84 345.5L776 345.5" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M84 271.5L776 271.5" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M84 197.5L776 197.5" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M84 122.5L776 122.5" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M84 48.5L776 48.5" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:12px;font-family:Inter, system-ui, sans-serif;" y="-6" transform="translate(84 33)" fill="#E9ECF1">ms</text>
+<path d="M84 420.5L776 420.5" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" stroke-linecap="round" class="zr-cls-0"></path>
+<path d="M84.5 420L84.5 425" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M170.5 420L170.5 425" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M257.5 420L257.5 425" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M343.5 420L343.5 425" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M430.5 420L430.5 425" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M516.5 420L516.5 425" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M603.5 420L603.5 425" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M689.5 420L689.5 425" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M776.5 420L776.5 425" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="end" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" transform="translate(76 420)" fill="#98A0AE">0</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" transform="translate(76 345.6)" fill="#98A0AE">3</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" transform="translate(76 271.2)" fill="#98A0AE">6</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" transform="translate(76 196.8)" fill="#98A0AE">9</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" transform="translate(76 122.4)" fill="#98A0AE">12</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" transform="translate(76 48)" fill="#98A0AE">15</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(170.5 428)" fill="#98A0AE">06:00</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(257 428)" fill="#98A0AE">12:00</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(343.5 428)" fill="#98A0AE">18:00</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(516.5 428)" fill="#98A0AE">06:00</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(603 428)" fill="#98A0AE">12:00</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(689.5 428)" fill="#98A0AE">18:00</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;font-weight:bold;" y="5" transform="translate(84 428)" fill="#E9ECF1">15</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;font-weight:bold;" y="5" transform="translate(430 428)" fill="#E9ECF1">16</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;font-weight:bold;" y="5" transform="translate(776 428)" fill="#E9ECF1">17</text>
+<g clip-path="url(#zr-c0)">
+<path d="M84 370.4L430 370.4L776 370.4" fill="none" pointer-events="visible" stroke="#E9ECF1" stroke-width="2" stroke-linejoin="bevel" class="zr-cls-1"></path>
+</g>
+<g clip-path="url(#zr-c1)">
+<path d="M84 271.2L430 296L776 296" fill="none" pointer-events="visible" stroke="#98A0AE" stroke-width="2" stroke-linejoin="bevel" class="zr-cls-1"></path>
+</g>
+<g clip-path="url(#zr-c2)">
+<path d="M84 72.8L430 122.4L776 147.2" fill="none" pointer-events="visible" stroke="#767E8C" stroke-width="2" stroke-linejoin="bevel" class="zr-cls-1"></path>
+</g>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(2.5,0,0,2.5,84,370.4)" fill="#fff" stroke="#E9ECF1" stroke-width="0.8" ecmeta_series_index="0" ecmeta_data_index="0" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(2.5,0,0,2.5,430,370.4)" fill="#fff" stroke="#E9ECF1" stroke-width="0.8" ecmeta_series_index="0" ecmeta_data_index="1" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(2.5,0,0,2.5,776,370.4)" fill="#fff" stroke="#E9ECF1" stroke-width="0.8" ecmeta_series_index="0" ecmeta_data_index="2" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(2.5,0,0,2.5,84,271.2)" fill="#fff" stroke="#98A0AE" stroke-width="0.8" ecmeta_series_index="1" ecmeta_data_index="0" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(2.5,0,0,2.5,430,296)" fill="#fff" stroke="#98A0AE" stroke-width="0.8" ecmeta_series_index="1" ecmeta_data_index="1" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(2.5,0,0,2.5,776,296)" fill="#fff" stroke="#98A0AE" stroke-width="0.8" ecmeta_series_index="1" ecmeta_data_index="2" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(2.5,0,0,2.5,84,72.8)" fill="#fff" stroke="#767E8C" stroke-width="0.8" ecmeta_series_index="2" ecmeta_data_index="0" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(2.5,0,0,2.5,430,122.4)" fill="#fff" stroke="#767E8C" stroke-width="0.8" ecmeta_series_index="2" ecmeta_data_index="1" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(2.5,0,0,2.5,776,147.2)" fill="#fff" stroke="#767E8C" stroke-width="0.8" ecmeta_series_index="2" ecmeta_data_index="2" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M-5 -5l174.4 0l0 23.2l-174.4 0Z" transform="translate(622.56 33)" fill="rgb(0,0,0)" fill-opacity="0" stroke="#b7b9be" stroke-width="0" class="zr-cls-0"></path>
+<path d="M0 7L25 7" transform="translate(623.56 32.6)" fill="#000" stroke="#E9ECF1" stroke-width="2" stroke-linecap="butt" stroke-miterlimit="10" class="zr-cls-0"></path>
+<path d="M18.1 7A5.6 5.6 0 1 1 18.1 6.4A5.6 5.6 0 0 1 18.1 7" transform="translate(623.56 32.6)" fill="#fff" stroke="#E9ECF1" stroke-width="2" stroke-linecap="butt" stroke-miterlimit="10" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" x="30" y="7" transform="translate(623.56 32.6)" fill="#98A0AE">p50</text>
+<path d="M-1 0.4l49.5 0l0 13.2l-49.5 0Z" transform="translate(623.56 32.6)" fill="none" pointer-events="visible" ecmeta_series_index="0" ecmeta_data_index="0" ecmeta_ssr_type="legend" class="zr-cls-3"></path>
+<path d="M0 7L25 7" transform="translate(681.04 32.6)" fill="#000" stroke="#98A0AE" stroke-width="2" stroke-linecap="butt" stroke-miterlimit="10" class="zr-cls-0"></path>
+<path d="M18.1 7A5.6 5.6 0 1 1 18.1 6.4A5.6 5.6 0 0 1 18.1 7" transform="translate(681.04 32.6)" fill="#fff" stroke="#98A0AE" stroke-width="2" stroke-linecap="butt" stroke-miterlimit="10" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" x="30" y="7" transform="translate(681.04 32.6)" fill="#98A0AE">p95</text>
+<path d="M-1 0.4l49.5 0l0 13.2l-49.5 0Z" transform="translate(681.04 32.6)" fill="none" pointer-events="visible" ecmeta_series_index="1" ecmeta_data_index="1" ecmeta_ssr_type="legend" class="zr-cls-3"></path>
+<path d="M0 7L25 7" transform="translate(738.52 32.6)" fill="#000" stroke="#767E8C" stroke-width="2" stroke-linecap="butt" stroke-miterlimit="10" class="zr-cls-0"></path>
+<path d="M18.1 7A5.6 5.6 0 1 1 18.1 6.4A5.6 5.6 0 0 1 18.1 7" transform="translate(738.52 32.6)" fill="#fff" stroke="#767E8C" stroke-width="2" stroke-linecap="butt" stroke-miterlimit="10" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" x="30" y="7" transform="translate(738.52 32.6)" fill="#98A0AE">p99</text>
+<path d="M-1 0.4l49.5 0l0 13.2l-49.5 0Z" transform="translate(738.52 32.6)" fill="none" pointer-events="visible" ecmeta_series_index="2" ecmeta_data_index="2" ecmeta_ssr_type="legend" class="zr-cls-3"></path>
+<path d="M-5 -5l441 0l0 48l-441 0Z" transform="translate(13 11)" fill="rgb(0,0,0)" fill-opacity="0" stroke="#3c3c41" stroke-width="0" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:16px;font-family:Inter, system-ui, sans-serif;font-weight:600;" xml:space="preserve" y="8" transform="translate(13 11)" fill="#E9ECF1">Broker request latency (illustrative)</text>
+<text dominant-baseline="central" text-anchor="start" style="font-size:12px;font-family:Inter, system-ui, sans-serif;" xml:space="preserve" y="32" transform="translate(13 11)" fill="#98A0AE">Illustrative shape only — no benchmark suite exists yet to source real percentiles</text>
+<defs >
+<clipPath id="zr-c0">
+<path d="M83 47l694 0l0 374l-694 0Z" fill="#000" class="zr-cls-4"></path>
+</clipPath>
+<clipPath id="zr-c1">
+<path d="M83 47l694 0l0 374l-694 0Z" fill="#000" class="zr-cls-4"></path>
+</clipPath>
+<clipPath id="zr-c2">
+<path d="M83 47l694 0l0 374l-694 0Z" fill="#000" class="zr-cls-4"></path>
+</clipPath>
+</defs>
+<style ><![CDATA[
+.zr-cls-0:hover {
+pointer-events:none;
+}
+.zr-cls-4:hover {
+cursor:pointer;
+fill:rgba(0,0,0,1);
+}
+.zr-cls-1:hover {
+cursor:pointer;
+}
+.zr-cls-2:hover {
+cursor:pointer;
+fill:rgba(255,255,255,1);
+}
+.zr-cls-3:hover {
+cursor:pointer;
+fill:rgba(0,0,0,0);
+}
+
+]]>
+
+</style>
+</svg>
+<!-- generated-by credmgr-visual-engine v1.0.0 · echarts@6.1.0 · theme:project-theme · content-sha256:b80192d3163ea338c151edafbbd883ecbff023febed5d1c9d06b2a6997a0f378 -->

@@ -1,0 +1,38 @@
+name: Bug report
+description: Something does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Not for security bugs.** Those go through a private Security Advisory — see SECURITY.md.
+        **Never paste a real credential here.** Redact everything, or use a throwaway vault.
+  - type: dropdown
+    attributes:
+      label: Product
+      description: V2 is the Rust rewrite (`credmgr` + `credmgrd`). V1 is the legacy Node.js line.
+      options:
+        - "V2 (Rust)"
+        - "V1 (Node.js, legacy)"
+    validations: { required: true }
+  - type: input
+    attributes:
+      label: Version
+      description: "V2: run `credmgr --version`. V1 has no --version flag: run `node -p \"require('./package.json').version\"` inside your v1/ checkout. Do not paste `credmgr which` - it prints your home directory."
+    validations: { required: true }
+  - type: dropdown
+    attributes: { label: OS, options: [macOS, Linux, Windows] }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: What happened, description: "What you did, what happened, what you expected." }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: Output, description: "Any error. Redact credential values and your home directory path.", render: shell }
+  - type: checkboxes
+    attributes:
+      label: Confirm
+      options:
+        - label: This contains no real credential, key, or token
+          required: true
+        - label: This is not a security vulnerability
+          required: true

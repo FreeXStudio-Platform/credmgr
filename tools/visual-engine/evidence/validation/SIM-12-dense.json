@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-12-dense",
+  "selected_visual": "scatter",
+  "preset": null,
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "f2cf351914d0a11c1e6bd2e0f6ef93a62611f84e2bbd57498c32c42085db75e4",
+  "option_sha256": "2a4c7c589c201efc09e7b4ae3236d30087515812c52606f8fe01c7dd27609d6c",
+  "job_sha256": "7822ef176c8a3ac875e595392450a856cc23bca1b83a1b88e44d2ab6e57a2749",
+  "render_ms": 54,
+  "warnings": []
+}

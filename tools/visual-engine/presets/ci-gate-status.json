@@ -1,0 +1,17 @@
+{
+  "id": "ci-gate-status",
+  "visual": "heatmap",
+  "family": "matrix",
+  "summary": "Gate × environment status matrix",
+  "canonical_reader_question": "Which gates are red where?",
+  "required_fields": [
+    "data.rows",
+    "data.cols",
+    "data.matrix"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "status encode: 1 pass, 0 degraded, -1 fail, null unknown; legend mandatory; color never the only signal (labels on)",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

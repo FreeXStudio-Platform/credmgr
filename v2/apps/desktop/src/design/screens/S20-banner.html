@@ -1,0 +1,8 @@
+  <sc-if value="{{pendingBannerShow}}" hint-placeholder-val="{{false}}">
+  <div data-screen-label="S20 Pending banner" style="flex:none;display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--steel-2);border-bottom:1px solid var(--hair-strong);font-family:var(--f-mono);font-size:var(--fs-sm)">
+    <span class="k-chip" data-state="warn">held</span>
+    <span>{{pendingBannerText}}</span>
+    <button class="k-btn" data-variant="primary" onClick="{{openPending}}" style="margin-left:auto">Review</button>
+    <button class="k-btn" onClick="{{dismissPendingBanner}}" style="min-width:24px;border:none;padding:4px 8px" aria-label="dismiss">✕</button>
+  </div>
+  </sc-if>

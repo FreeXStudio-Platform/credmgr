@@ -1,0 +1,44 @@
+<sc-if value="{{dlgAddNode}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S8 Add node" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-addnode-title" style="width:560px;max-height:90vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><span id="dlg-addnode-title" class="t-eyebrow">new node</span></div>
+    <div style="display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:center">
+      <span class="t-mono-label">name</span>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <input aria-label="node name" value="{{newNodeName}}" onChange="{{onNewNodeName}}" maxLength="120" style="font-family:var(--f-mono)" placeholder="linux">
+        <sc-if value="{{newNodeDupShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{newNodeDupMsg}}</div></sc-if>
+        <sc-if value="{{newNodeIdShow}}" hint-placeholder-val="{{false}}"><div class="t-caption">{{newNodeIdNote}}</div></sc-if>
+      </div>
+      <span class="t-mono-label">parent</span>
+      <select aria-label="parent node" value="{{newNodeParent}}" onChange="{{onNewNodeParent}}" style="font-family:var(--f-mono)"><sc-for list="{{parentOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.id}}">{{o.label}}</option></sc-for></select>
+      <span class="t-mono-label">work folders</span>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <sc-for list="{{newNodeFolders}}" as="wf" hint-placeholder-count="1">
+          <input aria-label="work folder" value="{{wf.val}}" onChange="{{wf.onChange}}" style="font-family:var(--f-mono);font-size:var(--fs-sm)" placeholder="~/projects/linux">
+        </sc-for>
+        <sc-if value="{{newNodeFolderErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{newNodeFolderErr}}</div></sc-if>
+        <div style="display:flex;justify-content:space-between;align-items:center"><span class="t-caption">agents launched in an existing folder here scope to this node automatically</span><button class="k-btn" onClick="{{addNodeFolder}}" style="padding:2px 8px;font-size:var(--fs-xs)">+ add another</button></div>
+      </div>
+    </div>
+    <sc-if value="{{isPro}}" hint-placeholder-val="{{false}}">
+      <div style="border-top:1px solid var(--hair);padding-top:12px">
+        <span class="t-mono-label" style="display:block;margin-bottom:10px">advanced · pro</span>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-family:var(--f-mono);font-size:var(--fs-sm)">
+          <label style="display:flex;min-height:24px;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" checked="{{advSubShare}}" onChange="{{onAdvSubShare}}" style="width:auto">Sub-nodes see each other</label>
+          <label style="display:flex;min-height:24px;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" checked="{{advTwofa}}" onChange="{{onAdvTwofa}}" style="width:auto">Require second factor on reveal <span class="t-caption">(requireTwoFactor, level reveal; asked of agents and other callers, not of you)</span></label>
+          <label style="display:flex;min-height:24px;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" checked="{{advPn}}" onChange="{{onAdvPn}}" style="width:auto">Hide this node's name from others <span class="t-caption">(privateNames: hides the label, entry names and notes; the node id is opaque and fixed at creation)</span></label>
+          <label style="display:flex;min-height:24px;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" checked="{{advChildRead}}" onChange="{{onAdvChildRead}}" style="width:auto">This node can read its children</label>
+          <label style="display:flex;gap:8px;align-items:center">Agent access <select aria-label="agent access" value="{{advAgentAccess}}" onChange="{{onAdvAgentAccess}}" style="font-family:var(--f-mono);font-size:var(--fs-sm)"><option value="read-write">read-write</option><option value="read-only">read-only</option><option value="none">none</option></select></label>
+        </div>
+        <div class="t-caption" style="margin-top:8px">Letting a node read its children widens who can read what, so it needs presence (Touch ID), which this beta cannot attest yet. The node is still created, without that choice.</div>
+        <div class="t-caption" style="margin-top:8px">With a second factor set up, a reveal in this node by anything other than your own login needs the code you gave in the last five minutes. Your own window is not asked.</div>
+      </div>
+    </sc-if>
+    <sc-if value="{{addNodeErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{addNodeErr}}</div></sc-if>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="k-btn" onClick="{{closeDialog}}">Cancel</button>
+      <button class="k-btn" data-variant="primary" onClick="{{confirmAddNode}}" disabled="{{newNodeDisabled}}">Create node</button>
+    </div>
+  </div>
+</div>
+</sc-if>

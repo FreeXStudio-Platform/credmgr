@@ -1,0 +1,57 @@
+<svg role="img" aria-label="node.restore cross-node auth gap" width="800" height="480" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" baseProfile="full" viewBox="0 0 800 480">
+<rect width="800" height="480" x="0" y="0" fill="none"></rect>
+<path d="M104 234.5L776 234.5" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" stroke-linecap="round" class="zr-cls-0"></path>
+<path d="M104.5 234L104.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M160.5 234L160.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M216.5 234L216.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M272.5 234L272.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M328.5 234L328.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M384.5 234L384.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M440.5 234L440.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M496.5 234L496.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M552.5 234L552.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M608.5 234L608.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M664.5 234L664.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M720.5 234L720.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<path d="M776.5 234L776.5 239" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(160 412)" fill="#98A0AE">00:05</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(216 412)" fill="#98A0AE">00:10</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(272 412)" fill="#98A0AE">00:15</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(328 412)" fill="#98A0AE">00:20</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(384 412)" fill="#98A0AE">00:25</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(440 412)" fill="#98A0AE">00:30</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(496 412)" fill="#98A0AE">00:35</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(552 412)" fill="#98A0AE">00:40</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(608 412)" fill="#98A0AE">00:45</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(664 412)" fill="#98A0AE">00:50</text>
+<text dominant-baseline="central" text-anchor="middle" style="font: normal normal 10px JetBrains Mono, ui-monospace, monospace" y="5" transform="translate(720 412)" fill="#98A0AE">00:55</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;font-weight:bold;" y="5" transform="translate(104 412)" fill="#E9ECF1">16</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;font-weight:bold;" y="5" transform="translate(776 412)" fill="#E9ECF1">01:00</text>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(6,0,0,6,104,174.5)" fill="#E9ECF1" fill-opacity="0.8" ecmeta_series_index="0" ecmeta_data_index="0" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(6,0,0,6,272,293.5)" fill="#E9ECF1" fill-opacity="0.8" ecmeta_series_index="0" ecmeta_data_index="1" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(6,0,0,6,440,174.5)" fill="#E9ECF1" fill-opacity="0.8" ecmeta_series_index="0" ecmeta_data_index="2" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M1 0A1 1 0 1 1 1 -0.1A1 1 0 0 1 1 0" transform="matrix(6,0,0,6,776,293.5)" fill="#E9ECF1" fill-opacity="0.8" ecmeta_series_index="0" ecmeta_data_index="3" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:Inter, system-ui, sans-serif;" xml:space="preserve" y="-5" transform="translate(104 163.5)" fill="#333" fill-opacity="0.8" stroke="rgb(255,255,255)" stroke-width="2" paint-order="stroke" stroke-opacity="0.8" stroke-miterlimit="2">gap found: node.restore checks token, not target node</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:Inter, system-ui, sans-serif;" xml:space="preserve" y="-5" transform="translate(272 282.5)" fill="#333" fill-opacity="0.8" stroke="rgb(255,255,255)" stroke-width="2" paint-order="stroke" stroke-opacity="0.8" stroke-miterlimit="2">failing test written first</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:Inter, system-ui, sans-serif;" xml:space="preserve" y="-5" transform="translate(440 163.5)" fill="#333" fill-opacity="0.8" stroke="rgb(255,255,255)" stroke-width="2" paint-order="stroke" stroke-opacity="0.8" stroke-miterlimit="2">fixed via resolve_capability, same pattern as node.seal</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:Inter, system-ui, sans-serif;" xml:space="preserve" y="-5" transform="translate(776 282.5)" fill="#333" fill-opacity="0.8" stroke="rgb(255,255,255)" stroke-width="2" paint-order="stroke" stroke-opacity="0.8" stroke-miterlimit="2">recorded as ADR-053; full suite re-verified green</text>
+<path d="M104.5 404L104.5 64" fill="none" pointer-events="visible" stroke="#E9ECF1" stroke-opacity="0.3" stroke-dasharray="4,2" ecmeta_series_index="0" ecmeta_data_index="0" ecmeta_ssr_type="chart" ecmeta_silent="true" class="zr-cls-0"></path>
+<path d="M272.5 404L272.5 64" fill="none" pointer-events="visible" stroke="#E9ECF1" stroke-opacity="0.3" stroke-dasharray="4,2" ecmeta_series_index="0" ecmeta_data_index="1" ecmeta_ssr_type="chart" ecmeta_silent="true" class="zr-cls-0"></path>
+<path d="M440.5 404L440.5 64" fill="none" pointer-events="visible" stroke="#E9ECF1" stroke-opacity="0.3" stroke-dasharray="4,2" ecmeta_series_index="0" ecmeta_data_index="2" ecmeta_ssr_type="chart" ecmeta_silent="true" class="zr-cls-0"></path>
+<path d="M776.5 404L776.5 64" fill="none" pointer-events="visible" stroke="#E9ECF1" stroke-opacity="0.3" stroke-dasharray="4,2" ecmeta_series_index="0" ecmeta_data_index="3" ecmeta_ssr_type="chart" ecmeta_silent="true" class="zr-cls-0"></path>
+<path d="M-5 -5l251.3 0l0 26l-251.3 0Z" transform="translate(13 11)" fill="rgb(0,0,0)" fill-opacity="0" stroke="#3c3c41" stroke-width="0" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:16px;font-family:Inter, system-ui, sans-serif;font-weight:600;" xml:space="preserve" y="8" transform="translate(13 11)" fill="#E9ECF1">node.restore cross-node auth gap</text>
+<style ><![CDATA[
+.zr-cls-0:hover {
+pointer-events:none;
+}
+.zr-cls-1:hover {
+cursor:pointer;
+fill:rgba(255,255,255,1);
+}
+
+]]>
+
+</style>
+</svg>
+<!-- generated-by credmgr-visual-engine v1.0.0 · echarts@6.1.0 · theme:project-theme · content-sha256:6eca3c3df9fd74d01a7276b001ec86ff8c1f1a4467c04c034d4e6a7721871c3a -->

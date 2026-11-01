@@ -1,0 +1,339 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 2,
+      "figures": 0,
+      "sections": 6,
+      "tables": 2
+    },
+    "figures": [],
+    "references": {
+      "adrs": [
+        "ADR-051",
+        "ADR-053",
+        "ADR-047",
+        "ADR-052",
+        "ADR-046",
+        "ADR-079",
+        "ADR-054",
+        "ADR-055",
+        "ADR-056",
+        "ADR-041",
+        "ADR-065",
+        "ADR-064",
+        "ADR-057",
+        "ADR-069",
+        "ADR-063",
+        "ADR-042",
+        "ADR-076",
+        "ADR-078",
+        "ADR-066",
+        "ADR-067",
+        "ADR-068",
+        "ADR-077",
+        "ADR-075"
+      ],
+      "code": [
+        "scripts/guard-no-secrets.mjs",
+        "scripts/guard-no-personal-data.mjs",
+        "crates/brokerd/src/ops.rs",
+        "scripts/RUNNING.md",
+        "docs/00_README_START_HERE.md",
+        "crates/mcp/tests/i13_tool_registry.rs",
+        "scripts/emergency-decrypt.mjs",
+        "crates/brokerd/tests/rotate_root.rs",
+        "crates/store/src/audit.rs",
+        "crates/brokerd/tests/durable_vault.rs",
+        "scripts/endpoint-matrix.py"
+      ],
+      "documents": [
+        {
+          "doc": "00_README_START_HERE.md"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "3"
+        },
+        {
+          "doc": "21_RELEASE_AND_INTEGRITY.md"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md",
+          "section": "4.4"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [],
+        "id": "1-what-was-checked-and-how",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "scripts/guard-no-secrets.mjs",
+            "scripts/guard-no-personal-data.mjs"
+          ],
+          "documents": []
+        },
+        "title": "1. What was checked, and how"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "f-1-node-restore-was-authorised-against-the-token-not-the-node-security-fixed",
+            "level": 3,
+            "title": "F-1 \u00b7 `node.restore` was authorised against the token, not the node \u25b8 **SECURITY** \u25b8 fixed"
+          },
+          {
+            "id": "f-2-scripts-running-md-documented-a-completion-mechanism-the-loop-abandoned-fixed",
+            "level": 3,
+            "title": "F-2 \u00b7 `scripts/RUNNING.md` documented a completion mechanism the loop abandoned \u25b8 fixed"
+          },
+          {
+            "id": "f-3-autobuild-sh-help-printed-the-abandoned-mechanism-to-the-operator-fixed",
+            "level": 3,
+            "title": "F-3 \u00b7 `autobuild.sh --help` printed the abandoned mechanism to the operator \u25b8 fixed"
+          },
+          {
+            "id": "f-4-the-dead-push-guard-fixed",
+            "level": 3,
+            "title": "F-4 \u00b7 The dead \"push guard\" \u25b8 fixed"
+          },
+          {
+            "id": "f-5-the-corpus-entry-point-and-agent-instructions-were-stale-by-the-whole-build-fixed",
+            "level": 3,
+            "title": "F-5 \u00b7 The corpus entry point and agent instructions were stale by the whole build \u25b8 fixed"
+          },
+          {
+            "id": "f-6-isolation-rs-s-coverage-header-was-wrong-about-its-own-suite-fixed",
+            "level": 3,
+            "title": "F-6 \u00b7 `isolation.rs`'s coverage header was wrong about its own suite \u25b8 fixed"
+          }
+        ],
+        "id": "2-findings-confirmed-real",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-051",
+            "ADR-053"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs",
+            "scripts/RUNNING.md",
+            "docs/00_README_START_HERE.md",
+            "crates/mcp/tests/i13_tool_registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "00_README_START_HERE.md"
+            }
+          ]
+        },
+        "title": "2. Findings \u2014 confirmed real"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "3-investigated-and-cleared",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-047",
+            "ADR-052"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "3. Investigated and cleared"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "k-1-i-10-is-not-implemented-24-of-25-accepted-not-blocking",
+            "level": 3,
+            "title": "K-1 \u00b7 I-10 is not implemented \u2014 24 of 25 \u25b8 **accepted, not blocking**"
+          },
+          {
+            "id": "k-2-ancestor-restore-is-now-narrower-than-before-accepted-deliberate",
+            "level": 3,
+            "title": "K-2 \u00b7 Ancestor-restore is now narrower than before \u25b8 **accepted, deliberate**"
+          },
+          {
+            "id": "k-3-named-non-gate-items-still-unbuilt-not-this-phase-s-scope",
+            "level": 3,
+            "title": "K-3 \u00b7 Named non-gate items still unbuilt \u25b8 **not this phase's scope**"
+          },
+          {
+            "id": "k-4-o-3-signing-certificates-operator-pre-release",
+            "level": 3,
+            "title": "K-4 \u00b7 O-3 signing certificates \u25b8 **operator, pre-release**"
+          },
+          {
+            "id": "k-5-the-first-release-is-software-tier-and-unsigned-accepted-disclosed-added-2026-09-24",
+            "level": 3,
+            "title": "K-5 \u00b7 The first release is Software-tier and unsigned \u25b8 **accepted, disclosed** \u00b7 *added 2026-09-24*"
+          },
+          {
+            "id": "k-6-an-exported-login-reaches-every-project-accepted-bounded-owner-decided-added-2026-09-24",
+            "level": 3,
+            "title": "K-6 \u00b7 An exported login reaches every project \u25b8 **accepted, bounded, owner-decided** \u00b7 *added 2026-09-24*"
+          },
+          {
+            "id": "k-7-some-bookkeeping-is-still-memory-only-closed-in-part-by-adr-069-and-adr-079-a-bounded-remainder-stands-added-2026-09-24-updated-2026-10-03",
+            "level": 3,
+            "title": "K-7 \u00b7 Some bookkeeping is still memory-only \u25b8 **closed in part by ADR-069 and ADR-079; a bounded remainder stands** \u00b7 *added 2026-09-24, updated 2026-10-03*"
+          },
+          {
+            "id": "k-8-software-tier-rollback-protection-is-only-as-strong-as-a-user-writable-file-accepted-disclosed-added-2026-09-24",
+            "level": 3,
+            "title": "K-8 \u00b7 Software-tier rollback protection is only as strong as a user-writable file \u25b8 **accepted, disclosed** \u00b7 *added 2026-09-24*"
+          },
+          {
+            "id": "k-9-a-truncated-audit-tail-is-re-signed-by-the-next-request-accepted-disclosed-added-2026-10-02",
+            "level": 3,
+            "title": "K-9 \u00b7 A truncated audit tail is re-signed by the next request \u25b8 **accepted, disclosed** \u00b7 *added 2026-10-02*"
+          },
+          {
+            "id": "k-10-hardening-items-the-field-model-left-open-accepted-disclosed-added-2026-10-03",
+            "level": 3,
+            "title": "K-10 \u00b7 Hardening items the field model left open \u25b8 **accepted, disclosed** \u00b7 *added 2026-10-03*"
+          }
+        ],
+        "id": "4-left-open-knowingly",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-046",
+            "ADR-047",
+            "ADR-079",
+            "ADR-053",
+            "ADR-054",
+            "ADR-055",
+            "ADR-056",
+            "ADR-041",
+            "ADR-065",
+            "ADR-064",
+            "ADR-057",
+            "ADR-069",
+            "ADR-063",
+            "ADR-042",
+            "ADR-076",
+            "ADR-078"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs",
+            "scripts/emergency-decrypt.mjs",
+            "crates/brokerd/tests/rotate_root.rs",
+            "crates/store/src/audit.rs"
+          ],
+          "documents": [
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "3"
+            },
+            {
+              "doc": "21_RELEASE_AND_INTEGRITY.md"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md",
+              "section": "4.4"
+            }
+          ]
+        },
+        "title": "4. Left open, knowingly"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-final-verification-after-every-change-in-this-session",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-053"
+          ],
+          "code": [
+            "docs/00_README_START_HERE.md"
+          ],
+          "documents": [
+            {
+              "doc": "00_README_START_HERE.md"
+            }
+          ]
+        },
+        "title": "5. Final verification \u2014 after every change in this session"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "approved-with-known-risks",
+            "level": 3,
+            "title": "**Approved With Known Risks**"
+          }
+        ],
+        "id": "6-status",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-053",
+            "ADR-054",
+            "ADR-055",
+            "ADR-047",
+            "ADR-056",
+            "ADR-051",
+            "ADR-063",
+            "ADR-064",
+            "ADR-065",
+            "ADR-066",
+            "ADR-067",
+            "ADR-068",
+            "ADR-076",
+            "ADR-077",
+            "ADR-069",
+            "ADR-079",
+            "ADR-078",
+            "ADR-075"
+          ],
+          "code": [
+            "crates/brokerd/tests/durable_vault.rs",
+            "scripts/endpoint-matrix.py"
+          ],
+          "documents": [
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "6. Status"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-900",
+    "last_reviewed": "2026-10-03",
+    "owner": "credmgr-v2",
+    "status": "needs-verification",
+    "surface": "repo",
+    "title": "Phase 8 audit report (record)",
+    "variants": []
+  }
+}

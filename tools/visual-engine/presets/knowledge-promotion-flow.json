@@ -1,0 +1,16 @@
+{
+  "id": "knowledge-promotion-flow",
+  "visual": "sankey",
+  "family": "flow",
+  "summary": "Knowledge promotion volume between stores",
+  "canonical_reader_question": "How much knowledge moves between stores?",
+  "required_fields": [
+    "data.nodes",
+    "data.links"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "sankey requires real conservation — counts must reconcile or use a bar",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

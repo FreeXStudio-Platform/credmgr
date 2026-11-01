@@ -1,0 +1,18 @@
+{
+  "id": "broker-latency",
+  "visual": "line",
+  "family": "time",
+  "summary": "Broker request latency percentiles over time",
+  "canonical_reader_question": "How is broker request latency trending?",
+  "required_fields": [
+    "data.dimensions",
+    "data.source"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {
+    "time_axis": true
+  },
+  "notes": "p50/p95/p99 as separate series; include time window + aggregation basis in subtitle; no benchmark suite exists yet — mark illustrative until one does",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

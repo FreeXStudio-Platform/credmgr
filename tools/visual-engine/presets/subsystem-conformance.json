@@ -1,0 +1,17 @@
+{
+  "id": "subsystem-conformance",
+  "visual": "heatmap",
+  "family": "matrix",
+  "summary": "Subsystem-vs-its-own-ADR conformance matrix",
+  "canonical_reader_question": "Which subsystems diverge from the decision that specified them?",
+  "required_fields": [
+    "data.rows",
+    "data.cols",
+    "data.matrix"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "NEVER blend current and target in one cell — two matrices or a delta matrix",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

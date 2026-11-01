@@ -1,0 +1,18 @@
+{
+  "id": "finding-severity-confidence",
+  "visual": "scatter",
+  "family": "relationship",
+  "summary": "Severity vs confidence scatter (audit/review findings)",
+  "canonical_reader_question": "Are high-severity findings also high-confidence?",
+  "required_fields": [
+    "data.dimensions",
+    "data.source"
+  ],
+  "defaults": {},
+  "semantics": {
+    "severity_items": true
+  },
+  "job_extras": {},
+  "notes": "x=confidence 0-1, y=severity rank; never imply causation",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

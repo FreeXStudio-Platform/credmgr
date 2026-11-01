@@ -1,0 +1,86 @@
+[
+  {
+    "kind": "flowchart",
+    "id": "theme-colour-axis-matrix",
+    "title": "Theme x colour: two independent axes, four states",
+    "caption": "Theme and colour are independent settings, not three themes -- all four combinations are legal. Only the two colour-off corners have a real, checked-in value today.",
+    "nodes": [
+      { "id": "entry", "type": "source", "label": "Two settings, not three themes", "x": 430, "y": 60, "w": 280, "h": 64 },
+      { "id": "theme_dec", "type": "decision", "label": "theme: dark or light?", "x": 450, "y": 280, "w": 240, "h": 64 },
+      { "id": "dark_colour_dec", "type": "decision", "label": "colour: off or on? (dark)", "x": 130, "y": 500, "w": 240, "h": 64 },
+      { "id": "light_colour_dec", "type": "decision", "label": "colour: off or on? (light)", "x": 810, "y": 500, "w": 240, "h": 64 },
+      { "id": "dark_off", "type": "gate", "label": "Vault Dark, colour off", "x": 40, "y": 720, "w": 200, "h": 64, "note": "tokens checked in, unconsumed" },
+      { "id": "dark_on", "type": "fallback", "label": "Vault Dark + hue", "x": 380, "y": 720, "w": 200, "h": 64, "note": "formula in S3.2, no code" },
+      { "id": "light_off", "type": "gate", "label": "Vault Light, colour off", "x": 720, "y": 720, "w": 200, "h": 64, "note": "tokens checked in, unconsumed" },
+      { "id": "light_on", "type": "fallback", "label": "Vault Light + hue", "x": 1060, "y": 720, "w": 200, "h": 64, "note": "same formula, no code" }
+    ],
+    "edges": [
+      { "src": "entry", "dst": "theme_dec", "style": "dashed" },
+      { "src": "theme_dec", "dst": "dark_colour_dec", "condition": "dark", "style": "dashed" },
+      { "src": "theme_dec", "dst": "light_colour_dec", "condition": "light", "style": "dashed" },
+      { "src": "dark_colour_dec", "dst": "dark_off", "condition": "off", "style": "dashed" },
+      { "src": "dark_colour_dec", "dst": "dark_on", "condition": "on", "style": "dashed" },
+      { "src": "light_colour_dec", "dst": "light_off", "condition": "off", "style": "dashed" },
+      { "src": "light_colour_dec", "dst": "light_on", "condition": "on", "style": "dashed" }
+    ],
+    "legend": [
+      { "kind": "node", "key": "gate", "label": "Colour off -- values checked in (partial, S2)" },
+      { "kind": "node", "key": "fallback", "label": "Colour on -- spec only (planned, S3.2)" },
+      { "kind": "line", "key": "dashed", "label": "No runtime switch reads this yet (S1)" }
+    ],
+    "motion": false,
+    "width": 1300,
+    "height": 1050,
+    "data_sources": [
+      { "kind": "cited", "ref": "v2/design/tokens/keep.tokens.json (grounds_dark/inks_dark/grounds_light/inks_light -- the two colour-off corners' checked-in values)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "v2/design/tokens/keep.css ([data-theme=\"dark\"] line 15, [data-theme=\"light\"] line 40 -- the same values as CSS custom properties, consumed by nothing in apps/desktop)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "v2/docs/20_THEMING.md S3.2 (OKLCH derivation formulas for the two colour-on corners -- specification only, no implementing code)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "grep -rn \"oklch|contrastAPCA|enforceContrast|color-mix\" v2/crates/ -> no matches (re-verified 2026-08-23)", "retrieved": "2026-08-23" }
+    ]
+  },
+  {
+    "kind": "flowchart",
+    "id": "hue-derivation-pipeline",
+    "title": "Hue -> derived colours -> contrast repair",
+    "caption": "One hue and intensity flow through fixed formulas, then a repair loop that can only move a colour toward legibility, never away -- no path from picking a hue to unreadable text. None of this runs today.",
+    "nodes": [
+      { "id": "entry", "type": "source", "label": "Pick hue H, intensity I", "x": 80, "y": 60, "w": 260, "h": 64 },
+      { "id": "ground", "type": "process", "label": "Ground tint: chroma = 0.012 x I", "x": 80, "y": 280, "w": 260, "h": 64 },
+      { "id": "accent", "type": "process", "label": "Accent: L,C fixed by theme; h = H", "x": 80, "y": 500, "w": 260, "h": 64 },
+      { "id": "accent_dim", "type": "process", "label": "Accent-dim: L,C fixed by theme; h = H", "x": 80, "y": 720, "w": 260, "h": 64 },
+      { "id": "on_accent", "type": "process", "label": "On-accent: pick(bone, ink), max contrast", "x": 80, "y": 940, "w": 260, "h": 64 },
+      { "id": "contrast_gate", "type": "gate", "label": "enforceContrast(): ~40 declared pairs", "x": 80, "y": 1160, "w": 260, "h": 64 },
+      { "id": "decision", "type": "decision", "label": "ratio < min for any pair?", "x": 80, "y": 1380, "w": 260, "h": 64 },
+      { "id": "final_output", "type": "output", "label": "Final legible token set", "x": 80, "y": 1600, "w": 260, "h": 64 },
+      { "id": "nudge", "type": "process", "label": "nudgeLightness +0.01, toward legible", "x": 470, "y": 1380, "w": 260, "h": 64 },
+      { "id": "pick_extreme", "type": "fallback", "label": "pickExtreme(bg): bone or ink", "x": 470, "y": 1600, "w": 260, "h": 64, "note": "never the user's own hue" }
+    ],
+    "edges": [
+      { "src": "entry", "dst": "ground", "style": "dashed" },
+      { "src": "ground", "dst": "accent", "style": "dashed" },
+      { "src": "accent", "dst": "accent_dim", "style": "dashed" },
+      { "src": "accent_dim", "dst": "on_accent", "style": "dashed" },
+      { "src": "on_accent", "dst": "contrast_gate", "style": "dashed" },
+      { "src": "contrast_gate", "dst": "decision", "style": "dashed" },
+      { "src": "decision", "dst": "final_output", "condition": "no pair below floor", "style": "dashed" },
+      { "src": "decision", "dst": "nudge", "condition": "below floor", "style": "dashed" },
+      { "src": "nudge", "dst": "contrast_gate", "condition": "retry", "style": "dashed" },
+      { "src": "nudge", "dst": "pick_extreme", "condition": "budget exhausted", "style": "dashed" },
+      { "src": "pick_extreme", "dst": "final_output", "style": "dashed" }
+    ],
+    "legend": [
+      { "kind": "node", "key": "gate", "label": "Validation step (enforceContrast)" },
+      { "kind": "node", "key": "fallback", "label": "Escalation once the repair budget is spent" },
+      { "kind": "line", "key": "dashed", "label": "Specification only -- no implementing code exists (S3.2, S3.3)" }
+    ],
+    "motion": false,
+    "width": 840,
+    "height": 1850,
+    "data_sources": [
+      { "kind": "cited", "ref": "v2/docs/20_THEMING.md S3.2 (derivation formulas: grounds tint, accent, accent-dim, on-accent)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "v2/docs/20_THEMING.md S3.3 (enforceContrast pseudocode -- the repair loop, CONTRAST_PAIRS)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "grep -rn \"oklch|contrastAPCA|enforceContrast|color-mix\" v2/crates/ -> no matches (re-verified 2026-08-23)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "v2/apps/desktop/src/routes/+page.svelte (stock create-tauri-app scaffold -- no hue, intensity, or contrast setting of any kind)", "retrieved": "2026-08-23" }
+    ]
+  }
+]

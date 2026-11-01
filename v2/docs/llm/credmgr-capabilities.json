@@ -1,0 +1,1438 @@
+{
+  "schema_version": "1.0",
+  "generated_by": "tools/gen_help.py from v2/docs/help/features.json and v2/docs/help/ops.json; checked against the code with `python3 tools/gen_help.py --check`. Do not edit by hand.",
+  "product": {
+    "name": "CredMgr",
+    "summary": "A local, offline credential vault for macOS. Secrets are organised into nodes (projects); every access decision is made by one local process, the broker (credmgrd). The desktop app, the command line and the MCP server are all clients of it.",
+    "publisher": "FreexStudio",
+    "platform": "macOS on Apple Silicon only",
+    "network": "No network listener and no outbound connection."
+  },
+  "version": "2.0.0-beta.1",
+  "status": "2.0.0-beta.1 pre-release",
+  "release_state": "No release has been published. Unsigned, not notarised, Software keystore tier (the passphrase is the key; no Secure Enclave, no Touch ID).",
+  "licence": {
+    "name": "FreexStudio Source-Available Licence",
+    "pointer": "v2/LICENSE",
+    "summary": "Source-available, not open source: you may run the current stable release and read and audit the source; you may not fork, modify or redistribute it."
+  },
+  "how_to_use_this_file": [
+    "You are an AI agent (or you are configuring one) that works with a CredMgr vault. Read safety_model and never first.",
+    "Use only the MCP tools in mcp_tools. Do not talk to the broker socket, read the vault folder, run credmgr unlock, or ask the user for their passphrase, recovery code or authenticator code.",
+    "Start with credmgr_whoami, then use how_to_read and how_to_write for the task.",
+    "When a result is an error, find its code in error_codes and do what it says. Refusals are explicit: tell the operator what you need, in one sentence, and carry on with other work.",
+    "features describes everything the product can do for a human, where it is, and (agent_access) what an agent may do with it. Anything with status 'planned' does not exist yet; do not rely on it."
+  ],
+  "safety_model": {
+    "values_stay_in_the_broker": "Secret values are encrypted at rest and decrypted only inside the broker. A value leaves the broker only as the answer to one identified, authorised, logged request. The product makes no outbound network connection, so a value cannot be sent anywhere by CredMgr itself.",
+    "one_enforcement_point": "The broker (credmgrd) decides every access. The desktop app, the CLI and the MCP server are thin clients; none holds a key and none can widen what the broker allows. An MCP tool forwards its arguments to one broker operation unchanged.",
+    "agent_scope": "An agent token is scoped to exactly one node, resolved from the folder the agent was started in (the node's work folders) or from an explicit token fixed when it was issued. The agent reads that node, its ancestors and Global. It reads its descendants only if the node's policy sets descendant-read, and a sibling only for sub-nodes whose parent shares them; both widenings need a human and, in this build, a presence check that cannot be given. Projects never read each other. No tool argument changes any of this.",
+    "agent_access_levels": {
+      "read-write": [
+        "list",
+        "read",
+        "reveal",
+        "create",
+        "update"
+      ],
+      "read-only": [
+        "list",
+        "read",
+        "reveal"
+      ],
+      "none": [],
+      "note": "Set per node by a human (node policy). The notes and admin capabilities are never part of an agent's scope."
+    },
+    "sensitive_reveals_wait_for_a_human": [
+      "If the whole vault is locked, a request for a value is recorded and answered approval_pending. A person decides it with the passphrase (and the authenticator code when two-factor is on) on the Lock screen or with `credmgr approve`; approval covers one request, one entry, once, and expires after 120 seconds. The vault stays locked.",
+      "If the node's policy requires a second factor (reveal or always) and the vault has one enrolled, an agent gets two_factor_required until a person proves the factor. One code opens a vault-wide window of five minutes. The owner's own login is not asked.",
+      "A value is never staged for one caller and handed to another: an approval is one slot per (node, entry, requester) and releases only the fields that request asked for."
+    ],
+    "writes": {
+      "create_while_locked": "credmgr_create works on a locked vault. The entry is not written to the manifest: it is held in a review tray and a person accepts or discards it. Say so to the operator.",
+      "update_needs_unlocked": "credmgr_update, credmgr_rotate, credmgr_remove, credmgr_undo and the three field tools need the vault and node unlocked, because overwriting a credential you cannot read would be credential substitution.",
+      "generation_check": "Every change to an existing entry carries its current generation. A concurrent change answers conflict; re-read and retry once.",
+      "undo": "Rotations, field changes and removals are undoable by audit record id. A removal and a field change can be undone for seven days; a rotation has no time limit. Undo is itself audited."
+    },
+    "audit": "Every decision, allowed or denied, is recorded in a hash-chained log. An agent can read only a redacted feed (id, action, time, actor), never values or before/after content.",
+    "denials_are_explicit": "A refusal names the rule and a remedy that is a human action. The correct response is to ask the human, never to retry, rephrase or look for another route.",
+    "values_in_your_context": "Anything you read with credmgr_get is now in your context. Do not print it into chat, logs, commit messages, files or command arguments; pass it to the program that needs it and nowhere else.",
+    "known_limits": [
+      "Software keystore tier: a copy of the vault folder can be attacked offline with the passphrase; two-factor guards the door (the broker), not the encryption.",
+      "A login exported into a shell that an agent also runs in gives that agent every project (known risk K-6). Agents should use the MCP server, never a token.",
+      "No presence check exists in this build; everything that needs one is refused for every caller."
+    ]
+  },
+  "human_in_the_loop": [
+    "Unlocking the vault, approving a waiting request, giving a second-factor code, creating grants, changing node policy or work folders, sealing and restoring nodes, backup, verify and doctor are human actions.",
+    "Entries an agent creates while the vault is locked wait for human review before they exist.",
+    "A human decides every approval_pending and every two_factor_required.",
+    "Anything marked human only in features.agent_access, and every operation with agent_reach 'human_only' in broker_ops, has no agent path."
+  ],
+  "forbidden_for_agents": {
+    "in_plain_terms": [
+      "Create or change a grant (a grant is how a human lets one node see into another).",
+      "Read the Orphaned node (sealed data). It is absent from the tools, not merely gated.",
+      "Read a TOTP seed. credmgr_totp_code gives the current six digits only.",
+      "Change a node's policy or agent access, rename a node, re-parent a node, or change its work folders. An agent may not widen its own scope.",
+      "List nodes outside its scope. credmgr_whoami names only reachable nodes.",
+      "Purge or shorten the audit log, or shorten the seven-day recovery windows.",
+      "Read across nodes by any parameter: there is no node override, no 'all', no 'include inherited'.",
+      "Reach raw envelopes, keys or file paths.",
+      "Run vault-wide maintenance: verify, doctor, backup.",
+      "Rotate the root key.",
+      "Enrol, replace or recover the vault's second factor."
+    ],
+    "operations": [
+      "node.create",
+      "grant.create",
+      "grant.update",
+      "grant.revoke",
+      "orphan.reveal",
+      "orphan.read",
+      "node.policy_update",
+      "node.agent_access_update",
+      "node.reparent",
+      "audit.purge",
+      "audit.window_shorten",
+      "totp.seed",
+      "maintenance.verify",
+      "maintenance.doctor",
+      "maintenance.backup",
+      "vault.gate_recover",
+      "vault.gate_enroll_begin",
+      "vault.gate_enroll_confirm",
+      "node.set_workdirs",
+      "node.policy",
+      "node.update",
+      "maintenance.rotate_root"
+    ],
+    "source": "docs/10_API_AND_MCP.md section 3.2; restated in code as FORBIDDEN_OPS in crates/mcp/src/tools.rs and enforced by test I-13, which fails if a tool maps to any of these or a tool name contains one of their fragments."
+  },
+  "never": [
+    "Never create, change or request a grant on your own; ask the operator.",
+    "Never try to read another node, the Orphaned node, a node's notes, a TOTP seed, or the vault folder on disk.",
+    "Never change a node's policy, agent access, name, parent or work folders, or try to widen your own scope.",
+    "Never run backup, verify, doctor, root-key rotation or any second-factor enrolment or recovery.",
+    "Never purge or shorten the audit log or a recovery window.",
+    "Never call the broker socket or the credmgr command line to get around a refusal; the MCP tools are your whole interface.",
+    "Never ask the user for their passphrase, recovery code, recovery codes or authenticator code, and never put them in a command.",
+    "Never export or reuse a CREDMGR_TOKEN login.",
+    "Never retry a refused or approval_pending request in a loop, rephrase it, or look for another route.",
+    "Never print a secret into chat, a log, a commit, a comment or a file, and never pass one as a command-line argument.",
+    "Never invent a secret or put a placeholder in code; say exactly which credential is missing and what it is for.",
+    "Never describe a feature with status 'planned' or 'partial' as working."
+  ],
+  "how_to_read": [
+    {
+      "task": "Learn your own boundary before anything else",
+      "use_tool": "credmgr_whoami",
+      "notes": "Returns your node, capabilities and the nodes you can reach. It names nothing else.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "task": "List the entries of a node",
+      "use_tool": "credmgr_list",
+      "notes": "Names and ids only. 'node' is required: use the one credmgr_whoami returned.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "node": {
+            "description": "Node id — your own is `node` in credmgr_whoami's answer.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "Find an entry by name",
+      "use_tool": "credmgr_search",
+      "notes": "Substring match over entry names in your scope. A term that only matches outside your scope looks identical to no match.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "term": {
+            "description": "Search term.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "term"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "See an entry's fields without any value",
+      "use_tool": "credmgr_get_metadata",
+      "notes": "Field ids, labels, types and masking, plus the entry's generation. Needs the vault and node unlocked. Use the ids with the tools below.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "description": "Entry id.",
+            "type": "string"
+          },
+          "node": {
+            "description": "Node id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "entry"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "Read a secret value",
+      "use_tool": "credmgr_get",
+      "notes": "Pass fieldIds to read only some fields. The answer has 'fields' and, when exactly one field is returned, 'value'. A stored authenticator seed comes back with its value removed; use credmgr_totp_code. May answer approval_pending or two_factor_required: wait for the human.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "description": "Entry id.",
+            "type": "string"
+          },
+          "fieldIds": {
+            "description": "Reveal only these fields (ids from credmgr_get_metadata). Leave it out to reveal every field.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "node": {
+            "description": "Node id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "entry"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "Get the current authenticator code for a stored seed",
+      "use_tool": "credmgr_totp_code",
+      "notes": "Six digits valid for about thirty seconds. Pass 'field' when the entry holds several fields.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "description": "Entry id.",
+            "type": "string"
+          },
+          "field": {
+            "description": "The id of the field that holds the seed. Needed only when the entry has several fields, and not exactly one of them is a TOTP seed.",
+            "type": "string"
+          },
+          "node": {
+            "description": "Node id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "entry"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "See what changed recently",
+      "use_tool": "credmgr_recent_changes",
+      "notes": "A redacted feed of id, action, time and actor. The ids are what credmgr_undo takes.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Max records to return, default 50, capped at 500.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    }
+  ],
+  "how_to_write": [
+    {
+      "task": "Create a new entry",
+      "use_tool": "credmgr_create",
+      "notes": "Send either 'value' (with an optional 'label') or a 'fields' array of {label, value}. Send structure: the broker does not parse 'label: value' text. On a locked vault the entry is held in a review tray for the human; tell the operator it is waiting.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entryType": {
+            "description": "Pin the entry's type. Leave it out to infer it from the fields; \"auto\" clears a pinned type.",
+            "enum": [
+              "server",
+              "database",
+              "api",
+              "wallet",
+              "login",
+              "ssh",
+              "certificate",
+              "token",
+              "totp",
+              "env-bundle",
+              "note",
+              "other",
+              "auto"
+            ],
+            "type": "string"
+          },
+          "fields": {
+            "description": "A multi-field entry: an array of {label, value} objects, in the order to keep. Send structure — the broker does not parse `label: value` text.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "label": {
+                  "description": "Free text, up to 200 characters, one line (it may be empty). There is no fixed list of labels.",
+                  "type": "string"
+                },
+                "masked": {
+                  "description": "Pin whether the field is masked on screen. Leave it out to follow the type.",
+                  "type": "boolean"
+                },
+                "type": {
+                  "description": "Pin the field's type. Leave it out to infer it from the label and value.",
+                  "enum": [
+                    "password",
+                    "api-key",
+                    "private-key",
+                    "seed-phrase",
+                    "totp-seed",
+                    "username",
+                    "host",
+                    "port",
+                    "url",
+                    "certificate",
+                    "text"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "description": "The value, verbatim — never trimmed.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "label",
+                "value"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "label": {
+            "description": "The label of `value`, default \"value\". Not allowed beside `fields`.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "sensitivity": {
+            "description": "Pin the entry's sensitivity. Leave it out to infer it from the fields; \"auto\" clears a pinned value.",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical",
+              "auto"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "description": "A single-value entry: give `value` (with an optional `label`) or `fields`, not both.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "Replace one field's value or the whole field list",
+      "use_tool": "credmgr_update",
+      "notes": "Needs the entry's current 'generation' (from credmgr_get_metadata). With several fields, name the field with 'field'. Keeps no history.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "type": "string"
+          },
+          "entryType": {
+            "description": "Pin the entry's type. Leave it out to infer it from the fields; \"auto\" clears a pinned type.",
+            "enum": [
+              "server",
+              "database",
+              "api",
+              "wallet",
+              "login",
+              "ssh",
+              "certificate",
+              "token",
+              "totp",
+              "env-bundle",
+              "note",
+              "other",
+              "auto"
+            ],
+            "type": "string"
+          },
+          "field": {
+            "description": "With `value`: the id of the field to change. Required when the entry has more than one field.",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Replace the whole field list. A field with an `id` keeps its identity; fields you leave out are dropped. Cannot be combined with `value`, `field` or `label`.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "description": "The id of an existing field (from credmgr_get_metadata) to keep. Leave it out to add a new field.",
+                  "type": "string"
+                },
+                "label": {
+                  "description": "Free text, up to 200 characters, one line (it may be empty). There is no fixed list of labels.",
+                  "type": "string"
+                },
+                "masked": {
+                  "description": "Pin whether the field is masked on screen. Leave it out to follow the type.",
+                  "type": "boolean"
+                },
+                "type": {
+                  "description": "Pin the field's type. Leave it out to infer it from the label and value.",
+                  "enum": [
+                    "password",
+                    "api-key",
+                    "private-key",
+                    "seed-phrase",
+                    "totp-seed",
+                    "username",
+                    "host",
+                    "port",
+                    "url",
+                    "certificate",
+                    "text"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "description": "The value, verbatim — never trimmed.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "label",
+                "value"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "generation": {
+            "description": "The entry's current generation, for optimistic concurrency (F-9).",
+            "type": "integer"
+          },
+          "label": {
+            "description": "With `value`: rename that field too.",
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "sensitivity": {
+            "description": "Pin the entry's sensitivity. Leave it out to infer it from the fields; \"auto\" clears a pinned value.",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical",
+              "auto"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "description": "The new value of one field (the entry's only field, or the one `field` names).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "entry",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "Replace a secret and keep the old one",
+      "use_tool": "credmgr_rotate",
+      "notes": "Same body as credmgr_update; the previous value is kept as history.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "type": "string"
+          },
+          "entryType": {
+            "description": "Pin the entry's type. Leave it out to infer it from the fields; \"auto\" clears a pinned type.",
+            "enum": [
+              "server",
+              "database",
+              "api",
+              "wallet",
+              "login",
+              "ssh",
+              "certificate",
+              "token",
+              "totp",
+              "env-bundle",
+              "note",
+              "other",
+              "auto"
+            ],
+            "type": "string"
+          },
+          "field": {
+            "description": "With `value`: the id of the field to change. Required when the entry has more than one field.",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Replace the whole field list. A field with an `id` keeps its identity; fields you leave out are dropped. Cannot be combined with `value`, `field` or `label`.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "description": "The id of an existing field (from credmgr_get_metadata) to keep. Leave it out to add a new field.",
+                  "type": "string"
+                },
+                "label": {
+                  "description": "Free text, up to 200 characters, one line (it may be empty). There is no fixed list of labels.",
+                  "type": "string"
+                },
+                "masked": {
+                  "description": "Pin whether the field is masked on screen. Leave it out to follow the type.",
+                  "type": "boolean"
+                },
+                "type": {
+                  "description": "Pin the field's type. Leave it out to infer it from the label and value.",
+                  "enum": [
+                    "password",
+                    "api-key",
+                    "private-key",
+                    "seed-phrase",
+                    "totp-seed",
+                    "username",
+                    "host",
+                    "port",
+                    "url",
+                    "certificate",
+                    "text"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "description": "The value, verbatim — never trimmed.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "label",
+                "value"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "generation": {
+            "description": "The entry's current generation, for optimistic concurrency (F-9).",
+            "type": "integer"
+          },
+          "label": {
+            "description": "With `value`: rename that field too.",
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "sensitivity": {
+            "description": "Pin the entry's sensitivity. Leave it out to infer it from the fields; \"auto\" clears a pinned value.",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical",
+              "auto"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "description": "The new value of one field (the entry's only field, or the one `field` names). The previous ciphertext is retained as history.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "entry",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "Add fields to an entry",
+      "use_tool": "credmgr_field_add",
+      "notes": "Appended, or inserted at 'position'. Never replaces.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "type": "string"
+          },
+          "fields": {
+            "description": "The fields to add. They are appended — adding never replaces.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "label": {
+                  "description": "Free text, up to 200 characters, one line (it may be empty). There is no fixed list of labels.",
+                  "type": "string"
+                },
+                "masked": {
+                  "description": "Pin whether the field is masked on screen. Leave it out to follow the type.",
+                  "type": "boolean"
+                },
+                "type": {
+                  "description": "Pin the field's type. Leave it out to infer it from the label and value.",
+                  "enum": [
+                    "password",
+                    "api-key",
+                    "private-key",
+                    "seed-phrase",
+                    "totp-seed",
+                    "username",
+                    "host",
+                    "port",
+                    "url",
+                    "certificate",
+                    "text"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "description": "The value, verbatim — never trimmed.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "label",
+                "value"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "generation": {
+            "description": "The entry's current generation, for optimistic concurrency (F-9).",
+            "type": "integer"
+          },
+          "node": {
+            "type": "string"
+          },
+          "position": {
+            "description": "Insert at this index instead of appending (0 is first).",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node",
+          "entry",
+          "generation",
+          "fields"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "Change one field's label, value, type or masking",
+      "use_tool": "credmgr_field_update",
+      "notes": "Pass a 'patch' with at least one key. 'auto' goes back to inferring a type or masking.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "type": "string"
+          },
+          "field": {
+            "description": "The id of the field to change (from credmgr_get_metadata).",
+            "type": "string"
+          },
+          "generation": {
+            "description": "The entry's current generation, for optimistic concurrency (F-9).",
+            "type": "integer"
+          },
+          "node": {
+            "type": "string"
+          },
+          "patch": {
+            "additionalProperties": false,
+            "description": "At least one key. `type` and `masked` take \"auto\" to go back to inferring.",
+            "minProperties": 1,
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "masked": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "enum": [
+                      "auto"
+                    ],
+                    "type": "string"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "password",
+                  "api-key",
+                  "private-key",
+                  "seed-phrase",
+                  "totp-seed",
+                  "username",
+                  "host",
+                  "port",
+                  "url",
+                  "certificate",
+                  "text",
+                  "auto"
+                ],
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "node",
+          "entry",
+          "generation",
+          "field",
+          "patch"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "Remove one field",
+      "use_tool": "credmgr_field_remove",
+      "notes": "The last field cannot be removed; remove the entry instead.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "type": "string"
+          },
+          "field": {
+            "description": "The id of the field to remove (from credmgr_get_metadata).",
+            "type": "string"
+          },
+          "generation": {
+            "description": "The entry's current generation, for optimistic concurrency (F-9).",
+            "type": "integer"
+          },
+          "node": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "entry",
+          "generation",
+          "field"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "Remove an entry",
+      "use_tool": "credmgr_remove",
+      "notes": "Soft delete into a seven-day recovery window.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "type": "string"
+          },
+          "generation": {
+            "description": "The entry's current generation, for optimistic concurrency (F-9).",
+            "type": "integer"
+          },
+          "node": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "entry",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "task": "Undo a rotation, field change or removal",
+      "use_tool": "credmgr_undo",
+      "notes": "Address it by the audit record id from credmgr_recent_changes. Itself an audited action.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "description": "The entry's current generation, for optimistic concurrency (F-9).",
+            "type": "integer"
+          },
+          "id": {
+            "description": "The audit record id (from credmgr_recent_changes) naming the rotate, field change or removal to undo.",
+            "type": "string"
+          },
+          "mode": {
+            "description": "Only used when undoing a removal and the name has since been reclaimed. Default \"replace\" refuses rather than overwrite.",
+            "enum": [
+              "replace",
+              "keep-both"
+            ],
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "id",
+          "generation"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "mcp_tools": [
+    {
+      "name": "credmgr_whoami",
+      "broker_op": "whoami",
+      "capability_needed": "none",
+      "agent_access": "read-only metadata",
+      "description": "Returns your own node, capabilities, and the nodes you can reach. Call this first and reason about your own boundary instead of discovering it by being denied — it names only nodes you can actually reach, nothing else. You are scoped to one node (resolved from your working directory). You can read that node, its ancestors, Global, and anything explicitly granted. You cannot reach other nodes, and no argument to any tool changes that — if you need something outside your scope, say so and ask the operator.",
+      "input_schema": "see how_to_read: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_list",
+      "broker_op": "entry.list",
+      "capability_needed": "list",
+      "agent_access": "read-only metadata",
+      "description": "Lists entry names and metadata (no values) on a node. Scope-filtered — never returns another node's entries.",
+      "input_schema": "see how_to_read: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_search",
+      "broker_op": "search",
+      "capability_needed": "list",
+      "agent_access": "read-only metadata",
+      "description": "Searches entry names within your scope. Scope-filtered; a query that only matches outside your scope returns zero results, indistinguishable from a query that matches nothing at all.",
+      "input_schema": "see how_to_read: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_get",
+      "broker_op": "entry.reveal",
+      "capability_needed": "reveal",
+      "agent_access": "read with approval",
+      "description": "Reveals an entry's values. The answer carries `fields` (id, label, value, type, masked for each) and, when exactly one field is returned, `value`. Pass `fieldIds` to reveal only some fields. Subject to the node's two-factor policy and to the vault's lock state.",
+      "input_schema": "see how_to_read: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_get_metadata",
+      "broker_op": "entry.get",
+      "capability_needed": "read",
+      "agent_access": "read-only metadata",
+      "description": "Describes one entry without revealing it: its type, sensitivity, generation and each field's id, label, type and masking — never a value. Use it to find the field ids the other tools take. Needs the vault and node unlocked (labels are encrypted with the values).",
+      "input_schema": "see how_to_read: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_create",
+      "broker_op": "entry.create",
+      "capability_needed": "create",
+      "agent_access": "read-write within its node",
+      "description": "Creates a new entry (a name not already present on the node): one `value`, or a `fields` array of {label, value} objects for several fields. Send structure — the broker does not parse `label: value` text. Works on a locked vault — lands in the pending tray for human review at next unlock.",
+      "input_schema": "see how_to_write: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_update",
+      "broker_op": "entry.update",
+      "capability_needed": "update",
+      "agent_access": "read-write within its node",
+      "description": "Modifies an existing entry: `value` replaces one field's value (name the field with `field` when the entry has several), `fields` replaces the whole list. Requires the vault unlocked — a locked-vault write-without-read-first would be credential substitution, not an update.",
+      "input_schema": "see how_to_write: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_rotate",
+      "broker_op": "entry.rotate",
+      "capability_needed": "update",
+      "agent_access": "read-write within its node",
+      "description": "Replaces an entry's value (or its fields) and preserves the previous ciphertext as history. Takes the same body as credmgr_update. Requires the vault unlocked — same policy gate as credmgr_update: a legitimate rotation implies you could have read what you are replacing.",
+      "input_schema": "see how_to_write: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_field_add",
+      "broker_op": "field.add",
+      "capability_needed": "update",
+      "agent_access": "read-write within its node",
+      "description": "Adds fields to an entry (appended, or inserted at `position`) — it never replaces what is there. The previous state is retained; credmgr_undo reverses it. Requires the vault unlocked.",
+      "input_schema": "see how_to_write: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_field_update",
+      "broker_op": "field.update",
+      "capability_needed": "update",
+      "agent_access": "read-write within its node",
+      "description": "Changes one field — its label, its value, its type or its masking (`\"auto\"` goes back to inferring a type or masking). The previous state is retained; credmgr_undo reverses it. Requires the vault unlocked.",
+      "input_schema": "see how_to_write: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_field_remove",
+      "broker_op": "field.remove",
+      "capability_needed": "update",
+      "agent_access": "read-write within its node",
+      "description": "Removes one field from an entry; the last field cannot be removed (remove the entry instead). The previous state is retained; credmgr_undo reverses it. Requires the vault unlocked.",
+      "input_schema": "see how_to_write: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_remove",
+      "broker_op": "entry.remove",
+      "capability_needed": "update",
+      "agent_access": "read-write within its node",
+      "description": "Soft-deletes an entry into a 7-day recovery window. Requires the vault unlocked. The entry stops appearing in credmgr_list/credmgr_search immediately; a human can recover it within the window.",
+      "input_schema": "see how_to_write: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_undo",
+      "broker_op": "entry.undo",
+      "capability_needed": "update",
+      "agent_access": "read-write within its node",
+      "description": "Undoes a rotate, a field change or a removal, addressed by its audit record id (from credmgr_recent_changes) — never by guessing at what changed. Requires the vault unlocked. A removal's undo is only possible within its 7-day recovery window; a rotation's undo has no time limit. This is itself a new, audited action — the original record is never erased or rewritten.",
+      "input_schema": "see how_to_write: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_totp_code",
+      "broker_op": "totp.code",
+      "capability_needed": "reveal",
+      "agent_access": "read with approval",
+      "description": "Returns the current 6-digit code for a stored TOTP item. On an entry with several fields, name the seed's field with `field` unless exactly one field is a TOTP seed. Never returns the seed itself — there is no tool that does; a leaked code is worth 30 seconds, a leaked seed is worth forever.",
+      "input_schema": "see how_to_read: the schema is given once, beside the task"
+    },
+    {
+      "name": "credmgr_recent_changes",
+      "broker_op": "audit.tail",
+      "capability_needed": "list",
+      "agent_access": "read-only metadata",
+      "description": "Redacted feed of recent decisions (allow and deny) — id, action, timestamp, actor. Never before/after values, and never the fields an agent caller cannot have (node, decision, detail): the underlying op is always redacted for an agent origin, not merely by this tool's own choice.",
+      "input_schema": "see how_to_read: the schema is given once, beside the task"
+    }
+  ],
+  "agent_reachable_broker_ops": [
+    "audit.tail",
+    "entry.create",
+    "entry.get",
+    "entry.list",
+    "entry.remove",
+    "entry.reveal",
+    "entry.rotate",
+    "entry.undo",
+    "entry.update",
+    "field.add",
+    "field.remove",
+    "field.update",
+    "search",
+    "totp.code",
+    "whoami"
+  ],
+  "field_types": [
+    "password",
+    "api-key",
+    "private-key",
+    "seed-phrase",
+    "totp-seed",
+    "username",
+    "host",
+    "port",
+    "url",
+    "certificate",
+    "text"
+  ],
+  "entry_types": [
+    "server",
+    "database",
+    "api",
+    "wallet",
+    "login",
+    "ssh",
+    "certificate",
+    "token",
+    "totp",
+    "env-bundle",
+    "note",
+    "other"
+  ],
+  "sensitivity_levels": [
+    "low",
+    "medium",
+    "high",
+    "critical"
+  ],
+  "capabilities": [
+    "list",
+    "read",
+    "reveal",
+    "create",
+    "update",
+    "notes",
+    "admin"
+  ],
+  "error_codes": [
+    {"code": "node_access_denied", "class": "Authorisation", "what_to_do": "Stop. The remedy field names the human action that would allow it (usually a grant). Tell the operator what you need and why in one sentence, and carry on with other work. Do not retry or rephrase."},
+    {"code": "two_factor_required", "class": "Authentication in progress", "what_to_do": "The node asks for a second factor and none is in force. A person must give a code (an elevation lasts five minutes for the whole vault). Ask the operator, then retry once after they confirm. Do not ask for the code yourself."},
+    {"code": "approval_pending", "class": "Authentication in progress", "what_to_do": "The vault is locked and the operator has been asked. The request id and the seconds left are in the answer. Wait or do other work; a person decides with the passphrase. Retry the identical request after they say they decided, within 120 seconds. Do not poll in a loop."},
+    {"code": "conflict", "class": "Concurrency", "what_to_do": "Someone changed the entry first. Read it again (credmgr_get_metadata for the new generation), re-apply the change and retry once."},
+    {"code": "vault_locked", "class": "Lock state", "what_to_do": "The whole vault is locked. Only entry creation (held for review) is allowed. Do other work or ask the operator to unlock; do not retry in a loop."},
+    {"code": "node_locked", "class": "Lock state", "what_to_do": "The vault is unlocked but this one node is locked. Ask the operator to unlock the node; the remedy field says how."},
+    {"code": "wrong_passphrase", "class": "Authentication failed", "what_to_do": "Not an agent concern: unlock is a human step. Tell the operator."},
+    {"code": "malformed_request", "class": "Caller error", "what_to_do": "Fix the request. The message names the problem (an index or field id, never a value). Check the tool's input schema."},
+    {"code": "capability_not_held", "class": "Authorisation", "what_to_do": "Your scope does not carry this capability. Stop and ask the operator; no argument changes it."},
+    {"code": "not_found", "class": "Data state", "what_to_do": "No such node, entry, field or request. Check ids with credmgr_list and credmgr_get_metadata."},
+    {"code": "entry_exists", "class": "Data state", "what_to_do": "That name is already used on the node, or is a look-alike of one that is. Choose another name or update the existing entry."},
+    {"code": "internal", "class": "Broker fault", "what_to_do": "A local failure outside the documented errors. Do not retry in a loop; tell the operator."},
+    {"code": "presence_required", "class": "Transport not capable", "what_to_do": "This needs a live presence check that no client of this build can give. Nothing can be done here; tell the operator it is a human, native-app action."},
+    {"code": "archive_expired", "class": "Data state", "what_to_do": "The seven-day restore window of a sealed node has passed. Terminal; tell the operator."},
+    {"code": "approval_denied", "class": "Authentication failed", "what_to_do": "The operator denied the request, it expired after 120 seconds, or the vault locked after it was approved. Do not retry unprompted; ask the operator whether to ask again."},
+    {"code": "rate_limited", "class": "Authentication failed", "what_to_do": "Too many wrong attempts. retryAfterSeconds says how long to wait. Do not retry in a loop."},
+    {"code": "gate_verification_failed", "class": "Authentication failed", "what_to_do": "A code was wrong, replayed, expired or already used; the broker does not say which. Stop and tell the operator."},
+    {"code": "gate_not_enrolling", "class": "Authentication failed", "what_to_do": "No second-factor enrolment is in progress. A human step; tell the operator."},
+    {"code": "entry_removal_expired", "class": "Data state", "what_to_do": "The seven-day recovery window of a removed entry has passed. Terminal."},
+    {"code": "not_undoable", "class": "Data state", "what_to_do": "That audit record cannot be undone (wrong action, denied, or too old). Nothing to do."},
+    {"code": "vault_already_initialized", "class": "Vault bootstrap", "what_to_do": "A vault already exists. Not an agent concern."},
+    {"code": "vault_inside_git_working_tree", "class": "Vault bootstrap", "what_to_do": "The vault folder is inside a git working tree and is refused. Not an agent concern."},
+    {"code": "vault_init_not_pending", "class": "Vault bootstrap", "what_to_do": "No vault creation is in progress. Not an agent concern."},
+    {"code": "recovery_code_mismatch", "class": "Vault bootstrap", "what_to_do": "The retyped recovery code did not match. Not an agent concern."},
+    {"code": "session_expired", "class": "Session ended", "what_to_do": "The token presented is not a live login. Do not retry with it. An agent using MCP should not hold a token; tell the operator."}
+  ],
+  "broker_ops": [
+    {"op": "audit.get", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "The full, unredacted record of one decision. Built, but refuses everyone with presence_required in this build."},
+    {"op": "audit.tail", "capability_needed": "list", "agent_reach": "mcp", "mcp_tool": "credmgr_recent_changes", "summary": "Recent audit records. For an agent the feed is redacted to id, action, time and actor."},
+    {"op": "entry.create", "capability_needed": "create", "agent_reach": "mcp", "mcp_tool": "credmgr_create", "summary": "Create a new entry (one value or several fields). On a locked vault it is held in the pending tray."},
+    {"op": "entry.create_batch", "capability_needed": "create", "agent_reach": "capability_only", "mcp_tool": null, "summary": "Create 1 to 500 entries in one all-or-nothing call (used by credmgr import)."},
+    {"op": "entry.get", "capability_needed": "read", "agent_reach": "mcp", "mcp_tool": "credmgr_get_metadata", "summary": "One entry's metadata: field ids, labels, types, masking. Never a value."},
+    {"op": "entry.list", "capability_needed": "list", "agent_reach": "mcp", "mcp_tool": "credmgr_list", "summary": "Entry names and ids on one node. A human session also gets type, sensitivity and counts."},
+    {"op": "entry.remove", "capability_needed": "update", "agent_reach": "mcp", "mcp_tool": "credmgr_remove", "summary": "Soft-delete an entry into a 7-day recovery window."},
+    {"op": "entry.restore", "capability_needed": "update", "agent_reach": "capability_only", "mcp_tool": null, "summary": "Bring a removed entry back inside its recovery window."},
+    {"op": "entry.reveal", "capability_needed": "reveal", "agent_reach": "mcp", "mcp_tool": "credmgr_get", "summary": "Return field values. Waits for a human when the vault is locked or the node asks for a second factor."},
+    {"op": "entry.rotate", "capability_needed": "update", "agent_reach": "mcp", "mcp_tool": "credmgr_rotate", "summary": "Replace a value and keep the previous one as history."},
+    {"op": "entry.undo", "capability_needed": "update", "agent_reach": "mcp", "mcp_tool": "credmgr_undo", "summary": "Undo a rotation, a field change or a removal, addressed by its audit record id."},
+    {"op": "entry.update", "capability_needed": "update", "agent_reach": "mcp", "mcp_tool": "credmgr_update", "summary": "Replace a field's value or the whole field list. Keeps no history."},
+    {"op": "field.add", "capability_needed": "update", "agent_reach": "mcp", "mcp_tool": "credmgr_field_add", "summary": "Add fields to an entry."},
+    {"op": "field.remove", "capability_needed": "update", "agent_reach": "mcp", "mcp_tool": "credmgr_field_remove", "summary": "Remove one field (never the last)."},
+    {"op": "field.reorder", "capability_needed": "update", "agent_reach": "capability_only", "mcp_tool": null, "summary": "Change the order of an entry's fields. Presentation only."},
+    {"op": "field.update", "capability_needed": "update", "agent_reach": "mcp", "mcp_tool": "credmgr_field_update", "summary": "Change one field's label, value, type or masking."},
+    {"op": "grant.create", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Create a grant between nodes. Built up to its gate, then refuses with presence_required in this build."},
+    {"op": "grant.list", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "List grants."},
+    {"op": "grant.revoke", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Revoke a grant."},
+    {"op": "graph.snapshot", "capability_needed": "list", "agent_reach": "capability_only", "mcp_tool": null, "summary": "The node tree the desktop app draws, filtered to what the caller may list."},
+    {"op": "maintenance.backup", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Write an encrypted backup archive under a passphrase the human chooses."},
+    {"op": "maintenance.doctor", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Diagnose and fix safe drift; optionally purge seals older than seven days."},
+    {"op": "maintenance.rotate_root", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Replace the root key and issue a new recovery code. Refuses with presence_required in this build."},
+    {"op": "maintenance.verify", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Check every envelope and manifest against its digest."},
+    {"op": "node.create", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Create a project or sub-node, optionally with work folders."},
+    {"op": "node.list", "capability_needed": "list", "agent_reach": "capability_only", "mcp_tool": null, "summary": "List nodes the caller may see."},
+    {"op": "node.policy", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Change a node's policy by partial patch. A patch that widens reach refuses with presence_required."},
+    {"op": "node.reparent", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Move a node under a different parent. Refuses with presence_required in this build."},
+    {"op": "node.restore", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Restore a sealed node within seven days."},
+    {"op": "node.seal", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Seal a node: its entries move to Orphaned, re-encrypted to the cold key."},
+    {"op": "node.set_workdirs", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Bind directories to a node so an agent started inside is scoped to it."},
+    {"op": "node.update", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Rename a node (the label only; the id never changes)."},
+    {"op": "notes.read", "capability_needed": "notes", "agent_reach": "human_only", "mcp_tool": null, "summary": "Read a node's markdown note. Needs the notes capability, which an agent scope never carries."},
+    {"op": "notes.write", "capability_needed": "notes", "agent_reach": "human_only", "mcp_tool": null, "summary": "Write a node's markdown note. Needs the notes capability, which an agent scope never carries."},
+    {"op": "search", "capability_needed": "list", "agent_reach": "mcp", "mcp_tool": "credmgr_search", "summary": "Search entry names across the nodes the caller can reach. Names only."},
+    {"op": "totp.code", "capability_needed": "reveal", "agent_reach": "mcp", "mcp_tool": "credmgr_totp_code", "summary": "The current six-digit code for a stored authenticator seed. Never the seed."},
+    {"op": "totp.seed", "capability_needed": "reveal", "agent_reach": "human_only", "mcp_tool": null, "summary": "The stored seed itself. Refuses every caller with presence_required in this build."},
+    {"op": "util.generate", "capability_needed": "create or update", "agent_reach": "capability_only", "mcp_tool": null, "summary": "Generate a random password (8 to 128 characters). The value is in the answer only: not stored, not audited."},
+    {"op": "vault.approval_decide", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Approve or deny an agent's waiting request. On a locked vault the passphrase (and the authenticator code) decide it."},
+    {"op": "vault.approval_get", "capability_needed": "none (read-only)", "agent_reach": "human_only", "mcp_tool": null, "summary": "Describe waiting agent requests. Works on a locked vault and decrypts nothing."},
+    {"op": "vault.gate_enroll_begin", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Start setting up or replacing the vault's second factor."},
+    {"op": "vault.gate_enroll_confirm", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Confirm the second factor with one code; issues ten recovery codes."},
+    {"op": "vault.gate_recover", "capability_needed": "none (passphrase + recovery code)", "agent_reach": "human_only", "mcp_tool": null, "summary": "Reset the second factor with the passphrase and the root recovery code. Never unlocks."},
+    {"op": "vault.gate_verify", "capability_needed": "none (a code)", "agent_reach": "bootstrap", "mcp_tool": null, "summary": "Complete an unlock that asked for a code, or, from a logged-in session, open a five-minute step-up window."},
+    {"op": "vault.init_begin", "capability_needed": "none", "agent_reach": "bootstrap", "mcp_tool": null, "summary": "Start creating the vault (only when none exists)."},
+    {"op": "vault.init_confirm", "capability_needed": "none", "agent_reach": "bootstrap", "mcp_tool": null, "summary": "Finish creating the vault by retyping the recovery code."},
+    {"op": "vault.lock", "capability_needed": "none", "agent_reach": "bootstrap", "mcp_tool": null, "summary": "Lock the vault and end every login."},
+    {"op": "vault.node_lock", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Lock one node while the vault stays unlocked."},
+    {"op": "vault.node_unlock", "capability_needed": "admin", "agent_reach": "human_only", "mcp_tool": null, "summary": "Unlock one node."},
+    {"op": "vault.pending_accept", "capability_needed": "create", "agent_reach": "capability_only", "mcp_tool": null, "summary": "Accept a held entry into its node. This is the human's review step; an agent must not use it."},
+    {"op": "vault.pending_discard", "capability_needed": "create", "agent_reach": "capability_only", "mcp_tool": null, "summary": "Discard a held entry. This is the human's review step; an agent must not use it."},
+    {"op": "vault.pending_list", "capability_needed": "read", "agent_reach": "capability_only", "mcp_tool": null, "summary": "List entries held in the review tray (names and counts, never values)."},
+    {"op": "vault.status", "capability_needed": "none", "agent_reach": "bootstrap", "mcp_tool": null, "summary": "Whether the vault is locked, initialised, and how many agent requests wait."},
+    {"op": "vault.unlock", "capability_needed": "none (passphrase)", "agent_reach": "bootstrap", "mcp_tool": null, "summary": "Unlock with the passphrase; returns a login token, or asks for a second-factor code."},
+    {"op": "whoami", "capability_needed": "none", "agent_reach": "mcp", "mcp_tool": "credmgr_whoami", "summary": "The caller's own node, capabilities and the nodes it can reach."}
+  ],
+  "broker_op_reach_meaning": {
+    "mcp": "Exposed as an MCP tool. This is the agent's whole interface.",
+    "capability_only": "No MCP tool. The broker would accept the call from an agent-origin client that holds the capability, so an agent must not use it: several are the human's review or maintenance steps.",
+    "human_only": "Needs Admin, the owner's login, the notes capability or presence, which an agent scope never carries.",
+    "bootstrap": "Vault creation, unlock and lock operations that any local process may send and an agent never needs."
+  },
+  "agent_access_meaning": {
+    "none": "No agent path. The feature is part of the app or the command line and an agent has no tool for it, or it is not relevant to an agent.",
+    "read-only metadata": "An agent can use it through an MCP tool to learn names, ids, labels, types, counts or its own boundary. No secret value is returned.",
+    "read with approval": "An agent can ask for secret values through an MCP tool. The broker answers at once only when the vault and node are unlocked and the node asks for no second factor; otherwise the request waits for a human (approval_pending or two_factor_required).",
+    "read-write within its node": "An agent can create or change data through an MCP tool, only inside the node it is scoped to, subject to that node's agent-access policy. Changes are audited, generation-checked and undoable.",
+    "human only": "Only a person can do this. An agent has no tool for it and the broker refuses an agent-origin caller."
+  },
+  "cli": {
+    "top_level_commands": [
+      "init",
+      "status",
+      "unlock",
+      "lock",
+      "gate",
+      "whoami",
+      "list",
+      "get",
+      "field",
+      "search",
+      "set",
+      "rotate",
+      "rm",
+      "undo",
+      "audit",
+      "verify",
+      "pending",
+      "doctor",
+      "generate",
+      "approve",
+      "approvals",
+      "backup",
+      "node",
+      "grant",
+      "import",
+      "notes",
+      "mcp"
+    ],
+    "usage": [
+      "credmgr init",
+      "credmgr status",
+      "credmgr unlock",
+      "credmgr gate verify <code>",
+      "credmgr gate enroll",
+      "credmgr gate recover",
+      "credmgr lock",
+      "credmgr whoami [--json]",
+      "credmgr list [--node <id>] [--json]",
+      "credmgr get <name> [--node <id>] [--field <label> | --field-id <id> | --all] [--json]",
+      "credmgr search <term> [--json]",
+      "credmgr set <name> --node <id> [--label <l>]",
+      "credmgr set <name> --node <id> --bulk",
+      "credmgr set <name> --node <id> (--field <label> | --field-id <id>) [--label <new>]",
+      "credmgr rotate <name> [--node <id>] [--field <label> | --field-id <id>]",
+      "credmgr field ls <name> [--node <id>] [--json]",
+      "credmgr field add <name> (--label <l> | --bulk) [--at <n>]",
+      "credmgr field set <name> (--field <l> | --field-id <id>) [--label <new>] [--type <t>|auto] [--mask on|off|auto]",
+      "credmgr field rm <name> (--field <l> | --field-id <id>)",
+      "credmgr field mv <name> (--field <l> | --field-id <id>) --to <n>",
+      "credmgr rm <name> [--node <id>]",
+      "credmgr undo <id> --node <id> [--mode replace|keep-both]",
+      "credmgr audit [--limit N] [--json]",
+      "credmgr verify [--json]",
+      "credmgr pending [--node <id>] [--json] (writes made while locked, awaiting review)",
+      "credmgr pending accept|discard <entry> --node <id>",
+      "credmgr doctor [--dry-run] [--purge-expired-seals]",
+      "credmgr generate [--length <n>] [--no-symbols] [--pronounceable] [--json]",
+      "credmgr approve <request> [--deny] [--code <n>]",
+      "credmgr approvals [<request>] [--json]",
+      "credmgr doctor --rebuild-registry --confirm --known-revoked <id>[,<id>...]",
+      "credmgr backup [--retain N]",
+      "credmgr import <file|-> --node <id> [--json]",
+      "credmgr notes show <id> [--json]",
+      "credmgr notes set <id> [--file <path>] (note text from the file or stdin; empty input is",
+      "credmgr notes clear <id>",
+      "credmgr node ls [--json]",
+      "credmgr node create <id> --parent <id> [--label <l>] [--workdir <dir>]...",
+      "credmgr node workdir <id> [<dir>...]",
+      "credmgr node rename <id> <label>",
+      "credmgr node policy <id> --reason \"...\" [--agent-access read-write|read-only|none] [--require-two-factor never|reveal|always] [--lock-after-seconds <n>|none] [--json] [--private-names|--no-private-names] [--sibling-visibility shared|isolated] [--descendant-read|--no-descendant-read]",
+      "credmgr node seal <name>",
+      "credmgr node restore <name>",
+      "credmgr grant <from> --to <node> --scope read --reason \"...\"",
+      "credmgr grant ls [--json]",
+      "credmgr grant revoke <id>",
+      "credmgr mcp",
+      "credmgr --version"
+    ],
+    "notes": [
+      "A secret value is read from stdin and never travels as an argument.",
+      "credmgr mcp starts the MCP server; credmgr help lists every flag.",
+      "`credmgr unlock` prints a login token for a human's shell. It is not for agents."
+    ]
+  },
+  "area_titles": {
+    "first-run": "First run and recovery",
+    "unlock": "Unlocking, locking and the menu-bar icon",
+    "navigation": "Graph, tree and search",
+    "nodes": "Projects and nodes",
+    "entries": "Entries and notes",
+    "fields": "Fields, reveal and copy",
+    "totp": "Authenticator codes you store",
+    "two-factor": "The vault's second factor",
+    "approvals": "Agent requests while locked",
+    "pending": "Writes made while locked",
+    "grants": "Grants",
+    "sealing": "Sealing and restoring",
+    "audit": "Audit",
+    "backup": "Backup, checks and maintenance",
+    "import": "Importing",
+    "settings": "Settings",
+    "extras": "Cosmetics, games and donations",
+    "agents": "AI agents and the MCP server",
+    "cli": "Command line and broker",
+    "shortcuts": "Keyboard shortcuts",
+    "about": "About, privacy and licence",
+    "not-built": "Planned, not in this build"
+  },
+  "feature_counts": {
+    "total": 142,
+    "by_area": {
+      "first-run": 5,
+      "unlock": 8,
+      "navigation": 8,
+      "nodes": 12,
+      "entries": 12,
+      "fields": 9,
+      "totp": 3,
+      "two-factor": 5,
+      "approvals": 2,
+      "pending": 3,
+      "grants": 4,
+      "sealing": 3,
+      "audit": 3,
+      "backup": 6,
+      "import": 1,
+      "settings": 7,
+      "extras": 4,
+      "agents": 10,
+      "cli": 6,
+      "shortcuts": 10,
+      "about": 4,
+      "not-built": 17
+    },
+    "by_status": {
+      "built": 108,
+      "partial": 13,
+      "planned": 21
+    }
+  },
+  "features": [
+    {"id": "first-run-passphrase", "title": "Create the vault: choose a passphrase", "area": "first-run", "summary": "The first time the app starts with no vault, it asks you to choose a passphrase (step 1 of 4). The passphrase opens the vault on this machine; nothing is created anywhere else. Nothing in this version can recover a lost passphrase.", "where": "App: first run, step 1 of 4. CLI: credmgr init", "steps": ["Type a passphrase of at least 4 characters (8 or more is recommended).", "Type it again to confirm.", "Choose Next."], "keywords": ["new vault", "create vault", "setup", "install", "first launch", "onboarding", "init", "password", "master password", "passphrase"], "status": "built", "cli": "credmgr init", "broker_op": "vault.init_begin", "mcp_tool": null, "agent_access": "human only", "area_title": "First run and recovery"},
+    {"id": "first-run-recovery-code", "title": "Recovery code, shown once", "area": "first-run", "summary": "Step 2 shows a 256-bit root recovery code once. Together with your passphrase it resets the second factor if you lose your authenticator. Write it on paper and keep it away from the passphrase. Retyping it is optional in the app; the CLI requires the retype before it writes anything.", "where": "App: first run, step 2 of 4. CLI: credmgr init (retype when asked)", "steps": ["Copy the code onto paper.", "Optionally retype it to prove you have it, or skip.", "Choose Next."], "keywords": ["recovery code", "root recovery", "backup code", "lost authenticator", "write down", "paper", "init confirm"], "status": "built", "cli": "credmgr init", "broker_op": "vault.init_confirm", "mcp_tool": null, "agent_access": "human only", "area_title": "First run and recovery"},
+    {"id": "first-run-second-factor", "title": "Optional second factor at first run", "area": "first-run", "summary": "Step 3 offers to set up a second factor (an authenticator app). The QR code is drawn inside the window and nothing is sent anywhere. After you confirm one code, ten one-time recovery codes are shown once. You may skip it and enrol later in Settings; until you do, the vault rests on the passphrase alone.", "where": "App: first run, step 3 of 4 (Enrol later to skip)", "steps": ["Scan the QR code, or type the key by hand.", "Enter one 6-digit code to confirm.", "Save the ten recovery codes, then continue."], "keywords": ["2fa", "authenticator", "totp", "qr code", "two factor", "mfa", "google authenticator", "enrol", "enroll"], "status": "built", "cli": null, "broker_op": "vault.gate_enroll_begin", "mcp_tool": null, "agent_access": "human only", "area_title": "First run and recovery"},
+    {"id": "first-run-projects", "title": "Name your first projects", "area": "first-run", "summary": "Step 4 creates up to three starting projects. Global is created automatically, and so is the Orphaned node that sealing needs. Each project is its own boundary: what is stored in one is invisible to the others. A new vault starts empty; nothing is imported.", "where": "App: first run, step 4 of 4", "steps": ["Type up to three project names, or leave them blank.", "Finish. You land on the graph."], "keywords": ["first project", "initial nodes", "starter projects", "global", "empty vault"], "status": "built", "cli": null, "broker_op": "node.create", "mcp_tool": null, "agent_access": "human only", "area_title": "First run and recovery"},
+    {"id": "broker-down-screen", "title": "The broker is not running", "area": "first-run", "summary": "If the app shows 'credmgr cannot reach its broker', the credmgrd process is not running or its socket is not where the app looks. Start credmgrd in a terminal or let launchd keep it running, then choose Retry. Nothing from the last session is shown.", "where": "App: startup screen. Terminal: credmgrd", "steps": ["Run credmgrd, or install the launchd unit from the release package.", "Choose Retry."], "keywords": ["cannot reach broker", "credmgrd not running", "socket", "starting credmgr", "could not start", "launchd", "daemon"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "First run and recovery"},
+    {"id": "unlock-passphrase", "title": "Unlock with your passphrase", "area": "unlock", "summary": "The Lock screen asks for the passphrase. Wrong tries count toward a back-off that grows with each failure; while backed off, the broker answers rate_limited with the seconds to wait.", "where": "App: Lock screen > passphrase. CLI: credmgr unlock", "steps": ["Type the passphrase.", "Press Enter or choose Unlock.", "If two-factor is on, the screen asks for a code next."], "keywords": ["login", "sign in", "open vault", "locked screen", "password", "back-off", "rate limited", "too many attempts"], "status": "built", "cli": "credmgr unlock", "broker_op": "vault.unlock", "mcp_tool": null, "agent_access": "human only", "area_title": "Unlocking, locking and the menu-bar icon"},
+    {"id": "unlock-second-factor", "title": "Unlock with a second-factor code", "area": "unlock", "summary": "When the vault has a second factor, unlocking asks for the 6 digits from your authenticator, or one of your ten recovery codes (each works once). On the command line, credmgr unlock answers two_factor_required and credmgr gate verify completes it.", "where": "App: Lock screen > 2FA code. CLI: credmgr gate verify <code>", "steps": ["Enter the 6-digit code or a recovery code.", "Choose Verify."], "keywords": ["2fa code", "authenticator code", "recovery code", "verify", "two_factor_required", "otp"], "status": "built", "cli": "credmgr gate verify <code>", "broker_op": "vault.gate_verify", "mcp_tool": null, "agent_access": "human only", "area_title": "Unlocking, locking and the menu-bar icon"},
+    {"id": "lock-now", "title": "Lock the vault now", "area": "unlock", "summary": "Locking ends every login, clears a copied secret from the clipboard and returns the app to the Lock screen. It works from anywhere, including while typing or with a dialog open.", "where": "App: header lock chip, vault menu > Lock vault, or the shortcut Cmd+L. CLI: credmgr lock", "steps": ["Press Cmd+L, or choose the 'unlocked' chip in the header."], "keywords": ["lock", "log out", "sign out", "cmd l", "lock vault", "end session"], "status": "built", "cli": "credmgr lock", "broker_op": "vault.lock", "mcp_tool": null, "agent_access": "none", "area_title": "Unlocking, locking and the menu-bar icon"},
+    {"id": "auto-lock-idle", "title": "Auto-lock after idle time", "area": "unlock", "summary": "The app locks itself after a period with no activity: 5, 15 or 60 minutes, or never (the setting warns). Even when set to never, the broker still locks on its own idle timer (15 minutes by default). Hiding the window also locks when auto-lock is on.", "where": "App: Settings > Security > Auto-lock", "steps": ["Open Settings (the gear in the header).", "Choose Security.", "Pick a time in Auto-lock."], "keywords": ["idle", "timeout", "inactivity", "auto lock", "lock after", "minutes"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Unlocking, locking and the menu-bar icon"},
+    {"id": "lock-on-sleep", "title": "Lock on sleep, screen lock and window close", "area": "unlock", "summary": "The desktop app locks the vault when the Mac sleeps, when the screen locks, when another user session takes over, and when you close the window. The Lock screen says why it locked. A daemon running without the app does not do this.", "where": "App: automatic. Menu-bar icon > Lock vault locks on demand", "steps": ["Nothing to do; it happens by itself.", "The Lock screen shows a note such as 'Locked because this Mac went to sleep.'"], "keywords": ["sleep", "screen lock", "lid", "fast user switching", "close window", "locked because"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Unlocking, locking and the menu-bar icon"},
+    {"id": "node-lock", "title": "Lock a single node", "area": "unlock", "summary": "A node can be locked on its own while the vault stays unlocked. Names and types stay visible but values need the node unlocked. A node's policy can lock it after a number of idle seconds.", "where": "App: node right-click or the three-dot menu > Lock now / Unlock node; inspector > Unlock node. CLI: node policy --lock-after-seconds", "steps": ["Right-click the node, choose Lock now.", "To reopen it, choose Unlock node."], "keywords": ["node lock", "lock project", "lock wallet node", "unlock node", "lock now", "lock after seconds"], "status": "built", "cli": "credmgr node policy <id> --reason \"...\" --lock-after-seconds <n>|none", "broker_op": "vault.node_lock", "mcp_tool": null, "agent_access": "human only", "area_title": "Unlocking, locking and the menu-bar icon"},
+    {"id": "node-unlock", "title": "Unlock a single node", "area": "unlock", "summary": "Reopens a node that was locked on its own (by hand or by its idle timer) without touching the rest of the vault. Names and types are visible while it is locked; values and field labels need it unlocked. If a node says it is locked, this is the fix. There is no CLI command for it yet; use the app.", "where": "App: node menu > Unlock node; inspector > Unlock node", "steps": ["Right-click the node, choose Unlock node."], "keywords": ["unlock node", "node locked", "node_locked", "reopen node"], "status": "built", "cli": null, "broker_op": "vault.node_unlock", "mcp_tool": null, "agent_access": "human only", "area_title": "Unlocking, locking and the menu-bar icon"},
+    {"id": "graph-view", "title": "The graph", "area": "navigation", "summary": "The main view draws your nodes as a graph. A filled circle is global, a ringed circle a project, a thinner ring a sub-node, a dashed ring the Orphaned node. Small dots around a node are its entries; their colour is a hash of the entry id, never a name or value. You can drag nodes to arrange them; positions are remembered on this device under hashed ids.", "where": "App: main area, graph mode (the 'graph' button in the left rail)", "steps": ["Click a node to select it and open the inspector.", "Drag a node to move it.", "Press F to fit the graph to the window."], "keywords": ["graph", "map", "nodes", "circles", "legend", "dots", "orbit", "canvas", "layout"], "status": "built", "cli": null, "broker_op": "graph.snapshot", "mcp_tool": null, "agent_access": "none", "area_title": "Graph, tree and search"},
+    {"id": "hover-card", "title": "Hover cards", "area": "navigation", "summary": "Hovering a node shows how many entries it holds and how many of them are authenticator seeds. Hovering an entry dot shows its entry type. Nothing about names or values.", "where": "App: hover over a node or an entry dot on the graph", "steps": ["Point at a node."], "keywords": ["tooltip", "counts", "entries count", "2fa count", "hover"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Graph, tree and search"},
+    {"id": "tree-view", "title": "The tree view", "area": "navigation", "summary": "The tree is a full keyboard- and screen-reader-accessible peer to the graph, with the same information and the same node menu. It is not a fallback.", "where": "App: 'tree' button in the left rail, or press T", "steps": ["Press T to switch between graph and tree.", "Use the three-dot button on a row for the node menu."], "keywords": ["tree", "list view", "accessible", "screen reader", "keyboard", "outline"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Graph, tree and search"},
+    {"id": "rail", "title": "The left rail", "area": "navigation", "summary": "The rail lists every node with its badges and entry count, plus the Orphaned node. On a narrow window it is hidden behind the menu button (three lines) in the header. Right-click a row for the node menu.", "where": "App: left rail (the menu button opens it on a narrow window)", "steps": ["Click a row to select the node.", "Right-click a row for Open, New entry, Rename, Lock and more."], "keywords": ["worktree", "sidebar", "nodes list", "hamburger", "menu button"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Graph, tree and search"},
+    {"id": "node-menu", "title": "The node menu", "area": "navigation", "summary": "Right-clicking a node (or the three-dot button in the tree) offers Open, New entry, New project or New sub-node, Grant access, Rename, Lock now or Unlock node, and Remove node. Global has no Rename or Remove. The Orphaned node only offers Open.", "where": "App: right-click a node in the graph or rail; three-dot button in the tree", "steps": ["Right-click the node.", "Choose an item."], "keywords": ["context menu", "right click", "node actions", "three dots", "kebab"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Graph, tree and search"},
+    {"id": "search", "title": "Search", "area": "navigation", "summary": "The header search box finds node names in the page and entry names through the broker's search. It matches names only: field labels and values are never searched. It shows up to nine rows and says how many more there are. With an empty box it offers 'Add new' and, in Pro mode, recent nodes.", "where": "App: header search box, or press / to focus it. CLI: credmgr search <term>", "steps": ["Press / (or click the box) and type.", "Choose a row to select the node or open the entry."], "keywords": ["find", "lookup", "search bar", "filter", "entry name"], "status": "built", "cli": "credmgr search <term> [--json]", "broker_op": "search", "mcp_tool": "credmgr_search", "agent_access": "read-only metadata", "area_title": "Graph, tree and search"},
+    {"id": "entries-mode", "title": "Entries: all nodes or selected only", "area": "navigation", "summary": "The graph can show every node's entry dots at once or only the selected node's. The choice is remembered.", "where": "App: button at the top of the graph, or press E", "steps": ["Press E to toggle."], "keywords": ["entry dots", "show entries", "all nodes", "selected node"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Graph, tree and search"},
+    {"id": "orphaned-view", "title": "The Orphaned node", "area": "navigation", "summary": "Orphaned holds sealed items. Names stay visible; the values are human-only and this build cannot open them, because that needs a presence check (Touch ID) it cannot make yet. The open button asks the broker and is refused.", "where": "App: left rail > orphaned, or vault menu > Orphaned", "steps": ["Select orphaned in the rail.", "Read the list of names."], "keywords": ["orphan", "sealed items", "orphaned node", "cold key"], "status": "partial", "cli": null, "broker_op": "entry.reveal", "mcp_tool": null, "agent_access": "human only", "area_title": "Graph, tree and search"},
+    {"id": "create-project", "title": "Create a project", "area": "nodes", "summary": "A project is a boundary: it has its own key, notes and agent scope, and projects never read each other. The dialog takes a name, a parent and optional work folders. In Pro mode an advanced block sets agent access, second-factor requirement, hidden name and sibling sharing at creation.", "where": "App: right-click global > New project; Settings > Nodes > + New project (Pro); the empty-graph button. CLI: credmgr node create", "steps": ["Open the dialog from one of the places above.", "Type a name (1 to 120 characters).", "Pick the parent: global makes a project.", "Choose Create node."], "keywords": ["new project", "new node", "add project", "boundary", "create node", "workspace"], "status": "built", "cli": "credmgr node create <id> --parent <id> [--label <l>] [--workdir <dir>]...", "broker_op": "node.create", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "create-sub-node", "title": "Create a sub-node", "area": "nodes", "summary": "A sub-node lives under a project. The tree stops at two levels, so a sub-node cannot have children.", "where": "App: right-click a project > New sub-node", "steps": ["Right-click the project.", "Choose New sub-node.", "Name it and choose Create node."], "keywords": ["sub node", "child node", "environment", "dev staging prod", "depth 2"], "status": "built", "cli": "credmgr node create <id> --parent <project> --label <l>", "broker_op": "node.create", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "node-workdirs", "title": "Work folders: scope an agent to a node", "area": "nodes", "summary": "Binding folders to a node means any process started inside one of them, such as an AI coding agent, is scoped to that node automatically: it can read the node and its ancestors, never another project. The longest matching folder wins. An agent started outside every bound folder sees only that the vault exists.", "where": "App: New node dialog > work folders. CLI: credmgr node workdir <id> <dir>...", "steps": ["Add a folder when creating the node, or run credmgr node workdir <id> <dir>.", "Run credmgr node workdir <id> with no folder to clear the list."], "keywords": ["workdir", "working directory", "cwd", "bind folder", "scope agent", "project folder", "agent scope"], "status": "built", "cli": "credmgr node workdir <id> [<dir>...]", "broker_op": "node.set_workdirs", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "rename-node", "title": "Rename a node", "area": "nodes", "summary": "Renaming changes the display name only; the node id never changes. Global cannot be renamed.", "where": "App: right-click a node > Rename, then Enter or click away. CLI: credmgr node rename", "steps": ["Choose Rename, type the new name, press Enter. Esc cancels."], "keywords": ["rename project", "change label", "display name"], "status": "built", "cli": "credmgr node rename <id> <label>", "broker_op": "node.update", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "node-policy-agent-access", "title": "Node policy: agent access", "area": "nodes", "summary": "Sets what an agent scoped to this node may do: read-write (list, read metadata, reveal, create, update), read-only (list, read metadata, reveal) or none. In the app it is chosen when the node is created (Pro mode); change it later with the CLI.", "where": "App: New node dialog > advanced (Pro). CLI: credmgr node policy", "steps": ["Run credmgr node policy <id> --reason \"why\" --agent-access read-only."], "keywords": ["agent access", "read-only agent", "read-write", "policy", "agentAccess", "permissions"], "status": "partial", "cli": "credmgr node policy <id> --reason \"...\" --agent-access read-write|read-only|none", "broker_op": "node.policy", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "node-policy-two-factor", "title": "Node policy: require a second factor", "area": "nodes", "summary": "With a vault second factor set up, a node can ask callers other than you for a fresh code: 'reveal' asks before a value leaves the vault, 'always' asks before any read of the node. Your own login is not asked. The factor and the five-minute window belong to the whole vault, not to one node.", "where": "App: New node dialog > advanced (Pro); the node shows a chip when it is set. CLI: credmgr node policy --require-two-factor", "steps": ["Run credmgr node policy <id> --reason \"why\" --require-two-factor reveal."], "keywords": ["requireTwoFactor", "2fa on reveal", "wallet node", "always", "reveal level"], "status": "partial", "cli": "credmgr node policy <id> --reason \"...\" --require-two-factor never|reveal|always", "broker_op": "node.policy", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "node-policy-private-names", "title": "Node policy: hide the node's name", "area": "nodes", "summary": "A node with hidden names shows other callers an opaque row instead of its label, entry names and notes. The node id is opaque and fixed when the node is created.", "where": "App: New node dialog > 'Hide this node's name' (Pro). CLI: credmgr node policy --private-names", "steps": ["Tick the option when creating the node, or run credmgr node policy <id> --reason \"why\" --private-names."], "keywords": ["privateNames", "hidden name", "opaque", "nameHidden", "secret project"], "status": "partial", "cli": "credmgr node policy <id> --reason \"...\" --private-names|--no-private-names", "broker_op": "node.policy", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "node-policy-sharing", "title": "Node policy: sibling and descendant reading", "area": "nodes", "summary": "Two options widen who can read: sub-nodes seeing each other (siblings shared) and a node reading its children. Turning either off is immediate. Turning either on needs a presence check this build cannot make, so the broker refuses and applies nothing.", "where": "CLI: credmgr node policy --sibling-visibility, --descendant-read", "steps": ["Run credmgr node policy with --sibling-visibility isolated or --no-descendant-read to narrow."], "keywords": ["siblingVisibility", "descendantRead", "share between sub-nodes", "widen"], "status": "partial", "cli": "credmgr node policy <id> --reason \"...\" --sibling-visibility shared|isolated --descendant-read|--no-descendant-read", "broker_op": "node.policy", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "node-policy-lock-after", "title": "Node policy: lock a node after idle seconds", "area": "nodes", "summary": "A node can carry its own idle timer. When it runs out the node locks while the vault stays open.", "where": "CLI: credmgr node policy --lock-after-seconds <n>|none", "steps": ["Run credmgr node policy <id> --reason \"why\" --lock-after-seconds 600."], "keywords": ["lockAfterSeconds", "idle node", "wallet", "auto lock node"], "status": "partial", "cli": "credmgr node policy <id> --reason \"...\" --lock-after-seconds <n>|none", "broker_op": "node.policy", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "node-notes", "title": "Node notes", "area": "nodes", "summary": "Each node can hold one markdown note, sealed under the node's key. The inspector shows it. Writing a note is a CLI action; an empty input is refused so a failed pipe cannot erase a note, and 'notes clear' is the only deletion. Agents never hold the notes capability.", "where": "App: inspector > notes (read). CLI: credmgr notes show | set | clear", "steps": ["Run credmgr notes set <id> --file ./notes.md.", "Run credmgr notes show <id>."], "keywords": ["note", "markdown", "node note", "context", "readme"], "status": "built", "cli": "credmgr notes show <id> | set <id> [--file <path>] | clear <id>", "broker_op": "notes.read", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "node-notes-write", "title": "Write or clear a node note", "area": "nodes", "summary": "Notes are written on the command line: credmgr notes set takes the text from a file or stdin and refuses empty input, and credmgr notes clear is the only way to delete one. The desktop app shows a note but has no editor for it.", "where": "CLI: credmgr notes set <id> [--file <path>], credmgr notes clear <id>", "steps": ["Run credmgr notes set acme --file ./notes.md."], "keywords": ["write note", "edit note", "clear note", "notes set"], "status": "partial", "cli": "credmgr notes set <id> [--file <path>] | clear <id>", "broker_op": "notes.write", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "node-reparent", "title": "Move a node under a different parent", "area": "nodes", "summary": "Re-parenting changes which nodes can read a node, which is a grant by another name, so it needs presence. The operation exists and refuses everyone in this build.", "where": "No control in the app or CLI", "steps": ["Not available."], "keywords": ["reparent", "move node", "change parent"], "status": "planned", "cli": null, "broker_op": "node.reparent", "mcp_tool": null, "agent_access": "human only", "area_title": "Projects and nodes"},
+    {"id": "add-entry", "title": "Add an entry", "area": "entries", "summary": "An entry is one named secret that can hold any number of fields, each with a label you choose. The dialog asks where (which node), a name (up to 200 characters), and either a single set of fields or a bulk paste. A preview shows exactly what will be stored; nothing is written until you save. If the node or vault is locked the entry is held for review instead (see Writes made while locked).", "where": "App: inspector > + New entry, press N, node menu > New entry, or search > Add new. CLI: credmgr set <name> --node <id>", "steps": ["Press N.", "Pick the node and type a name.", "Enter label and value, or switch to Bulk.", "Check the preview, then choose Save (or Save and add another)."], "keywords": ["new entry", "add secret", "add credential", "store password", "create secret", "save api key", "add item"], "status": "built", "cli": "credmgr set <name> --node <id> [--label <l>]", "broker_op": "entry.create", "mcp_tool": "credmgr_create", "agent_access": "read-write within its node", "area_title": "Entries and notes"},
+    {"id": "bulk-paste", "title": "Bulk paste: one entry from many lines", "area": "entries", "summary": "Bulk mode takes a paste of 'label: value' lines (a colon followed by a space) and turns it into one entry with one field per line. A line of three slashes separates blocks, so a value can span lines, such as a private key. A box can split each slash-separated block into its own entry. The preview shows the result before you save.", "where": "App: Add entry dialog > Bulk. CLI: credmgr set <name> --node <id> --bulk", "steps": ["Choose Bulk.", "Paste the text.", "Check the preview, optionally tick 'split each /// segment into its own entry', then save."], "keywords": ["paste", "env file", "multiple fields", "label value", "split", "slashes", "private key block", "server credentials"], "status": "built", "cli": "credmgr set <name> --node <id> --bulk", "broker_op": "entry.create", "mcp_tool": "credmgr_create", "agent_access": "read-write within its node", "area_title": "Entries and notes"},
+    {"id": "entry-types-sensitivity", "title": "Entry type and sensitivity", "area": "entries", "summary": "Every entry has a type (server, database, api, wallet, login, ssh, certificate, token, totp, env-bundle, note or other) and a sensitivity (low, medium, high, critical). Both are inferred from the fields and can be pinned; 'auto' returns to inferring. A seed phrase or private key raises sensitivity to critical.", "where": "App: Add entry dialog > entry type; preview shows the inferred sensitivity", "steps": ["Leave 'auto', or pick a type in the entry type list."], "keywords": ["entry type", "sensitivity", "critical", "classification", "category", "infer"], "status": "built", "cli": null, "broker_op": "entry.create", "mcp_tool": "credmgr_create", "agent_access": "read-write within its node", "area_title": "Entries and notes"},
+    {"id": "add-note", "title": "Add a note (free-text entry)", "area": "entries", "summary": "A note is an entry whose single value is free text, for anything that is not a credential. It is audited like any entry. It is different from the node note, which is one markdown page per node.", "where": "App: inspector > + New note", "steps": ["Select a node.", "Choose + New note.", "Type the text and save."], "keywords": ["note", "free text", "memo", "secure note"], "status": "built", "cli": null, "broker_op": "entry.create", "mcp_tool": "credmgr_create", "agent_access": "read-write within its node", "area_title": "Entries and notes"},
+    {"id": "entry-list", "title": "List the entries of a node", "area": "entries", "summary": "The inspector lists a node's entries with their type and a 2FA badge. A node you cannot read, or one that is locked, says so instead of showing an empty list.", "where": "App: select a node; inspector on the right. CLI: credmgr list [--node <id>]", "steps": ["Click the node.", "Read the list."], "keywords": ["list entries", "inventory", "names", "show secrets", "browse"], "status": "built", "cli": "credmgr list [--node <id>] [--json]", "broker_op": "entry.list", "mcp_tool": "credmgr_list", "agent_access": "read-only metadata", "area_title": "Entries and notes"},
+    {"id": "open-entry", "title": "Open an entry and see its fields", "area": "entries", "summary": "Opening an entry shows its fields: label, type, and a masked value. The broker answers with field ids, labels, types and masking and never a value; values appear only when you reveal or copy one. Labels are encrypted with the values, so a locked node shows only names and types.", "where": "App: click an entry in the inspector. CLI: credmgr field ls <name>", "steps": ["Click the entry name.", "Use the back arrow to return to the node."], "keywords": ["entry detail", "metadata", "labels", "field list", "entry.get", "inspect"], "status": "built", "cli": "credmgr field ls <name> [--node <id>] [--json]", "broker_op": "entry.get", "mcp_tool": "credmgr_get_metadata", "agent_access": "read-only metadata", "area_title": "Entries and notes"},
+    {"id": "entry-update", "title": "Replace a value", "area": "entries", "summary": "Replaces one field's value, or the whole field list, in place. It keeps no history. Use rotate when the old value should be kept.", "where": "CLI: credmgr set <name> --node <id> --field <label>. App: field menu > Edit", "steps": ["Pipe the new value on stdin: credmgr set vps --node acme --field password."], "keywords": ["change password", "overwrite", "edit value", "update secret"], "status": "built", "cli": "credmgr set <name> --node <id> (--field <label> | --field-id <id>) [--label <new>]", "broker_op": "entry.update", "mcp_tool": "credmgr_update", "agent_access": "read-write within its node", "area_title": "Entries and notes"},
+    {"id": "entry-rotate", "title": "Rotate a secret and keep history", "area": "entries", "summary": "Rotation replaces the value and keeps the previous one as history, so it can be undone with no time limit. A legitimate rotation implies you could have read what you replace, so it needs the vault unlocked.", "where": "CLI: credmgr rotate <name>", "steps": ["Pipe the new value on stdin: credmgr rotate API_KEY --node acme."], "keywords": ["rotate", "renew", "new key", "history", "previous value", "key rotation"], "status": "built", "cli": "credmgr rotate <name> [--node <id>] [--field <label> | --field-id <id>]", "broker_op": "entry.rotate", "mcp_tool": "credmgr_rotate", "agent_access": "read-write within its node", "area_title": "Entries and notes"},
+    {"id": "entry-remove", "title": "Remove an entry (soft delete)", "area": "entries", "summary": "Removing hides the entry from lists and search at once and keeps it for seven days, when undo can bring it back. The desktop app has no control for this yet; use the CLI.", "where": "CLI: credmgr rm <name>. App: no control", "steps": ["Run credmgr rm <name> --node <id>.", "To bring it back inside seven days, run credmgr undo <audit id> --node <id>."], "keywords": ["delete", "trash", "remove secret", "7 day", "recover deleted"], "status": "partial", "cli": "credmgr rm <name> [--node <id>]", "broker_op": "entry.remove", "mcp_tool": "credmgr_remove", "agent_access": "read-write within its node", "area_title": "Entries and notes"},
+    {"id": "entry-undo", "title": "Undo a change", "area": "entries", "summary": "Undo reverses a rotation, a field change or a removal, addressed by the audit record id. A removal can be undone for seven days and a field change for seven days; a rotation has no limit. In the app the inspector shows 'Undo' for the most recent change on the node while nothing else has changed it. Undo is itself an audited action.", "where": "App: inspector > Undo button under the fields. CLI: credmgr undo <audit id> --node <id>", "steps": ["Find the id with credmgr audit, then run credmgr undo <id> --node <node>.", "If the name was reused, add --mode keep-both."], "keywords": ["undo", "revert", "restore entry", "oops", "mistake", "audit id", "keep-both"], "status": "built", "cli": "credmgr undo <id> --node <id> [--mode replace|keep-both]", "broker_op": "entry.undo", "mcp_tool": "credmgr_undo", "agent_access": "read-write within its node", "area_title": "Entries and notes"},
+    {"id": "generate-password", "title": "Generate a password", "area": "entries", "summary": "The broker can generate a random password of 8 to 128 characters, with symbols on or off, or a pronounceable form, and tells you its strength. The value appears in the answer only; it is not stored or audited until you save it in a field.", "where": "App: Add field dialog > Generate. CLI: credmgr generate", "steps": ["Open + Add field.", "Set the length and options.", "Choose Generate, then save the field."], "keywords": ["generate", "random password", "password generator", "entropy", "pronounceable", "strong password"], "status": "built", "cli": "credmgr generate [--length <n>] [--no-symbols] [--pronounceable] [--json]", "broker_op": "util.generate", "mcp_tool": null, "agent_access": "none", "area_title": "Entries and notes"},
+    {"id": "name-rules", "title": "Entry and node name rules", "area": "entries", "summary": "Names are compared in one canonical form, so a look-alike of an existing name (different case, width, invisible characters or look-alike letters) is refused as already existing, for agents too. A name that mixes Latin with Greek or Cyrillic letters is accepted with a warning. Entry names are at most 200 characters; node labels 1 to 120.", "where": "Applies wherever a name is typed", "steps": ["Choose a different name if you see 'already exists'."], "keywords": ["duplicate", "look-alike", "homoglyph", "mixed script", "entry exists", "unicode", "name length"], "status": "built", "cli": null, "broker_op": "entry.create", "mcp_tool": "credmgr_create", "agent_access": "read-write within its node", "area_title": "Entries and notes"},
+    {"id": "field-add", "title": "Add a field", "area": "fields", "summary": "Adds one or more fields to an entry, appended or inserted at a position. The label is free text and may be empty; there are no fixed field names. The type and whether it is hidden are inferred from the label and value.", "where": "App: open an entry > + Add field. CLI: credmgr field add", "steps": ["Open the entry.", "Choose + Add field.", "Type a label and a value (or Generate), then save."], "keywords": ["add field", "new field", "extra field", "label", "append"], "status": "built", "cli": "credmgr field add <name> (--label <l> | --bulk) [--at <n>]", "broker_op": "field.add", "mcp_tool": "credmgr_field_add", "agent_access": "read-write within its node", "area_title": "Fields, reveal and copy"},
+    {"id": "field-edit", "title": "Edit a field", "area": "fields", "summary": "Changes a field's label, value, type or hidden state. The current value is never shown in the dialog; leave the new value empty to keep it. Only what you change is sent. The previous state is kept as history.", "where": "App: field three-dot menu > Edit. CLI: credmgr field set", "steps": ["Open the field menu and choose Edit.", "Change what you need and save."], "keywords": ["edit field", "rename label", "change type", "mask", "hidden", "pin type"], "status": "built", "cli": "credmgr field set <name> (--field <l> | --field-id <id>) [--label <new>] [--type <t>|auto] [--mask on|off|auto]", "broker_op": "field.update", "mcp_tool": "credmgr_field_update", "agent_access": "read-write within its node", "area_title": "Fields, reveal and copy"},
+    {"id": "field-remove", "title": "Remove a field", "area": "fields", "summary": "Removes one field from an entry. An entry keeps at least one field; remove the entry instead. Undoable.", "where": "App: field three-dot menu > Remove. CLI: credmgr field rm", "steps": ["Open the field menu, choose Remove, confirm."], "keywords": ["delete field", "remove field"], "status": "built", "cli": "credmgr field rm <name> (--field <l> | --field-id <id>)", "broker_op": "field.remove", "mcp_tool": "credmgr_field_remove", "agent_access": "read-write within its node", "area_title": "Fields, reveal and copy"},
+    {"id": "field-reorder", "title": "Reorder fields", "area": "fields", "summary": "Moves a field up or down. Order is presentation only.", "where": "App: field three-dot menu > Move up / Move down. CLI: credmgr field mv", "steps": ["Open the field menu and choose Move up or Move down."], "keywords": ["move field", "order", "sort", "position"], "status": "built", "cli": "credmgr field mv <name> (--field <l> | --field-id <id>) --to <n>", "broker_op": "field.reorder", "mcp_tool": null, "agent_access": "none", "area_title": "Fields, reveal and copy"},
+    {"id": "field-types", "title": "Field types and hidden values", "area": "fields", "summary": "A field has one of eleven types: password, api-key, private-key, seed-phrase, totp-seed, username, host, port, url, certificate, text. The type is inferred from label and value and can be pinned. Password, api-key, private-key, seed-phrase and totp-seed fields are hidden by default; any field can be pinned shown or hidden.", "where": "App: Add entry preview and Edit field dialog", "steps": ["Pick a type in the preview list, or choose auto."], "keywords": ["type", "masked", "mask", "hidden", "show", "password field", "seed phrase", "api key"], "status": "built", "cli": null, "broker_op": "field.update", "mcp_tool": "credmgr_field_update", "agent_access": "read-write within its node", "area_title": "Fields, reveal and copy"},
+    {"id": "field-reveal", "title": "Reveal a value", "area": "fields", "summary": "Reveal fetches one field's value and shows it for the reveal window (10, 20 or 60 seconds; 20 by default), then hides it again with a countdown. Each reveal is audited. An agent asking the broker for a value goes through the same gate: if the vault is locked the request waits for you; if the node asks for a second factor it needs a fresh code.", "where": "App: open an entry > Reveal on a field. CLI: credmgr get <name> --field <label>", "steps": ["Open the entry.", "Choose Reveal on the field.", "The value hides again when the countdown ends or you lock."], "keywords": ["show password", "reveal", "view secret", "unmask", "see value", "get secret"], "status": "built", "cli": "credmgr get <name> [--node <id>] [--field <label> | --field-id <id> | --all] [--json]", "broker_op": "entry.reveal", "mcp_tool": "credmgr_get", "agent_access": "read with approval", "area_title": "Fields, reveal and copy"},
+    {"id": "field-copy", "title": "Copy a value without revealing it", "area": "fields", "summary": "Copy places the value on the clipboard through the app's native shell and never passes it through the window. The clipboard is cleared after 30 seconds and when the vault locks. Every copy is audited.", "where": "App: field row > Copy", "steps": ["Choose Copy on the field.", "Paste within 30 seconds."], "keywords": ["clipboard", "copy password", "paste", "concealed", "30 seconds"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Fields, reveal and copy"},
+    {"id": "get-cli", "title": "Read a value on the command line", "area": "fields", "summary": "credmgr get prints one value on stdout. An entry with several fields needs a selector (--field, --field-id) or --all; without one it exits 2 and lists the labels. --json prints the fields.", "where": "CLI: credmgr get", "steps": ["credmgr get API_KEY --node acme", "credmgr get vps --node acme --field password"], "keywords": ["cli read", "stdout", "pipe", "env var", "script"], "status": "built", "cli": "credmgr get <name> [--node <id>] [--field <label> | --field-id <id> | --all] [--json]", "broker_op": "entry.reveal", "mcp_tool": "credmgr_get", "agent_access": "read with approval", "area_title": "Fields, reveal and copy"},
+    {"id": "optimistic-concurrency", "title": "Conflict protection on writes", "area": "fields", "summary": "Every change to an existing entry carries the entry's current generation. If something else changed it first, the broker answers conflict with both generations and nothing is applied. Re-read, re-apply, retry once.", "where": "Automatic", "steps": ["On a conflict, read the entry again and repeat the change."], "keywords": ["generation", "conflict", "concurrent edit", "stale"], "status": "built", "cli": null, "broker_op": "entry.update", "mcp_tool": "credmgr_update", "agent_access": "read-write within its node", "area_title": "Fields, reveal and copy"},
+    {"id": "totp-store", "title": "Store an authenticator seed", "area": "totp", "summary": "A field holding an otpauth URI, a base32 secret of a standard length (16, 20, 24, 26, 32, 40, 52, 56 or 64 characters, upper case or in groups of four), or a field typed totp-seed is a stored authenticator seed. The entry gets a 2FA badge and counts toward the node's 2FA number. This is separate from the vault's own second factor.", "where": "App: Add entry with a seed field. CLI: credmgr set <name> --node <id>", "steps": ["Add a field whose value is the seed.", "The entry shows a 2FA badge."], "keywords": ["totp", "authenticator", "2fa seed", "otpauth", "base32", "mfa secret"], "status": "built", "cli": null, "broker_op": "entry.create", "mcp_tool": "credmgr_create", "agent_access": "read-write within its node", "area_title": "Authenticator codes you store"},
+    {"id": "totp-code", "title": "Show the current 6-digit code", "area": "totp", "summary": "Revealing a seed field shows the current 6-digit code with a bar that runs to the end of its 30-second step. The seed itself is never shown or returned: a reveal of a seed field answers with the value removed. Codes use SHA-1, 6 digits, 30 seconds.", "where": "App: seed field > Reveal. CLI: none. MCP: credmgr_totp_code", "steps": ["Open the entry.", "Choose Reveal on the seed field."], "keywords": ["code", "6 digit", "one time password", "otp", "countdown", "2fa code"], "status": "built", "cli": null, "broker_op": "totp.code", "mcp_tool": "credmgr_totp_code", "agent_access": "read with approval", "area_title": "Authenticator codes you store"},
+    {"id": "totp-seed-show", "title": "Show the seed itself", "area": "totp", "summary": "Not available. A code is worth thirty seconds, a seed is worth forever, so reading it needs a presence check this build cannot make. The 'show seed' button asks the broker and is refused.", "where": "App: seed field > show seed (refused)", "steps": ["Not available."], "keywords": ["seed", "secret key", "export 2fa", "show seed"], "status": "planned", "cli": null, "broker_op": "totp.seed", "mcp_tool": null, "agent_access": "human only", "area_title": "Authenticator codes you store"},
+    {"id": "gate-enrol", "title": "Set up or replace the second factor", "area": "two-factor", "summary": "Enrolling gives the vault a second factor: the broker will not unlock without a fresh code from your authenticator. The QR code is drawn locally. After you confirm one code, ten recovery codes are shown once. Replacing a confirmed factor needs a fresh code from the current one first (unlock again, then do it within five minutes).", "where": "App: Settings > Security > Two-factor gate. CLI: credmgr gate enroll", "steps": ["Choose Enrol (or Replace).", "Scan the QR code and enter one code.", "Save the ten recovery codes."], "keywords": ["enable 2fa", "two factor", "authenticator app", "setup mfa", "replace authenticator", "new phone"], "status": "built", "cli": "credmgr gate enroll", "broker_op": "vault.gate_enroll_begin", "mcp_tool": null, "agent_access": "human only", "area_title": "The vault's second factor"},
+    {"id": "gate-recover", "title": "Lost your authenticator", "area": "two-factor", "summary": "The passphrase, plus the root recovery code printed when the vault was created, resets the second factor. It does not unlock: unlock afterwards, then enrol a new authenticator. Without both, nothing recovers it.", "where": "App: Lock screen > 'lost your authenticator?'. CLI: credmgr gate recover", "steps": ["Choose 'lost your authenticator?'.", "Enter the passphrase and the root recovery code.", "Choose Reset and unlock, then enrol again."], "keywords": ["lost phone", "reset 2fa", "recovery", "gate recover", "locked out"], "status": "built", "cli": "credmgr gate recover", "broker_op": "vault.gate_recover", "mcp_tool": null, "agent_access": "human only", "area_title": "The vault's second factor"},
+    {"id": "gate-recovery-codes", "title": "The ten recovery codes", "area": "two-factor", "summary": "Enrolment issues ten one-time codes, each good once in place of an authenticator code at unlock. They are shown once and cannot be shown again. They are not the root recovery code.", "where": "App: after confirming a code; the Lock screen accepts one in the 2FA field", "steps": ["Store them apart from the passphrase."], "keywords": ["backup codes", "one-time codes", "10 codes"], "status": "built", "cli": null, "broker_op": "vault.gate_enroll_confirm", "mcp_tool": null, "agent_access": "human only", "area_title": "The vault's second factor"},
+    {"id": "gate-step-up", "title": "Give the second factor to agents", "area": "two-factor", "summary": "For nodes whose policy asks for a second factor, an agent or tool gets two_factor_required until a person proves the factor. One code opens a vault-wide window of five minutes in which agents and other tools pass the gate on every node that asks. A lock or any node policy change ends it. Your own login is never asked.", "where": "App: 'Give second factor' on the node chip or in the inspector. CLI: credmgr gate verify <code> in a shell that holds your login", "steps": ["Choose Give second factor on the node.", "Enter the current authenticator code."], "keywords": ["step up", "elevation", "five minute window", "two_factor_required", "give code", "agent 2fa"], "status": "built", "cli": "credmgr gate verify <code>", "broker_op": "vault.gate_verify", "mcp_tool": null, "agent_access": "human only", "area_title": "The vault's second factor"},
+    {"id": "gate-limits", "title": "What the second factor does and does not protect", "area": "two-factor", "summary": "The check is made by credmgrd, not by the encryption. Anyone who has your passphrase or your recovery code and a copy of the vault folder can decrypt it without the second factor. Treat each of the passphrase and the recovery code as a complete key.", "where": "Applies to the whole vault", "steps": ["Keep the passphrase and recovery code offline and apart."], "keywords": ["door not safe", "limitation", "security model", "offline attack", "argon2"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "The vault's second factor"},
+    {"id": "agent-approval", "title": "Decide an agent's waiting request", "area": "approvals", "summary": "If an agent asks for a value while the whole vault is locked, the broker records the request and answers approval_pending. You decide it while the vault stays locked: you give the passphrase (and the authenticator code if two-factor is on). Approving decrypts that one entry and hands it to the agent's retry once; the vault stays locked. A request expires and is denied after 120 seconds.", "where": "App: Lock screen > 'N agent requests are waiting for approval'. CLI: credmgr approvals, credmgr approve <request>", "steps": ["Open the Lock screen's request list and pick a request.", "Enter the passphrase (and code).", "Choose Approve or Deny."], "keywords": ["approve", "deny", "approval pending", "agent waiting", "permission", "request", "approval on demand"], "status": "built", "cli": "credmgr approve <request> [--deny] [--code <n>]", "broker_op": "vault.approval_decide", "mcp_tool": "credmgr_get", "agent_access": "read with approval", "area_title": "Agent requests while locked"},
+    {"id": "agent-approval-details", "title": "See what a request asks for", "area": "approvals", "summary": "Before deciding, you can see what each waiting request is: the node, the entry (by name unless the node hides names), the command and the seconds left. The list works while locked and decrypts nothing. The Lock screen checks the waiting count every five seconds.", "where": "App: Lock screen request list. CLI: credmgr approvals [<request>]", "steps": ["Run credmgr approvals, or open the request list on the Lock screen."], "keywords": ["approvals", "pending approvals", "what is requested", "pendingApprovals"], "status": "built", "cli": "credmgr approvals [<request>] [--json]", "broker_op": "vault.approval_get", "mcp_tool": null, "agent_access": "human only", "area_title": "Agent requests while locked"},
+    {"id": "pending-tray", "title": "Writes made while locked are held for review", "area": "pending", "summary": "An entry added while the vault or its node is locked does not enter the manifest. It waits in the pending tray, across restarts, showing node, name, field count, type, sensitivity and when it was held, and never its values. Accept writes it to its node; Discard removes it. Accepting needs the node unlocked.", "where": "App: header 'N held' chip, the banner after unlock (Review), or vault menu > Pending writes. CLI: credmgr pending", "steps": ["Open Held for review.", "Choose Accept or Discard on each row."], "keywords": ["held", "pending writes", "review tray", "locked write", "accept", "discard", "agent created entry"], "status": "built", "cli": "credmgr pending [--node <id>] [--json]", "broker_op": "vault.pending_list", "mcp_tool": null, "agent_access": "human only", "area_title": "Writes made while locked"},
+    {"id": "pending-accept-discard", "title": "Accept or discard a held entry", "area": "pending", "summary": "Each held entry is accepted or discarded on its own. A name already used on the node is refused rather than overwritten.", "where": "App: Held for review > Accept / Discard. CLI: credmgr pending accept|discard <entry> --node <id>", "steps": ["credmgr pending accept <entry> --node acme."], "keywords": ["accept pending", "discard pending"], "status": "built", "cli": "credmgr pending accept|discard <entry> --node <id>", "broker_op": "vault.pending_accept", "mcp_tool": null, "agent_access": "human only", "area_title": "Writes made while locked"},
+    {"id": "pending-banner", "title": "The review banner", "area": "pending", "summary": "After you unlock, a banner reports how many held entries are waiting, with Review and dismiss buttons. The header chip stays until the tray is empty.", "where": "App: banner under the header after unlock", "steps": ["Choose Review."], "keywords": ["banner", "chip", "held count"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Writes made while locked"},
+    {"id": "grant-revoke", "title": "See and revoke grants", "area": "grants", "summary": "A grant lets one node see into another. The list shows from and to, the scope (read, reveal, notes), a reason and when it ends. Revoking closes it at once in both Lite and Pro mode, because revoking is safety.", "where": "App: Settings > Grants > Revoke. CLI: credmgr grant ls, credmgr grant revoke <id>", "steps": ["Open Settings > Grants.", "Choose Revoke on the row."], "keywords": ["revoke grant", "remove access", "cross node", "dashed line", "share between projects"], "status": "built", "cli": "credmgr grant ls [--json] | revoke <id>", "broker_op": "grant.revoke", "mcp_tool": null, "agent_access": "human only", "area_title": "Grants"},
+    {"id": "grant-list", "title": "List grants", "area": "grants", "summary": "Shows every grant: from and to, scope, reason and when it ends. Grants made elsewhere appear here even though this build cannot create one.", "where": "App: Settings > Grants. CLI: credmgr grant ls", "steps": ["Open Settings > Grants, or run credmgr grant ls."], "keywords": ["grants list", "who can see what", "cross node access"], "status": "built", "cli": "credmgr grant ls [--json]", "broker_op": "grant.list", "mcp_tool": null, "agent_access": "human only", "area_title": "Grants"},
+    {"id": "grant-create", "title": "Create a grant", "area": "grants", "summary": "The dialog takes a from-node, a to-node, what to allow (read, reveal values, notes) and a reason of at least eight characters. In this build the broker refuses the request with presence_required, because creating a grant widens a boundary and needs a presence check nothing can make yet; nothing changes. Grants made elsewhere are listed and can be revoked. A grant never expires by itself.", "where": "App: node menu > Grant access; Settings > Grants > + New grant (Pro); drag one node onto another. CLI: credmgr grant <from> --to <node> --scope read --reason \"...\"", "steps": ["The dialog validates your input, sends it, and shows the presence notice."], "keywords": ["new grant", "share access", "cross-project", "allow node", "drag node"], "status": "partial", "cli": "credmgr grant <from> --to <node> --scope read --reason \"...\"", "broker_op": "grant.create", "mcp_tool": null, "agent_access": "human only", "area_title": "Grants"},
+    {"id": "grant-model", "title": "How isolation and grants work", "area": "grants", "summary": "Projects never read each other. A node reads itself, Global and its ancestors. It reads its children only if its own policy allows it, and a sibling only for sub-nodes whose parent shares them. Anything else is a grant: human-only, with a reason, revocable, drawn as a dashed arrow on the graph from the trusted node to the node it can see into. An agent can never create one.", "where": "Concept; see the graph legend in Help", "steps": ["Read the dashed arrows on the graph."], "keywords": ["isolation", "access rules", "R2 R3 R4", "ancestors", "global readable", "boundary"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "human only", "area_title": "Grants"},
+    {"id": "seal-node", "title": "Remove (seal) a node", "area": "sealing", "summary": "Removing a node never deletes it. Its entries are re-encrypted to the Orphaned node's key, names stay visible and values become human-only. You type the node name to confirm. A node that still has sub-nodes cannot be sealed until they are sealed; Global cannot be sealed.", "where": "App: node menu > Remove node; Settings > Nodes > Remove (Pro). CLI: credmgr node seal <name>", "steps": ["Choose Remove node.", "Type the node name.", "Choose Seal node."], "keywords": ["remove project", "delete node", "archive", "retire project", "orphan"], "status": "built", "cli": "credmgr node seal <name>", "broker_op": "node.seal", "mcp_tool": null, "agent_access": "human only", "area_title": "Sealing and restoring"},
+    {"id": "restore-node", "title": "Restore a sealed node", "area": "sealing", "summary": "A sealed node can be restored byte for byte for seven days, across restarts. After that restore is refused (archive_expired). Work folders another node has claimed since are not restored.", "where": "App: Settings > Nodes > Sealed nodes > Restore node (Pro). CLI: credmgr node restore <name>", "steps": ["Open Settings > Nodes.", "Choose Restore node on the sealed row."], "keywords": ["undo seal", "bring back", "restore project", "seven days", "archive expired"], "status": "built", "cli": "credmgr node restore <name>", "broker_op": "node.restore", "mcp_tool": null, "agent_access": "human only", "area_title": "Sealing and restoring"},
+    {"id": "purge-expired-seals", "title": "Destroy expired seals", "area": "sealing", "summary": "After seven days a sealed node's retained originals can be destroyed for good. Nothing does this by itself: only credmgr doctor --purge-expired-seals, or the Operations panel's 'Doctor with purge' followed by Apply. A plain Doctor never purges. The Orphaned copies stay encrypted.", "where": "App: Operations (Cmd+Shift+O) > Doctor with purge. CLI: credmgr doctor --purge-expired-seals", "steps": ["Preview first with --dry-run, then apply."], "keywords": ["purge", "destroy", "irreversible", "expired seal"], "status": "built", "cli": "credmgr doctor [--dry-run] [--purge-expired-seals]", "broker_op": "maintenance.doctor", "mcp_tool": null, "agent_access": "human only", "area_title": "Sealing and restoring"},
+    {"id": "audit-view", "title": "The audit trail", "area": "audit", "summary": "Every request the broker decides, allowed or denied, is recorded in a hash-chained log. The Audit screen lists newest first: time, action, what it touched and who. An agent sees a redacted feed of id, action, time and actor, never values. Audit is a Pro-mode screen.", "where": "App: Settings > Audit (Pro). CLI: credmgr audit [--limit N]", "steps": ["Open Settings > Audit.", "Choose Refresh."], "keywords": ["log", "history", "who accessed", "activity", "recent changes", "audit trail", "denied"], "status": "built", "cli": "credmgr audit [--limit N] [--json]", "broker_op": "audit.tail", "mcp_tool": "credmgr_recent_changes", "agent_access": "read-only metadata", "area_title": "Audit"},
+    {"id": "audit-full-record", "title": "Open the full audit record", "area": "audit", "summary": "Clicking a row asks for the full, unredacted record. That needs a presence check this build cannot make, so the broker refuses and the app says so.", "where": "App: Settings > Audit > click a row (refused)", "steps": ["Not available."], "keywords": ["audit.get", "full record", "details"], "status": "planned", "cli": null, "broker_op": "audit.get", "mcp_tool": null, "agent_access": "human only", "area_title": "Audit"},
+    {"id": "audit-report", "title": "Audit report", "area": "audit", "summary": "A 30-day report of denied requests and grant changes.", "where": "App: Operations (Cmd+Shift+O) > Audit report", "steps": ["Choose Run on the Audit report row."], "keywords": ["report", "denied requests", "30 days", "security review"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Audit"},
+    {"id": "backup-now", "title": "Back up the vault", "area": "backup", "summary": "Writes an encrypted archive into the vault's backups folder under a passphrase you choose. It holds entries and keys; it omits notes, sealed-node archives and the rollback counter. Nothing in this beta restores an archive, so treat it as a copy to keep, not a restore path.", "where": "App: Settings > Backup > Back up now, or Operations > Back up vault. CLI: credmgr backup [--retain N]", "steps": ["Choose Back up now.", "Choose and repeat an archive passphrase."], "keywords": ["backup", "export", "archive", "snapshot", "copy vault", "age", "tar"], "status": "partial", "cli": "credmgr backup [--retain N]", "broker_op": "maintenance.backup", "mcp_tool": null, "agent_access": "human only", "area_title": "Backup, checks and maintenance"},
+    {"id": "backup-retention", "title": "Backup retention", "area": "backup", "summary": "Keeps the 14 or 30 most recent archives. Shown in Pro mode.", "where": "App: Settings > Backup > Retention (Pro)", "steps": ["Pick 14 or 30 archives."], "keywords": ["retain", "keep archives", "rotate backups"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Backup, checks and maintenance"},
+    {"id": "verify-integrity", "title": "Verify integrity", "area": "backup", "summary": "Checks every envelope against its manifest digest and the registry. Run it after copying or restoring files, or when something looks wrong. The result is ok or a count of problems.", "where": "App: Settings > Backup > Verify now, or Operations > Verify integrity. CLI: credmgr verify", "steps": ["Choose Verify now."], "keywords": ["verify", "check", "integrity", "tamper", "checksum", "health"], "status": "built", "cli": "credmgr verify [--json]", "broker_op": "maintenance.verify", "mcp_tool": null, "agent_access": "human only", "area_title": "Backup, checks and maintenance"},
+    {"id": "doctor", "title": "Doctor", "area": "backup", "summary": "Diagnoses registry and manifest problems; a dry run shows what it would fix. It never purges anything on its own. Rebuilding the registry needs presence and is refused.", "where": "App: Operations (Cmd+Shift+O) > Doctor. CLI: credmgr doctor [--dry-run]", "steps": ["Run with --dry-run first."], "keywords": ["repair", "fix", "diagnose", "drift", "rebuild registry"], "status": "built", "cli": "credmgr doctor [--dry-run]", "broker_op": "maintenance.doctor", "mcp_tool": null, "agent_access": "human only", "area_title": "Backup, checks and maintenance"},
+    {"id": "rotate-root-key", "title": "Rotate the root key", "area": "backup", "summary": "Would replace the root key every other key is wrapped under and issue a new recovery code. It needs a presence check, so the broker refuses it in this build.", "where": "App: Settings > Advanced > Rotate (Pro), or Operations. Refused", "steps": ["Not available."], "keywords": ["root key", "rekey", "new recovery code", "rotate"], "status": "planned", "cli": null, "broker_op": "maintenance.rotate_root", "mcp_tool": null, "agent_access": "human only", "area_title": "Backup, checks and maintenance"},
+    {"id": "operations-panel", "title": "The Operations panel", "area": "backup", "summary": "A Pro-mode panel with Verify integrity, Doctor, Doctor with purge, Back up vault, Rotate root key and Audit report. It shows each result in place.", "where": "App: vault menu > Operations, or Cmd+Shift+O", "steps": ["Press Cmd+Shift+O."], "keywords": ["operations", "maintenance", "admin tools", "pro"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Backup, checks and maintenance"},
+    {"id": "import-env", "title": "Import a .env file", "area": "import", "summary": "Turns a .env-style file (NAME=value lines, # comments, export, quotes) into entries in one all-or-nothing call. A missing closing quote, a repeated name or a name that already exists refuses the whole file and names the line, never its content. Values are never printed. Your .env file is not touched. There is no import control in the desktop app.", "where": "CLI: credmgr import <file|-> --node <id>", "steps": ["credmgr import ./service.env --node acme", "Delete the .env yourself once you have checked the result."], "keywords": ["import", "env", "dotenv", "bulk load", "migrate secrets", "environment file"], "status": "partial", "cli": "credmgr import <file|-> --node <id> [--json]", "broker_op": "entry.create_batch", "mcp_tool": null, "agent_access": "none", "area_title": "Importing"},
+    {"id": "settings-open", "title": "Open Settings", "area": "settings", "summary": "Settings is a panel with sections. Lite mode shows Security, Appearance, Backup, Mode, Grants and Games. Pro mode (the default) adds Nodes, Maintenance, Audit, Advanced and Operations.", "where": "App: the gear in the header", "steps": ["Choose the gear.", "Pick a section on the left."], "keywords": ["preferences", "options", "configuration", "gear"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Settings"},
+    {"id": "mode-lite-pro", "title": "Lite and Pro mode", "area": "settings", "summary": "Lite hides levers, never safety: backup, integrity checking and revoking a grant are available in both. Pro adds Nodes, creating grants, Maintenance, Audit, Advanced and the Operations panel. Switching is instant and never hides data.", "where": "App: Settings > Mode", "steps": ["Choose Lite or Pro."], "keywords": ["lite", "pro", "simple mode", "advanced mode"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Settings"},
+    {"id": "setting-reveal-window", "title": "Reveal window", "area": "settings", "summary": "How long a revealed value stays visible before it hides again: 10, 20 (default) or 60 seconds.", "where": "App: Settings > Security > Reveal window", "steps": ["Pick a time."], "keywords": ["reveal timeout", "auto hide", "re-mask"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Settings"},
+    {"id": "setting-clipboard", "title": "Concealed clipboard", "area": "settings", "summary": "Always on and not a choice: a copied secret is cleared after 30 seconds and when the vault locks, and never enters the window.", "where": "App: Settings > Security > Concealed clipboard (shows 'on')", "steps": ["Nothing to set."], "keywords": ["clipboard clear", "copy protection"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Settings"},
+    {"id": "setting-theme", "title": "Theme, colour, contrast and motion", "area": "settings", "summary": "Dark or light theme; colour off, on or auto with hue and intensity sliders (grounds are tinted, never coloured); standard or high contrast; system or reduced motion; hardware acceleration on or off; a greyscale proof mode for design review.", "where": "App: Settings > Appearance", "steps": ["Choose the options."], "keywords": ["dark mode", "light mode", "colour", "hue", "accessibility", "reduced motion", "high contrast", "greyscale", "theme"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Settings"},
+    {"id": "setting-single-keys", "title": "Turn single-key shortcuts off", "area": "settings", "summary": "The shortcuts / F G T N E work without a modifier. Turn them off if they get in the way of speech input or a screen reader. Cmd+L and Cmd+Shift+O always work.", "where": "App: Settings > Appearance > Single-key shortcuts", "steps": ["Choose the button to toggle."], "keywords": ["keyboard shortcuts off", "wcag", "accessibility", "speech input"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Settings"},
+    {"id": "setting-capture-protection", "title": "Hide the window from screen capture and screen sharing", "area": "settings", "summary": "The window is hidden from screenshots, screen recordings and screen sharing by default. Turn the switch off to allow capture; the app asks you to confirm first and shows a 'capture allowed' chip while it is off. The choice is remembered.", "where": "App: gear > Security > Hide the window from screen capture and screen sharing", "steps": ["Choose the gear, then Security.", "Switch 'Hide the window from screen capture and screen sharing' on or off.", "Turning it off asks for confirmation; turning it on does not."], "keywords": ["screenshot", "screen recording", "screen share", "capture", "privacy", "hide window", "content protection", "zoom", "meeting"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Settings"},
+    {"id": "milestones", "title": "Milestones", "area": "extras", "summary": "A private record of your use, kept on this device as dates only, free for everyone.", "where": "App: Settings > Appearance > Milestones", "steps": ["Read the list."], "keywords": ["usage", "streak", "badge", "stamp"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Cosmetics, games and donations"},
+    {"id": "supporter-extras", "title": "Supporter extras (cosmetic)", "area": "extras", "summary": "Optional cosmetic choices: node shape and colours, backdrop, flourish, ball trail, app mark, the Dock icon, glyph weight, double halo and header badge. They open with a supporter code e-mailed after a donation, once, on this device. Nothing functional is ever locked behind a donation. Some options are badged 'not in beta.1'.", "where": "App: Settings > Appearance > Supporter extras > Enter code", "steps": ["Choose Enter code and type the code."], "keywords": ["cosmetics", "supporter code", "themes", "node shape", "app mark", "donate code"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Cosmetics, games and donations"},
+    {"id": "donations", "title": "Donations and the reminder", "area": "extras", "summary": "A donation is a voluntary gift: not refundable, buys no features and gives no influence. About > Donate lists the addresses with a checklist (verify the first and last six characters after pasting; send a small test first). A dismissible reminder appears about six seconds after unlock and can be turned off with 'don't remind me' or a supporter code.", "where": "App: About > Donate; reminder box after unlock", "steps": ["Open About, choose Donate.", "Copy an address and verify it."], "keywords": ["donate", "support", "crypto", "wallet address", "tip", "reminder"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Cosmetics, games and donations"},
+    {"id": "games", "title": "CredGames", "area": "extras", "summary": "Small local games for Graph mode, starting with CredPong. A game may read how many nodes the vault has and how many entries each holds, never a name, a field or a value. It writes nothing to the vault and has no network. Scores stay on this device.", "where": "App: vault menu > Games, the rail's games button, or Settings > Games", "steps": ["Open Games and choose Play."], "keywords": ["credpong", "pong", "arcade", "game", "play"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Cosmetics, games and donations"},
+    {"id": "menu-bar-icon", "title": "Menu-bar icon", "area": "unlock", "summary": "The app stays reachable after its window is closed. Left-click the icon to show the window. Right-click (or Ctrl-click) for Open CredMgr, Lock vault and Quit CredMgr. Closing the window hides it and locks the vault; Quit locks it too. Clicking the Dock icon also shows the window.", "where": "App: macOS menu bar", "steps": ["Right-click the icon for the menu."], "keywords": ["tray", "menu bar", "status bar", "quit", "dock", "close window"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Unlocking, locking and the menu-bar icon"},
+    {"id": "mcp-server", "title": "The MCP server for AI agents", "area": "agents", "summary": "credmgr mcp is a stdio MCP server that exposes 15 tools to an AI client. It forwards each call to the broker unchanged; the broker decides. You register it once, globally, in your AI client's MCP settings with the full path to the credmgr binary and the argument mcp. One entry serves every project because the folder the client starts in decides the node. Automatic setup of client config files does not exist yet.", "where": "AI client MCP settings (you edit them). CLI: credmgr mcp", "steps": ["Add a server named credmgr: command = the full path to credmgr, args = [\"mcp\"].", "Start the client inside a project folder bound to a node."], "keywords": ["mcp", "model context protocol", "claude code", "cursor", "claude desktop", "agent setup", "register", "tools"], "status": "built", "cli": "credmgr mcp", "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "AI agents and the MCP server"},
+    {"id": "agent-whoami", "title": "An agent learns its own boundary", "area": "agents", "summary": "credmgr_whoami returns the agent's node, its capabilities and the nodes it can reach, and names nothing else. An agent should call it first and reason about its own boundary instead of discovering it by being denied.", "where": "MCP: credmgr_whoami. CLI: credmgr whoami", "steps": ["Call credmgr_whoami before anything else."], "keywords": ["whoami", "scope", "boundary", "reachable nodes", "capabilities"], "status": "built", "cli": "credmgr whoami [--json]", "broker_op": "whoami", "mcp_tool": "credmgr_whoami", "agent_access": "read-only metadata", "area_title": "AI agents and the MCP server"},
+    {"id": "agent-scope", "title": "How an agent is scoped", "area": "agents", "summary": "An agent is scoped to one node, resolved from the folder it was started in (the node's work folders), or from an explicit token. It reads that node, its ancestors and Global, plus anything granted. No tool argument changes that. An agent started in an unbound folder gets only a bare list on Global.", "where": "Set with work folders on a node", "steps": ["Bind the project folder to the node (see Work folders)."], "keywords": ["cwd", "folder", "project scope", "which node", "agent boundary", "isolation"], "status": "built", "cli": null, "broker_op": "whoami", "mcp_tool": "credmgr_whoami", "agent_access": "read-only metadata", "area_title": "AI agents and the MCP server"},
+    {"id": "agent-access-levels", "title": "What each agent access level allows", "area": "agents", "summary": "The node's agent access decides the agent's capabilities. read-write: list, read metadata, reveal, create, update. read-only: list, read metadata, reveal. none: nothing. The notes and admin capabilities are never part of an agent's scope, whatever the policy says.", "where": "CLI: credmgr node policy <id> --reason \"...\" --agent-access ...", "steps": ["Choose the narrowest level that does the job."], "keywords": ["permissions", "capabilities", "read only agent", "agent policy"], "status": "partial", "cli": "credmgr node policy <id> --reason \"...\" --agent-access read-write|read-only|none", "broker_op": "node.policy", "mcp_tool": null, "agent_access": "human only", "area_title": "AI agents and the MCP server"},
+    {"id": "agent-locked-vault", "title": "What an agent sees when the vault is locked", "area": "agents", "summary": "Reading a value on a locked vault answers approval_pending and waits for you (see Decide an agent's waiting request); asking for an authenticator code on a locked vault is simply refused. Creating an entry works and lands in the pending tray for your review. Updating, rotating, removing and field changes are refused with vault_locked, because overwriting a credential you cannot read would be substitution.", "where": "Behaviour of the broker", "steps": ["Agent: wait or carry on with other work; do not retry in a loop."], "keywords": ["approval_pending", "vault_locked", "agent blocked", "locked"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "AI agents and the MCP server"},
+    {"id": "agent-denials", "title": "What an agent does when refused", "area": "agents", "summary": "A refusal is explicit and names the human action that would fix it in its remedy field. The right response is to say what is needed and why in one sentence, ask the operator, and carry on with other work. Do not retry, rephrase or look for another route.", "where": "Every MCP tool result that is an error", "steps": ["Read error and remedy.", "Tell the operator what you need."], "keywords": ["node_access_denied", "remedy", "refused", "capability_not_held", "denied"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "AI agents and the MCP server"},
+    {"id": "agent-forbidden", "title": "What an agent can never do", "area": "agents", "summary": "These are absent, not merely gated: create or change a grant; read the Orphaned node; read a stored authenticator seed (it can get the current 6-digit code); change a node's policy, agent access, name, parent or work folders; touch the second factor or recovery; run backup, verify, doctor or root-key rotation; purge or shorten the audit log or the recovery window; read another node under any argument; read notes. A test fails if a tool for any of these is added.", "where": "Enforced in the broker; restated in the MCP registry", "steps": ["Ask the operator instead."], "keywords": ["forbidden", "never", "limits", "restricted", "cannot", "guardrails"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "human only", "area_title": "AI agents and the MCP server"},
+    {"id": "agent-names-private", "title": "Private names and agents", "area": "agents", "summary": "On a node with hidden names, an agent sees an opaque row (nameHidden) instead of its label, entry names and notes, and search skips the node.", "where": "Node policy: private names", "steps": ["Set private names on a sensitive node."], "keywords": ["nameHidden", "privateNames", "recon"], "status": "partial", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "AI agents and the MCP server"},
+    {"id": "llm-manifest", "title": "Machine-readable manifest for AI agents", "area": "agents", "summary": "v2/docs/llm/credmgr-capabilities.json describes every feature, the 15 MCP tools with their input schemas, the error codes with what to do on each, the broker operations (which ones an agent can reach), the CLI commands and the safety rules. It is generated from the same data as this help and is checked against the code, so it cannot silently drift.", "where": "File: v2/docs/llm/credmgr-capabilities.json. Regenerate: python3 tools/gen_help.py", "steps": ["Give the file to an agent as context."], "keywords": ["llm", "manifest", "json", "schema", "agent instructions", "capabilities file", "machine readable"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "AI agents and the MCP server"},
+    {"id": "agent-token-hygiene", "title": "Keep your login out of an agent's shell", "area": "agents", "summary": "credmgr unlock exports a login token that reaches every project until the vault locks or the token idles out for 15 minutes. Never export it into a shell an AI agent runs in: the agent would inherit your reach. Agents should use the MCP server, scoped by folder.", "where": "CLI: credmgr unlock; known risk K-6", "steps": ["Unlock in a shell the agent cannot read, and lock when done."], "keywords": ["CREDMGR_TOKEN", "token", "K-6", "export", "session", "shell"], "status": "built", "cli": "credmgr unlock", "broker_op": "vault.unlock", "mcp_tool": null, "agent_access": "human only", "area_title": "AI agents and the MCP server"},
+    {"id": "cli-overview", "title": "The credmgr command line", "area": "cli", "summary": "One binary, credmgr, is the command line and the MCP server. A secret never travels as an argument: values come from stdin, so they stay out of shell history and process lists. --json gives machine output where offered. credmgr help lists every command and flag.", "where": "Terminal: credmgr help", "steps": ["Run credmgr help.", "Pipe values: credmgr set API_KEY --node acme <<< 'value'."], "keywords": ["command line", "terminal", "cli", "shell", "stdin", "json", "help", "commands"], "status": "built", "cli": "credmgr help", "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Command line and broker"},
+    {"id": "cli-status", "title": "Vault status", "area": "cli", "summary": "Prints whether the vault is locked and, when there are any, how many agent requests are waiting.", "where": "CLI: credmgr status", "steps": ["Run credmgr status."], "keywords": ["status", "is it locked", "pending approvals count"], "status": "built", "cli": "credmgr status", "broker_op": "vault.status", "mcp_tool": null, "agent_access": "none", "area_title": "Command line and broker"},
+    {"id": "cli-login", "title": "Log in from a shell", "area": "cli", "summary": "credmgr unlock reads the passphrase from stdin and prints an export line for CREDMGR_TOKEN; use eval to apply it. With two-factor on it answers two_factor_required and credmgr gate verify <code> completes it. credmgr lock ends every login.", "where": "CLI: credmgr unlock, credmgr lock", "steps": ["eval \"$(credmgr unlock <<< 'your passphrase')\""], "keywords": ["login", "unlock cli", "token", "eval", "export"], "status": "built", "cli": "credmgr unlock", "broker_op": "vault.unlock", "mcp_tool": null, "agent_access": "human only", "area_title": "Command line and broker"},
+    {"id": "broker-daemon", "title": "The broker: credmgrd", "area": "cli", "summary": "credmgrd holds every key and makes every access decision. The app, the CLI and the MCP server are clients of its local socket and none holds a key. It speaks newline-delimited JSON over a Unix socket (mode 0600 in a 0700 folder), accepts only the vault owner's user id, and has no network listener and makes no outbound connection. Run it in a terminal or with the launchd unit in the release package.", "where": "Terminal: credmgrd; launchd unit packaging/com.credmgr.brokerd.plist", "steps": ["Run credmgrd.", "Or copy the plist to ~/Library/LaunchAgents and bootstrap it."], "keywords": ["credmgrd", "daemon", "socket", "launchd", "broker", "no network", "offline", "unix socket"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Command line and broker"},
+    {"id": "vault-location", "title": "Where the vault lives", "area": "cli", "summary": "The vault folder is ~/Library/Application Support/credmgr (override with CREDMGR_VAULT_DIR) and must not be inside a git working tree. A rollback counter lives in ~/Library/Application Support/credmgr-state; moving a vault without it makes the first unlock refuse.", "where": "Filesystem", "steps": ["Set CREDMGR_VAULT_DIR to use another location."], "keywords": ["location", "path", "folder", "move vault", "rollback counter", "CREDMGR_VAULT_DIR"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Command line and broker"},
+    {"id": "version", "title": "Which version is this", "area": "cli", "summary": "credmgr --version prints the version, commit, dirty flag and platform. The app shows the same version in About.", "where": "CLI: credmgr --version. App: About", "steps": ["Run credmgr --version."], "keywords": ["version", "build", "commit", "beta"], "status": "built", "cli": "credmgr --version", "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Command line and broker"},
+    {"id": "key-search", "title": "Shortcut: / focus search", "area": "shortcuts", "summary": "Moves the cursor to the header search box.", "where": "App: anywhere outside a text field or dialog", "steps": ["Press /."], "keywords": ["slash", "find"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Keyboard shortcuts"},
+    {"id": "key-fit", "title": "Shortcut: F fit graph", "area": "shortcuts", "summary": "Fits the whole graph in the window.", "where": "App: graph", "steps": ["Press F."], "keywords": ["zoom to fit", "reset view"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Keyboard shortcuts"},
+    {"id": "key-global", "title": "Shortcut: G jump to global", "area": "shortcuts", "summary": "Selects the global node.", "where": "App: anywhere outside a text field or dialog", "steps": ["Press G."], "keywords": ["go to global", "root"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Keyboard shortcuts"},
+    {"id": "key-view", "title": "Shortcut: T toggle graph and tree", "area": "shortcuts", "summary": "Switches between the graph and the tree view.", "where": "App: anywhere outside a text field or dialog", "steps": ["Press T."], "keywords": ["toggle view"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Keyboard shortcuts"},
+    {"id": "key-entries", "title": "Shortcut: E entries all or selected", "area": "shortcuts", "summary": "Switches the graph between showing every node's entries and only the selected node's.", "where": "App: graph", "steps": ["Press E."], "keywords": ["entry dots"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Keyboard shortcuts"},
+    {"id": "key-new", "title": "Shortcut: N new entry", "area": "shortcuts", "summary": "Opens the Add entry dialog for the selected node.", "where": "App: anywhere outside a text field or dialog", "steps": ["Press N."], "keywords": ["add", "create"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Keyboard shortcuts"},
+    {"id": "key-lock", "title": "Shortcut: Cmd+L lock", "area": "shortcuts", "summary": "Locks the vault from anywhere, even while typing or with a dialog open.", "where": "App: anywhere", "steps": ["Press Cmd+L."], "keywords": ["lock key", "cmd l", "ctrl l"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Keyboard shortcuts"},
+    {"id": "key-ops", "title": "Shortcut: Cmd+Shift+O Operations", "area": "shortcuts", "summary": "Opens the Operations panel (Pro mode).", "where": "App: anywhere in Pro mode", "steps": ["Press Cmd+Shift+O."], "keywords": ["operations", "maintenance"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Keyboard shortcuts"},
+    {"id": "key-escape", "title": "Shortcut: Esc close", "area": "shortcuts", "summary": "Closes whatever is open: a dialog, menu, search results or the inspector. In games Esc pauses first.", "where": "App: anywhere", "steps": ["Press Esc."], "keywords": ["escape", "cancel", "close dialog"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Keyboard shortcuts"},
+    {"id": "key-tab", "title": "Shortcut: Tab inside a dialog", "area": "shortcuts", "summary": "Tab and Shift+Tab cycle through the controls of an open dialog and stay inside it.", "where": "App: any dialog", "steps": ["Press Tab."], "keywords": ["focus", "keyboard navigation", "accessibility"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Keyboard shortcuts"},
+    {"id": "help-dialog", "title": "This help", "area": "about", "summary": "The Help dialog explains the graph, sealing, grants, notes, writing while locked and the keyboard, and lists every feature with where to find it. Type in the search box to filter. The same list is in v2/HELP.md.", "where": "App: the question mark in the header, vault menu > Help, or Settings > Help", "steps": ["Choose the ? button.", "Type a word such as 'backup' or 'agent'."], "keywords": ["help", "manual", "documentation", "how do i", "faq", "?"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "About, privacy and licence"},
+    {"id": "about-dialog", "title": "About CredMgr", "area": "about", "summary": "Shows the name, version (read from the app), the publisher, and links to Donate, Privacy and Licences. The app is offline: no telemetry, no HTTP client.", "where": "App: vault menu > About CredMgr", "steps": ["Open the vault menu (the arrow in the header)."], "keywords": ["about", "version", "publisher", "freexstudio"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "About, privacy and licence"},
+    {"id": "privacy", "title": "Privacy: what the app keeps", "area": "about", "summary": "CredMgr has no server, no account, no telemetry, no crash reporting and no cloud sync. The window makes no network request. It stores only small settings in the window's local storage (theme, cosmetic choices, positions under hashed ids, game scores); none holds a secret or a name. A revealed value lives in memory for the reveal window only.", "where": "App: About > Privacy", "steps": ["Open About, choose Privacy."], "keywords": ["telemetry", "tracking", "data collection", "local storage", "offline", "analytics"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "About, privacy and licence"},
+    {"id": "licence", "title": "Licence", "area": "about", "summary": "CredMgr is source-available, not open source. You may run the current stable release, read and audit the source, build the unmodified current version to compare it with the official release, and report problems or send patches. You may not fork, modify or redistribute it. It is free to use today; future versions may be paid. Names and brand assets are covered separately.", "where": "App: About > Licences. File: LICENSE", "steps": ["Read LICENSE for the complete terms."], "keywords": ["license", "source available", "open source", "terms", "redistribute"], "status": "built", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "About, privacy and licence"},
+    {"id": "nb-presence", "title": "Touch ID and presence checks", "area": "not-built", "summary": "Operations that need a live presence check (creating grants, re-parenting, the full audit record, seed display, root-key rotation, registry rebuild, widening a node's reach, opening Orphaned items) are built up to the check and then refused with presence_required. No transport can attest presence yet.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["touch id", "biometric", "presence_required", "fingerprint"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "human only", "area_title": "Planned, not in this build"},
+    {"id": "nb-secure-enclave", "title": "Secure Enclave keystore tier", "area": "not-built", "summary": "Only the software tier exists: your passphrase is the key, and a copy of the vault folder can be attacked offline on any computer. Hardware-backed protection is planned.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["secure enclave", "hardware key", "keychain", "software tier"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"},
+    {"id": "nb-signing", "title": "Signed and notarised app", "area": "not-built", "summary": "The binaries and the app are not code-signed or notarised. SHA256SUMS is the only provenance and macOS Gatekeeper refuses them until you clear the quarantine flag yourself (see RELEASE.md).", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["gatekeeper", "notarize", "unsigned", "developer id", "quarantine"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"},
+    {"id": "nb-platforms", "title": "Windows and Linux builds", "area": "not-built", "summary": "Only macOS on Apple Silicon is built and tested. The broker does not compile on Windows yet (Unix socket only).", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["windows", "linux", "intel mac", "platform"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"},
+    {"id": "nb-restore-backup", "title": "Restoring from a backup archive", "area": "not-built", "summary": "credmgr backup writes an encrypted archive, but nothing in this release reads one back.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["restore backup", "import backup", "recover vault"], "status": "planned", "cli": null, "broker_op": "maintenance.backup", "mcp_tool": null, "agent_access": "human only", "area_title": "Planned, not in this build"},
+    {"id": "nb-v1-migration", "title": "Migration from V1", "area": "not-built", "summary": "There is no migration from the V1 vault. Start a new vault and add what you need; credmgr import reads .env files.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["v1", "migrate", "upgrade from v1"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"},
+    {"id": "nb-delete-entry-ui", "title": "Remove an entry in the app", "area": "not-built", "summary": "The app has no control to remove an entry. Use credmgr rm; credmgr undo brings it back for seven days.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["delete entry app", "trash button"], "status": "planned", "cli": null, "broker_op": "entry.remove", "mcp_tool": null, "agent_access": "read-write within its node", "area_title": "Planned, not in this build"},
+    {"id": "nb-llm-integration", "title": "LLM integration (llm.*)", "area": "not-built", "summary": "Designed, not yet available: there are no llm operations, no settings screen for agents and no built-in model calls. The vault has no outbound network connection by design.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["llm", "ai assistant", "chat", "openai", "built-in ai"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"},
+    {"id": "nb-mcp-autoconfig", "title": "One-click MCP setup, vault prompt and CREDMGR.md", "area": "not-built", "summary": "No screen or command writes an AI client's configuration, generates a vault protocol prompt, or drops a CREDMGR.md file into a project. Register credmgr mcp by hand.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["connect claude", "auto configure", "credmgr prompt", "CREDMGR.md", "print-config"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"},
+    {"id": "nb-security-levels", "title": "Open, Guarded and Sealed agent modes", "area": "not-built", "summary": "A per-node or global setting that changes which agent actions need approval is designed but does not exist. Node policy fields are what you have today.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["security level", "guarded", "open sealed"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"},
+    {"id": "nb-native-approval", "title": "Native notification for agent requests", "area": "not-built", "summary": "A desktop notification that appears while the vault is locked, with a presence check on Approve, is planned. Today you decide from the Lock screen or credmgr approve.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["notification", "push", "alert", "approve popup"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "human only", "area_title": "Planned, not in this build"},
+    {"id": "nb-notes-tools", "title": "MCP tools for notes", "area": "not-built", "summary": "credmgr_notes_read and credmgr_notes_write are specified but not registered: node notes are human-only for now.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["agent notes", "notes tool"], "status": "planned", "cli": null, "broker_op": "notes.read", "mcp_tool": null, "agent_access": "human only", "area_title": "Planned, not in this build"},
+    {"id": "nb-machine-lock", "title": "Machine lock and duress code", "area": "not-built", "summary": "Binding a vault to one machine and a duress passphrase are designed and do not exist.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["machine lock", "duress", "coercion", "panic code"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"},
+    {"id": "nb-security-key", "title": "Security-key second factor", "area": "not-built", "summary": "A hardware key (WebAuthn) as an additional factor beside the authenticator is deferred.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["fido", "yubikey", "webauthn", "hardware token"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"},
+    {"id": "nb-org-vault", "title": "Organisation vault and sync", "area": "not-built", "summary": "A shared organisation vault, vault-to-vault sync and licence checks are designed and have no code.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["team", "shared vault", "sync", "multi user", "cloud"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"},
+    {"id": "nb-per-node-gate", "title": "A separate second-factor secret per node", "area": "not-built", "summary": "The second factor and its five-minute window belong to the whole vault. A per-node secret is planned.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["per node 2fa", "wallet node gate"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"},
+    {"id": "nb-anomaly-alerts", "title": "Alerts for suspicious activity", "area": "not-built", "summary": "Only a token-folder mismatch is recorded as an anomaly today. A banner or notification on repeated cross-node denials is planned.", "where": "Not available in this build", "steps": ["Not available."], "keywords": ["anomaly", "alert", "intrusion"], "status": "planned", "cli": null, "broker_op": null, "mcp_tool": null, "agent_access": "none", "area_title": "Planned, not in this build"}
+  ],
+  "not_built": [
+    {"id": "node-reparent", "title": "Move a node under a different parent", "summary": "Re-parenting changes which nodes can read a node, which is a grant by another name, so it needs presence. The operation exists and refuses everyone in this build."},
+    {"id": "totp-seed-show", "title": "Show the seed itself", "summary": "Not available. A code is worth thirty seconds, a seed is worth forever, so reading it needs a presence check this build cannot make. The 'show seed' button asks the broker and is refused."},
+    {"id": "audit-full-record", "title": "Open the full audit record", "summary": "Clicking a row asks for the full, unredacted record. That needs a presence check this build cannot make, so the broker refuses and the app says so."},
+    {"id": "rotate-root-key", "title": "Rotate the root key", "summary": "Would replace the root key every other key is wrapped under and issue a new recovery code. It needs a presence check, so the broker refuses it in this build."},
+    {"id": "nb-presence", "title": "Touch ID and presence checks", "summary": "Operations that need a live presence check (creating grants, re-parenting, the full audit record, seed display, root-key rotation, registry rebuild, widening a node's reach, opening Orphaned items) are built up to the check and then refused with presence_required. No transport can attest presence yet."},
+    {"id": "nb-secure-enclave", "title": "Secure Enclave keystore tier", "summary": "Only the software tier exists: your passphrase is the key, and a copy of the vault folder can be attacked offline on any computer. Hardware-backed protection is planned."},
+    {"id": "nb-signing", "title": "Signed and notarised app", "summary": "The binaries and the app are not code-signed or notarised. SHA256SUMS is the only provenance and macOS Gatekeeper refuses them until you clear the quarantine flag yourself (see RELEASE.md)."},
+    {"id": "nb-platforms", "title": "Windows and Linux builds", "summary": "Only macOS on Apple Silicon is built and tested. The broker does not compile on Windows yet (Unix socket only)."},
+    {"id": "nb-restore-backup", "title": "Restoring from a backup archive", "summary": "credmgr backup writes an encrypted archive, but nothing in this release reads one back."},
+    {"id": "nb-v1-migration", "title": "Migration from V1", "summary": "There is no migration from the V1 vault. Start a new vault and add what you need; credmgr import reads .env files."},
+    {"id": "nb-delete-entry-ui", "title": "Remove an entry in the app", "summary": "The app has no control to remove an entry. Use credmgr rm; credmgr undo brings it back for seven days."},
+    {"id": "nb-llm-integration", "title": "LLM integration (llm.*)", "summary": "Designed, not yet available: there are no llm operations, no settings screen for agents and no built-in model calls. The vault has no outbound network connection by design."},
+    {"id": "nb-mcp-autoconfig", "title": "One-click MCP setup, vault prompt and CREDMGR.md", "summary": "No screen or command writes an AI client's configuration, generates a vault protocol prompt, or drops a CREDMGR.md file into a project. Register credmgr mcp by hand."},
+    {"id": "nb-security-levels", "title": "Open, Guarded and Sealed agent modes", "summary": "A per-node or global setting that changes which agent actions need approval is designed but does not exist. Node policy fields are what you have today."},
+    {"id": "nb-native-approval", "title": "Native notification for agent requests", "summary": "A desktop notification that appears while the vault is locked, with a presence check on Approve, is planned. Today you decide from the Lock screen or credmgr approve."},
+    {"id": "nb-notes-tools", "title": "MCP tools for notes", "summary": "credmgr_notes_read and credmgr_notes_write are specified but not registered: node notes are human-only for now."},
+    {"id": "nb-machine-lock", "title": "Machine lock and duress code", "summary": "Binding a vault to one machine and a duress passphrase are designed and do not exist."},
+    {"id": "nb-security-key", "title": "Security-key second factor", "summary": "A hardware key (WebAuthn) as an additional factor beside the authenticator is deferred."},
+    {"id": "nb-org-vault", "title": "Organisation vault and sync", "summary": "A shared organisation vault, vault-to-vault sync and licence checks are designed and have no code."},
+    {"id": "nb-per-node-gate", "title": "A separate second-factor secret per node", "summary": "The second factor and its five-minute window belong to the whole vault. A per-node secret is planned."},
+    {"id": "nb-anomaly-alerts", "title": "Alerts for suspicious activity", "summary": "Only a token-folder mismatch is recorded as an anomaly today. A banner or notification on repeated cross-node denials is planned."}
+  ]
+}

@@ -1,0 +1,9 @@
+# apps/desktop/src-tauri is its own Cargo workspace, deliberately excluded from
+# the v2/Cargo.toml MSRV-1.78 pin — see ADR-035 in docs/14_DECISIONS.md.
+# Tauri 2's dependency tree (transitively, idna_adapter via url) requires
+# edition2024, which needs a cargo/rustc newer than the 1.78 MSRV the security
+# crates are pinned to. The desktop shell tracks current stable instead.
+[toolchain]
+channel = "1.94.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

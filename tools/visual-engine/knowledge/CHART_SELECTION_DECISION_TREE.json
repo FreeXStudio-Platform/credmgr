@@ -1,0 +1,63 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-08-08",
+  "procedure": "spec §17 — classify question → classify data → candidates from catalog → reject anti-patterns → route via CAPABILITY_MATRIX",
+  "tree": {
+    "question": "What is the reader question?",
+    "branches": {
+      "exact values / 1-2 numbers / procedural logic / false-precision risk": {
+        "outcome": "NO_CHART",
+        "note": "table, metric card, prose, or docgen diagram"
+      },
+      "change over time": {
+        "data": {
+          "continuous measure(s)": "line | area (magnitude) | area_stacked (composition)",
+          "discrete events/milestones": "timeline",
+          "process stability": "line + reference band (control)"
+        }
+      },
+      "compare categories": {
+        "data": {
+          "named categories": "bar_horizontal (default)",
+          "short labels, few cats": "bar",
+          "few measures per category": "bar_grouped",
+          "actual vs target": "scorecard/bullet-style bar"
+        }
+      },
+      "rank": "sorted bar_horizontal",
+      "distribution": {
+        "data": {
+          "per-category five-number summaries": "boxplot",
+          "raw sample (compute upstream)": "NO_CHART until aggregated"
+        }
+      },
+      "relationship": {
+        "data": {
+          "two measures": "scatter",
+          "+ size": "bubble",
+          "two categorical dims + intensity": "heatmap"
+        }
+      },
+      "part-to-whole": {
+        "data": {
+          "≤6 parts": "pie|donut",
+          ">6 parts": "bar_horizontal | treemap"
+        }
+      },
+      "flow": {
+        "data": {
+          "conserved quantitative flow": "sankey",
+          "sequential attrition": "funnel"
+        }
+      },
+      "process/workflow/state/architecture (document-grade)": {
+        "outcome": "ROUTE_TO_DOCGEN",
+        "note": "tools/docgen VisualSpec family — flowchart/state/system-map/dependency/sequence/isometric/geo"
+      },
+      "topology (data-annotated, exploratory)": "graph (circular/preset layout)",
+      "hierarchy": "tree | treemap (size) | sunburst (≤3 levels)",
+      "status/readiness": "scorecard | ci-gate-status heatmap",
+      "profiles over shared axes": "radar (≥3 axes)"
+    }
+  }
+}

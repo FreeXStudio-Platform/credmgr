@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-09-incident",
+  "selected_visual": "timeline",
+  "preset": "incident-timeline",
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "6eca3c3df9fd74d01a7276b001ec86ff8c1f1a4467c04c034d4e6a7721871c3a",
+  "option_sha256": "fbadb13e5eb518d3499befcbdd140c74715ff3b5936440e811add457c5dae92a",
+  "job_sha256": "66db12aa062e483757095780a701753e53afaf05ef194298fbc03e4892b40e03",
+  "render_ms": 7,
+  "warnings": []
+}

@@ -1,0 +1,663 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 7,
+      "figures": 1,
+      "sections": 9,
+      "tables": 12
+    },
+    "figures": [
+      "broker-request-lifecycle"
+    ],
+    "references": {
+      "adrs": [
+        "ADR-052",
+        "ADR-062",
+        "ADR-071",
+        "ADR-075",
+        "ADR-078",
+        "ADR-001",
+        "ADR-025",
+        "ADR-019",
+        "ADR-023",
+        "ADR-073",
+        "ADR-077",
+        "ADR-068",
+        "ADR-061",
+        "ADR-072",
+        "ADR-063",
+        "ADR-056",
+        "ADR-044",
+        "ADR-043",
+        "ADR-030",
+        "ADR-065",
+        "ADR-069",
+        "ADR-055",
+        "ADR-054",
+        "ADR-076",
+        "ADR-064",
+        "ADR-066",
+        "ADR-020",
+        "ADR-079",
+        "ADR-057",
+        "ADR-021",
+        "ADR-026",
+        "ADR-059",
+        "ADR-041",
+        "ADR-046",
+        "ADR-070",
+        "ADR-060"
+      ],
+      "code": [
+        "crates/mcp/src/tools.rs",
+        "crates/cli/src/main.rs",
+        "crates/brokerd/src/ops.rs",
+        "crates/brokerd/src/server.rs",
+        "crates/brokerd/tests/isolation.rs",
+        "crates/cli/tests/broker_integration.rs",
+        "crates/brokerd/src/protocol.rs",
+        "crates/brokerd/src/state/durable.rs",
+        "crates/brokerd/tests/durable_vault.rs",
+        "crates/cli/tests/no_secret_in_argv.rs",
+        "crates/mcp/src/server.rs",
+        "crates/cli/tests/mcp_integration.rs",
+        "crates/mcp/tests/schemas_match_the_broker.rs",
+        "crates/cli/tests/success_criteria.rs",
+        "crates/mcp/tests/i13_tool_registry.rs",
+        "crates/brokerd/tests/rotate_root.rs",
+        "tools/corpus_check.py",
+        "apps/desktop/src/lib/bridge.ts",
+        "apps/desktop/src/vault/index.ts",
+        "scripts/dc/verify-build.mjs",
+        "scripts/emergency-decrypt.mjs",
+        "crates/cli/tests/emergency_decrypt.rs",
+        "crates/brokerd/src/scope.rs",
+        "crates/core/src/fields.rs",
+        "crates/brokerd/src/entry_doc.rs",
+        "crates/cli/src/fields.rs",
+        "apps/desktop/src-tauri/src/commands.rs",
+        "crates/cli/tests/fields_cli.rs",
+        "tools/docgen/sequence_diagram.py",
+        "crates/brokerd/src/auth_backoff.rs"
+      ],
+      "documents": [
+        {
+          "doc": "13_TEST_PLAN.md"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md"
+        },
+        {
+          "doc": "03_DATA_MODEL.md"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "5"
+        },
+        {
+          "doc": "16_CROSS_PLATFORM.md"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md",
+          "section": "6"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "2"
+        },
+        {
+          "doc": "11_MIGRATION.md",
+          "section": "1"
+        },
+        {
+          "doc": "03_DATA_MODEL.md",
+          "section": "9"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1.8"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "10.1"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1.3"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "9"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "4"
+        },
+        {
+          "doc": "21_RELEASE_AND_INTEGRITY.md"
+        },
+        {
+          "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md"
+        },
+        {
+          "doc": "02_ARCHITECTURE.md",
+          "section": "3"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md",
+          "section": "3"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md",
+          "section": "5"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "13_TEST_PLAN.md",
+          "section": "4"
+        },
+        {
+          "doc": "17_AIRLOCK_AND_LLM.md",
+          "section": "4"
+        },
+        {
+          "doc": "18_ENDPOINT_INDEX.md",
+          "section": "1"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "1-1-transport-and-framing-built",
+            "level": 3,
+            "title": "1.1 Transport and framing \u2014 **`built`**"
+          },
+          {
+            "id": "1-2-the-request-and-response-envelopes-built",
+            "level": 3,
+            "title": "1.2 The request and response envelopes \u2014 **`built`**"
+          },
+          {
+            "id": "1-3-the-error-taxonomy-built",
+            "level": 3,
+            "title": "1.3 The error taxonomy \u2014 **`built`**"
+          },
+          {
+            "id": "1-4-invariants-the-transport-enforces",
+            "level": 3,
+            "title": "1.4 Invariants the transport enforces"
+          },
+          {
+            "id": "1-5-server-pushed-event-frames-planned",
+            "level": 3,
+            "title": "1.5 Server-pushed event frames \u2014 **`planned`**"
+          }
+        ],
+        "id": "1-the-broker-protocol",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-001",
+            "ADR-025",
+            "ADR-019",
+            "ADR-023",
+            "ADR-073",
+            "ADR-077",
+            "ADR-068",
+            "ADR-061",
+            "ADR-078",
+            "ADR-072",
+            "ADR-063",
+            "ADR-056",
+            "ADR-044",
+            "ADR-043",
+            "ADR-030"
+          ],
+          "code": [
+            "crates/brokerd/src/server.rs",
+            "crates/brokerd/tests/isolation.rs",
+            "crates/cli/tests/broker_integration.rs",
+            "crates/brokerd/src/protocol.rs",
+            "crates/brokerd/src/state/durable.rs",
+            "crates/brokerd/tests/durable_vault.rs"
+          ],
+          "documents": [
+            {
+              "doc": "16_CROSS_PLATFORM.md"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md",
+              "section": "6"
+            }
+          ]
+        },
+        "title": "1. The broker protocol"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "2-1-the-built-command-surface-built-24-top-level-subcommands",
+            "level": 3,
+            "title": "2.1 The built command surface \u2014 **`built`, 24 top-level subcommands**"
+          },
+          {
+            "id": "2-2-a-secret-never-travels-in-argv-built-structurally",
+            "level": 3,
+            "title": "2.2 A secret never travels in argv \u2014 **`built`, structurally**"
+          },
+          {
+            "id": "2-3-the-planned-command-surface-planned",
+            "level": 3,
+            "title": "2.3 The planned command surface \u2014 **`planned`**"
+          },
+          {
+            "id": "2-4-removed-from-v1-deliberately",
+            "level": 3,
+            "title": "2.4 Removed from V1, deliberately"
+          }
+        ],
+        "id": "2-cli",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078",
+            "ADR-077",
+            "ADR-065",
+            "ADR-069"
+          ],
+          "code": [
+            "crates/cli/src/main.rs",
+            "crates/cli/tests/no_secret_in_argv.rs"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "2"
+            },
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "2. CLI"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "3-1-tools",
+            "level": 3,
+            "title": "3.1 Tools"
+          },
+          {
+            "id": "3-1a-two-schema-defects-found-in-this-pass-built-fixed-2026-09-24",
+            "level": 3,
+            "title": "3.1a Two schema defects found in this pass \u2014 **`built`** (fixed 2026-09-24)"
+          },
+          {
+            "id": "3-2-tools-that-must-never-exist",
+            "level": 3,
+            "title": "3.2 Tools that must never exist"
+          },
+          {
+            "id": "3-3-what-a-denial-teaches-built",
+            "level": 3,
+            "title": "3.3 What a denial teaches \u2014 **`built`**"
+          },
+          {
+            "id": "3-4-registration",
+            "level": 3,
+            "title": "3.4 Registration"
+          }
+        ],
+        "id": "3-mcp-server-the-agent-surface",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-077",
+            "ADR-078",
+            "ADR-055",
+            "ADR-072",
+            "ADR-071",
+            "ADR-054",
+            "ADR-076",
+            "ADR-064",
+            "ADR-066",
+            "ADR-020"
+          ],
+          "code": [
+            "crates/mcp/src/server.rs",
+            "crates/cli/tests/mcp_integration.rs",
+            "crates/mcp/tests/schemas_match_the_broker.rs",
+            "crates/mcp/src/tools.rs",
+            "crates/cli/tests/success_criteria.rs",
+            "crates/mcp/tests/i13_tool_registry.rs"
+          ],
+          "documents": [
+            {
+              "doc": "03_DATA_MODEL.md",
+              "section": "9"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "5"
+            }
+          ]
+        },
+        "title": "3. MCP server \u2014 the agent surface"
+      },
+      {
+        "figures": [
+          "broker-request-lifecycle"
+        ],
+        "headings": [
+          {
+            "id": "4-1-built-and-reachable-48-operations",
+            "level": 3,
+            "title": "4.1 Built and reachable \u2014 48 operations"
+          },
+          {
+            "id": "4-1a-response-fields-that-clients-depend-on",
+            "level": 3,
+            "title": "4.1a Response fields that clients depend on"
+          },
+          {
+            "id": "4-1b-the-multi-field-operations-wire-shapes-adr-078-and-the-staged-approval-adr-079",
+            "level": 3,
+            "title": "4.1b The multi-field operations \u2014 wire shapes (ADR-078) and the staged approval (ADR-079)"
+          },
+          {
+            "id": "4-2-built-but-able-only-to-refuse-5-operations",
+            "level": 3,
+            "title": "4.2 Built, but able only to refuse \u2014 5 operations"
+          },
+          {
+            "id": "4-3-planned-operations-29-by-namespace",
+            "level": 3,
+            "title": "4.3 Planned operations \u2014 29, by namespace"
+          }
+        ],
+        "id": "4-the-operation-surface-53-built-29-more-designed",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-078",
+            "ADR-073",
+            "ADR-071",
+            "ADR-072",
+            "ADR-064",
+            "ADR-066",
+            "ADR-076",
+            "ADR-077",
+            "ADR-079"
+          ],
+          "code": [
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/tests/rotate_root.rs",
+            "tools/corpus_check.py"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.8"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "10.1"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1.3"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "9"
+            }
+          ]
+        },
+        "title": "4. The operation surface \u2014 53 built, 29 more designed"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-the-native-shell-bridge-partial",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-057",
+            "ADR-062",
+            "ADR-071",
+            "ADR-073",
+            "ADR-076",
+            "ADR-078",
+            "ADR-075"
+          ],
+          "code": [
+            "apps/desktop/src/lib/bridge.ts",
+            "apps/desktop/src/vault/index.ts",
+            "scripts/dc/verify-build.mjs"
+          ],
+          "documents": [
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "4"
+            },
+            {
+              "doc": "21_RELEASE_AND_INTEGRITY.md"
+            }
+          ]
+        },
+        "title": "5. The native shell bridge \u2014 **`partial`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "6-the-scripting-client-planned",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [
+            "scripts/emergency-decrypt.mjs",
+            "crates/cli/tests/emergency_decrypt.rs"
+          ],
+          "documents": []
+        },
+        "title": "6. The scripting client \u2014 **`planned`**"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "7-surfaces-that-will-never-exist",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-019",
+            "ADR-025"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "22_ORG_VAULT_SYNC_AND_LICENSING.md"
+            }
+          ]
+        },
+        "title": "7. Surfaces that will never exist"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "8-connections",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-019",
+            "ADR-020",
+            "ADR-021",
+            "ADR-023",
+            "ADR-026",
+            "ADR-054",
+            "ADR-055",
+            "ADR-056",
+            "ADR-059",
+            "ADR-062",
+            "ADR-063",
+            "ADR-064",
+            "ADR-065",
+            "ADR-066",
+            "ADR-071",
+            "ADR-072",
+            "ADR-073",
+            "ADR-075",
+            "ADR-076",
+            "ADR-077",
+            "ADR-078",
+            "ADR-079"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "02_ARCHITECTURE.md",
+              "section": "3"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md",
+              "section": "3"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md",
+              "section": "5"
+            },
+            {
+              "doc": "11_MIGRATION.md",
+              "section": "1"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "13_TEST_PLAN.md",
+              "section": "4"
+            },
+            {
+              "doc": "17_AIRLOCK_AND_LLM.md",
+              "section": "4"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md",
+              "section": "1"
+            }
+          ]
+        },
+        "title": "8. Connections"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "9-source",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-019",
+            "ADR-020",
+            "ADR-021",
+            "ADR-023",
+            "ADR-025",
+            "ADR-026",
+            "ADR-041",
+            "ADR-043",
+            "ADR-044",
+            "ADR-046",
+            "ADR-054",
+            "ADR-055",
+            "ADR-056",
+            "ADR-059",
+            "ADR-062",
+            "ADR-066",
+            "ADR-070",
+            "ADR-071",
+            "ADR-073",
+            "ADR-075",
+            "ADR-079",
+            "ADR-076",
+            "ADR-077",
+            "ADR-078",
+            "ADR-060"
+          ],
+          "code": [
+            "crates/brokerd/src/protocol.rs",
+            "crates/brokerd/src/server.rs",
+            "crates/brokerd/src/scope.rs",
+            "crates/brokerd/src/ops.rs",
+            "crates/brokerd/src/state/durable.rs",
+            "crates/mcp/src/tools.rs",
+            "crates/mcp/src/server.rs",
+            "crates/core/src/fields.rs",
+            "crates/brokerd/src/entry_doc.rs",
+            "crates/cli/src/main.rs",
+            "crates/cli/src/fields.rs",
+            "apps/desktop/src-tauri/src/commands.rs",
+            "scripts/emergency-decrypt.mjs",
+            "crates/brokerd/tests/isolation.rs",
+            "crates/mcp/tests/i13_tool_registry.rs",
+            "crates/cli/tests/mcp_integration.rs",
+            "crates/cli/tests/fields_cli.rs",
+            "crates/cli/tests/no_secret_in_argv.rs",
+            "crates/cli/tests/emergency_decrypt.rs",
+            "crates/brokerd/tests/durable_vault.rs",
+            "crates/mcp/tests/schemas_match_the_broker.rs",
+            "tools/docgen/sequence_diagram.py",
+            "crates/brokerd/src/auth_backoff.rs"
+          ],
+          "documents": [
+            {
+              "doc": "14_DECISIONS.md"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md"
+            },
+            {
+              "doc": "16_CROSS_PLATFORM.md"
+            },
+            {
+              "doc": "18_ENDPOINT_INDEX.md"
+            }
+          ]
+        },
+        "title": "9. Source"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-010",
+    "last_reviewed": "2026-08-19",
+    "owner": "credmgr-v2",
+    "status": "verified-current",
+    "surface": "repo",
+    "title": "API and MCP surfaces",
+    "variants": []
+  }
+}

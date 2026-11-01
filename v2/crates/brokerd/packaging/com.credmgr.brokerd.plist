@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd user agent for `credmgrd` — 02_ARCHITECTURE.md §2:
+  "Started by: `launchd` user agent `com.credmgr.brokerd`".
+
+  NOT YET INSTALLED BY ANYTHING (Phase 3 status). There is no `credmgr init`
+  to create a vault or write this into ~/Library/LaunchAgents/ yet — that is
+  Phase 4's CLI work. This file exists now so the daemon's expected lifecycle
+  (KeepAlive, per-user, no root, stdio to a log file under the same
+  `16_CROSS_PLATFORM.md §5` Logs path every platform uses) is decided and
+  reviewable, not invented later under time pressure.
+
+  Install path (once the CLI exists to do it):
+    ~/Library/LaunchAgents/com.credmgr.brokerd.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.credmgr.brokerd.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.credmgr.brokerd</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/credmgrd</string>
+    </array>
+
+    <!-- Per-user agent, never root; matches the broker's own uid-only peer
+         gate (02_ARCHITECTURE.md §3) — a broker running as any other user
+         could never be reached by its own owner's clients anyway. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- 16_CROSS_PLATFORM.md §5 "Logs" row. -->
+    <key>StandardOutPath</key>
+    <string>~/Library/Logs/credmgr/brokerd.log</string>
+    <key>StandardErrorPath</key>
+    <string>~/Library/Logs/credmgr/brokerd.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

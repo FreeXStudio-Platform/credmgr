@@ -1,0 +1,126 @@
+<sc-if value="{{dlgTouch}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:90;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{touchOk}}">
+  <div class="cm-modal-panel" data-screen-label="Presence notice" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-touch-title" style="width:360px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center">
+    <span id="dlg-touch-title" class="t-eyebrow">{{touchTitle}}</span>
+    <div class="t-body-sm">{{touchBody}}</div>
+    <div class="t-caption">This needs presence (Touch ID), which this beta cannot attest yet. Nothing was changed.</div>
+    <button class="k-btn" data-variant="primary" onClick="{{touchOk}}" style="width:100%">Close</button>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{flourishShow}}" hint-placeholder-val="{{false}}">
+<div aria-hidden="true" data-screen-label="X11 Unlock flourish" style="position:fixed;inset:0;z-index:90;pointer-events:none;background:var(--night);display:flex;align-items:center;justify-content:center;animation:cmFlOut 1000ms var(--ease-out-expo) forwards">
+  <svg width="96" height="96" viewBox="0 0 24 24" stroke-linecap="square" fill="none" stroke="var(--bone)" stroke-width="1.2"><rect x="3.5" y="3.5" width="17" height="17" style="stroke-dasharray:68;animation:cmDraw68 160ms var(--ease-out-expo) both"></rect><rect x="8" y="8" width="8" height="8" style="stroke-dasharray:32;animation:cmDraw32 160ms var(--ease-out-expo) 160ms both"></rect><rect x="11" y="11" width="2" height="2" fill="var(--bone)" style="animation:cmIn 160ms var(--ease-out-expo) 320ms both"></rect></svg>
+</div>
+</sc-if>
+
+<sc-if value="{{donateToastVisible}}" hint-placeholder-val="{{false}}">
+<div data-screen-label="S18a Donate toast" data-donate-toast="1" style="position:fixed;right:20px;bottom:20px;z-index:72;width:256px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 20px 48px var(--scrim);padding:12px;display:flex;flex-direction:column;gap:8px;animation:toastIn var(--t-md) var(--ease-out-expo)">
+
+  <sc-if value="{{donateViewOptout}}" hint-placeholder-val="{{false}}"><p class="t-body-sm" style="margin:0" role="status" aria-live="polite">Okay — About → Donate is always there.</p></sc-if>
+
+  <sc-if value="{{donateViewMain}}" hint-placeholder-val="{{true}}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div>
+        <sc-if value="{{donateMsShow}}" hint-placeholder-val="{{false}}"><span class="t-mono-label" style="display:block;margin-bottom:4px">{{donateMsLabel}}</span></sc-if><span class="t-eyebrow">enjoying credmgr?</span>
+        <p class="t-body-sm" style="margin:6px 0 0">Free to use today, no ads, no tracking. If it's useful, a donation helps keep it that way.</p>
+      </div>
+      <button class="k-btn" onClick="{{dismissDonateToast}}" style="min-width:24px;border:none;padding:2px 6px;flex:none" aria-label="dismiss">✕</button>
+    </div>
+    <div style="display:flex;gap:4px">
+      <sc-for list="{{donateTabs}}" as="t" hint-placeholder-count="5">
+        <button class="k-btn" onClick="{{t.go}}" style="flex:1;padding:4px 0;font-size:var(--fs-xs);background:{{t.bg}};color:{{t.fg}}">{{t.short}}</button>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--ash);word-break:break-all;user-select:all;border:1px solid var(--faint);border-radius:var(--r-sm);padding:8px 10px">{{activeChainAddress}}</div>
+      <button class="k-btn" onClick="{{donateCopyAddr}}" style="align-self:flex-start;padding:2px 8px;font-size:var(--fs-xs)">{{donateCopyLabel}}</button>
+    </div>
+    <div style="border-top:1px solid var(--hair);padding-top:8px;display:flex;flex-direction:column;gap:6px">
+      <p class="t-caption" style="margin:0">Real work goes into building this well. If you've felt that, paying it forward — any amount — means a lot.</p>
+      <div style="display:flex;gap:6px">
+        <button class="k-btn" data-variant="primary" onClick="{{goDonateGuide}}" style="flex:1;font-size:var(--fs-xs);padding:4px 0">Donate</button>
+        <button class="k-btn" onClick="{{goDonateCode}}" style="flex:1;font-size:var(--fs-xs);padding:4px 0">Enter code</button>
+      </div>
+      <sc-if value="{{donateMsShow}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{optOutAsk}}" style="align-self:flex-start;min-height:24px;border:none;padding:2px 0;font-size:var(--fs-xs);color:var(--ash);text-decoration:underline">don't remind me</button></sc-if>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{donateViewGuide}}" hint-placeholder-val="{{false}}">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <button class="k-btn" onClick="{{backDonateMain}}" style="border:none;padding:0;color:var(--mute)">← back</button>
+      <button class="k-btn" onClick="{{dismissDonateToast}}" style="min-width:24px;border:none;padding:2px 6px" aria-label="dismiss">✕</button>
+    </div>
+    <span class="t-eyebrow">donate in 3 steps</span>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div>
+        <div class="t-mono-label">1 · send</div>
+        <div style="display:flex;gap:4px;margin:6px 0">
+          <sc-for list="{{donateTabs}}" as="t" hint-placeholder-count="5">
+            <button class="k-btn" onClick="{{t.go}}" style="flex:1;padding:4px 0;font-size:var(--fs-xs);background:{{t.bg}};color:{{t.fg}}">{{t.short}}</button>
+          </sc-for>
+        </div>
+        <div style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--ash);word-break:break-all;user-select:all;border:1px solid var(--faint);border-radius:var(--r-sm);padding:8px 10px">{{activeChainAddress}}</div>
+        <button class="k-btn" onClick="{{donateCopyAddr}}" style="align-self:flex-start;margin-top:6px;padding:2px 8px;font-size:var(--fs-xs)">{{donateCopyLabel}}</button>
+      </div>
+      <div>
+        <div class="t-mono-label">2 · email proof</div>
+        <p class="t-body-sm" style="margin:4px 0 0">Send a screenshot of the transaction and its hash ID to <span style="font-family:var(--f-mono);user-select:all">Admin@freexstudio.com</span>. Subject: the app you donated for.</p>
+      </div>
+      <div>
+        <div class="t-mono-label">3 · get your code</div>
+        <p class="t-body-sm" style="margin:4px 0 0">We reply within 24 hours with a code. Enter it any time to stop seeing this box.</p>
+      </div>
+    </div>
+    <button class="k-btn" onClick="{{goDonateCode}}" style="align-self:flex-start;font-size:var(--fs-xs)">Have a code already? →</button>
+  </sc-if>
+
+  <sc-if value="{{donateViewCode}}" hint-placeholder-val="{{false}}">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <button class="k-btn" onClick="{{backDonateMain}}" style="border:none;padding:0;color:var(--mute)">← back</button>
+      <button class="k-btn" onClick="{{dismissDonateToast}}" style="min-width:24px;border:none;padding:2px 6px" aria-label="dismiss">✕</button>
+    </div>
+    <span class="t-eyebrow">enter your code</span>
+    <p class="t-body-sm" style="margin:0">The code from our reply email. This stops the box for good on this device.</p>
+    <input aria-label="supporter code" autocomplete="off" spellcheck="false" value="{{donateCodeVal}}" onChange="{{onDonateCode}}" placeholder="code from email" style="font-family:var(--f-mono);letter-spacing:.15em;text-transform:uppercase;width:100%">
+    <sc-if value="{{donateCodeErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="status" aria-live="polite">{{donateCodeErrText}}</div></sc-if>
+    <sc-if value="{{donateCodeOkShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-ok" role="status" aria-live="polite">Thanks — you won't see this again.</div></sc-if>
+    <button class="k-btn" data-variant="primary" onClick="{{submitDonateCode}}">Submit</button>
+  </sc-if>
+
+</div>
+</sc-if>
+
+<!-- The two dialogs the administration screens share (the passphrase prompt, the recovery code shown once).  They sit HERE, ahead of the settings
+     overlay in the document, because the focus trap (core.js trapTab / focusModalFirst) acts on the FIRST .cm-modal-panel in the page: a dialog
+     opened over Settings must come before it or Tab would cycle through the panel underneath.  Each is its own root. -->
+<sc-if value="{{dlgAdminPass}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:90;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{closeAdminPass}}">
+  <div class="cm-modal-panel" data-screen-label="Passphrase prompt" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-adminpass-title" style="width:440px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px">
+    <span id="dlg-adminpass-title" class="t-eyebrow">{{adminPassTitle}}</span>
+    <div class="t-body-sm">{{adminPassBody}}</div>
+    <div class="t-mono-label">{{adminPassLabel}}</div>
+    <input type="password" data-admin-pass="1" aria-label="{{adminPassLabel}}" autoComplete="off" onChange="{{onAdminPass}}" onKeyDown="{{adminPassKey}}" style="font-family:var(--f-mono)" placeholder="passphrase">
+    <sc-if value="{{adminPassRepeatShow}}" hint-placeholder-val="{{false}}"><input type="password" data-admin-pass="1" aria-label="repeat the passphrase" autoComplete="off" onChange="{{onAdminRepeat}}" onKeyDown="{{adminPassKey}}" style="font-family:var(--f-mono)" placeholder="repeat it"></sc-if>
+    <div class="t-caption" role="alert" style="color:var(--danger-fg);min-height:1.2em">{{adminPassError}}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="k-btn" data-variant="primary" onClick="{{submitAdminPass}}" disabled="{{adminBusy}}">{{adminPassAction}}</button>
+      <button class="k-btn" onClick="{{closeAdminPass}}">Cancel</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{dlgRecovery}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:91;background:var(--scrim);display:flex;align-items:center;justify-content:center">
+  <div class="cm-modal-panel" data-screen-label="New recovery code" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-recovery-title" style="width:460px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px">
+    <span id="dlg-recovery-title" class="t-eyebrow">your new recovery code</span>
+    <div class="t-body-sm">{{recoveryNote}}</div>
+    <div data-recovery-code="true" style="font-family:var(--f-mono);font-size:var(--fs-md);letter-spacing:.06em;word-break:break-all;user-select:all;border:1px solid var(--faint);border-radius:var(--r-sm);padding:12px 14px;text-align:center">{{recoveryCode}}</div>
+    <div class="t-caption">This is the only time it is shown. CredMgr does not keep a copy, so this window stays open (Esc included) until you confirm below.</div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-sm);cursor:pointer"><input type="checkbox" checked="{{recoverySaved}}" onChange="{{onRecoverySaved}}" style="width:auto">I have written it down</label>
+    <div style="display:flex;justify-content:flex-end"><button class="k-btn" data-variant="primary" onClick="{{dismissRecovery}}" disabled="{{recoveryCloseDisabled}}">Done</button></div>
+  </div>
+</div>
+</sc-if>

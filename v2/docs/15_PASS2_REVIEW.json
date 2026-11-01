@@ -1,0 +1,287 @@
+{
+  "document": {
+    "counts": {
+      "code_blocks": 0,
+      "figures": 0,
+      "sections": 5,
+      "tables": 2
+    },
+    "figures": [],
+    "references": {
+      "adrs": [
+        "ADR-058",
+        "ADR-004",
+        "ADR-009",
+        "ADR-023",
+        "ADR-027"
+      ],
+      "code": [],
+      "documents": [
+        {
+          "doc": "02_ARCHITECTURE.md"
+        },
+        {
+          "doc": "03_DATA_MODEL.md"
+        },
+        {
+          "doc": "04_CRYPTO_AND_KEYS.md"
+        },
+        {
+          "doc": "06_ACCESS_GRAPH.md"
+        },
+        {
+          "doc": "07_TWO_FACTOR.md"
+        },
+        {
+          "doc": "09_UI_UX_SPEC.md"
+        },
+        {
+          "doc": "10_API_AND_MCP.md"
+        },
+        {
+          "doc": "11_MIGRATION.md"
+        },
+        {
+          "doc": "12_BUILD_PLAN.md"
+        },
+        {
+          "doc": "13_TEST_PLAN.md"
+        },
+        {
+          "doc": "14_DECISIONS.md"
+        },
+        {
+          "doc": "05_THREAT_MODEL.md",
+          "section": "6"
+        }
+      ]
+    },
+    "sections": [
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "f-1-write-while-locked-enables-credential-substitution-high-fixed",
+            "level": 3,
+            "title": "F-1 \u00b7 Write-while-locked enables credential substitution \u2014 **HIGH** \u2014 *fixed*"
+          },
+          {
+            "id": "f-2-per-node-manifests-were-unsigned-high-fixed",
+            "level": 3,
+            "title": "F-2 \u00b7 Per-node manifests were unsigned \u2014 **HIGH** \u2014 *fixed*"
+          },
+          {
+            "id": "f-3-rollback-attack-on-the-registry-high-fixed",
+            "level": 3,
+            "title": "F-3 \u00b7 Rollback attack on the registry \u2014 **HIGH** \u2014 *fixed*"
+          },
+          {
+            "id": "f-4-the-7-day-restore-window-was-cryptographically-impossible-high-fixed",
+            "level": 3,
+            "title": "F-4 \u00b7 The 7-day restore window was cryptographically impossible \u2014 **HIGH** \u2014 *fixed*"
+          },
+          {
+            "id": "f-5-two-documents-disagreed-about-what-the-recovery-code-opens-medium-fixed",
+            "level": 3,
+            "title": "F-5 \u00b7 Two documents disagreed about what the recovery code opens \u2014 **MEDIUM** \u2014 *fixed*"
+          },
+          {
+            "id": "f-6-credmgrwhoami-leaked-the-topology-medium-fixed",
+            "level": 3,
+            "title": "F-6 \u00b7 `credmgr_whoami` leaked the topology \u2014 **MEDIUM** \u2014 *fixed*"
+          },
+          {
+            "id": "f-7-node-level-lock-was-referenced-but-never-designed-medium-fixed",
+            "level": 3,
+            "title": "F-7 \u00b7 Node-level lock was referenced but never designed \u2014 **MEDIUM** \u2014 *fixed*"
+          },
+          {
+            "id": "f-8-re-parenting-silently-widens-access-medium-fixed",
+            "level": 3,
+            "title": "F-8 \u00b7 Re-parenting silently widens access \u2014 **MEDIUM** \u2014 *fixed*"
+          },
+          {
+            "id": "f-9-no-concurrency-model-medium-fixed",
+            "level": 3,
+            "title": "F-9 \u00b7 No concurrency model \u2014 **MEDIUM** \u2014 *fixed*"
+          },
+          {
+            "id": "f-10-refusing-to-start-on-a-registry-failure-could-strand-the-operator-medium-fixed",
+            "level": 3,
+            "title": "F-10 \u00b7 Refusing to start on a registry failure could strand the operator \u2014 **MEDIUM** \u2014 *fixed*"
+          },
+          {
+            "id": "f-11-alias-collisions-during-migration-medium-fixed",
+            "level": 3,
+            "title": "F-11 \u00b7 Alias collisions during migration \u2014 **MEDIUM** \u2014 *fixed*"
+          },
+          {
+            "id": "f-12-a-loopback-bound-static-server-contradicted-no-http-surface-medium-fixed",
+            "level": 3,
+            "title": "F-12 \u00b7 A loopback-bound static server contradicted \"no HTTP surface\" \u2014 **MEDIUM** \u2014 *fixed*"
+          },
+          {
+            "id": "f-13-lite-hid-a-safety-lever-my-own-principle-violated-medium-fixed",
+            "level": 3,
+            "title": "F-13 \u00b7 Lite hid a safety lever \u2014 my own principle, violated \u2014 **MEDIUM** \u2014 *fixed*"
+          },
+          {
+            "id": "f-14-entry-level-grants-were-under-specified-low-fixed",
+            "level": 3,
+            "title": "F-14 \u00b7 Entry-level grants were under-specified \u2014 **LOW** \u2014 *fixed*"
+          }
+        ],
+        "id": "1-findings-security-and-correctness",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "1. Findings \u2014 security and correctness"
+      },
+      {
+        "figures": [],
+        "headings": [
+          {
+            "id": "f-15-auto-lock-versus-long-agent-sessions-medium-fixed-and-improved",
+            "level": 3,
+            "title": "F-15 \u00b7 Auto-lock versus long agent sessions \u2014 **MEDIUM** \u2014 *fixed, and improved*"
+          },
+          {
+            "id": "f-16-nothing-scheduled-a-backup-medium-fixed",
+            "level": 3,
+            "title": "F-16 \u00b7 Nothing scheduled a backup \u2014 **MEDIUM** \u2014 *fixed*"
+          },
+          {
+            "id": "f-17-totp-depends-on-the-system-clock-low-fixed",
+            "level": 3,
+            "title": "F-17 \u00b7 TOTP depends on the system clock \u2014 **LOW** \u2014 *fixed*"
+          },
+          {
+            "id": "f-18-search-behaviour-under-lock-was-unspecified-low-fixed",
+            "level": 3,
+            "title": "F-18 \u00b7 Search behaviour under lock was unspecified \u2014 **LOW** \u2014 *fixed*"
+          },
+          {
+            "id": "f-19-export-scope-was-undefined-low-fixed",
+            "level": 3,
+            "title": "F-19 \u00b7 Export scope was undefined \u2014 **LOW** \u2014 *fixed*"
+          }
+        ],
+        "id": "2-findings-usability-and-operations",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": []
+        },
+        "title": "2. Findings \u2014 usability and operations"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "3-accepted-without-change",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-004",
+            "ADR-009"
+          ],
+          "code": [],
+          "documents": []
+        },
+        "title": "3. Accepted without change"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "4-edits-applied-to-the-pass-1-corpus",
+        "level": 2,
+        "references": {
+          "adrs": [
+            "ADR-023",
+            "ADR-027"
+          ],
+          "code": [],
+          "documents": [
+            {
+              "doc": "02_ARCHITECTURE.md"
+            },
+            {
+              "doc": "03_DATA_MODEL.md"
+            },
+            {
+              "doc": "04_CRYPTO_AND_KEYS.md"
+            },
+            {
+              "doc": "06_ACCESS_GRAPH.md"
+            },
+            {
+              "doc": "07_TWO_FACTOR.md"
+            },
+            {
+              "doc": "09_UI_UX_SPEC.md"
+            },
+            {
+              "doc": "10_API_AND_MCP.md"
+            },
+            {
+              "doc": "11_MIGRATION.md"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "13_TEST_PLAN.md"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "4. Edits applied to the Pass 1 corpus"
+      },
+      {
+        "figures": [],
+        "headings": [],
+        "id": "5-verdict",
+        "level": 2,
+        "references": {
+          "adrs": [],
+          "code": [],
+          "documents": [
+            {
+              "doc": "05_THREAT_MODEL.md",
+              "section": "6"
+            },
+            {
+              "doc": "12_BUILD_PLAN.md"
+            },
+            {
+              "doc": "14_DECISIONS.md"
+            }
+          ]
+        },
+        "title": "5. Verdict"
+      }
+    ]
+  },
+  "gate": {
+    "findings": [],
+    "gate": "build+secret_value+pii_path_internal+run_gates",
+    "ok": true
+  },
+  "header": {
+    "audience": "technical",
+    "classification": "public",
+    "export_allowed": true,
+    "id": "V2-015",
+    "last_reviewed": "2026-08-18",
+    "owner": "credmgr-v2",
+    "status": "needs-verification",
+    "surface": "repo",
+    "title": "Pass 2 adversarial review (record)",
+    "variants": []
+  }
+}

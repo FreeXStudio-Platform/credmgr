@@ -1,0 +1,8 @@
+# Pinned per docs/12_BUILD_PLAN.md Phase 0 and docs/16_CROSS_PLATFORM.md §7.
+# MSRV is 1.78 — this file pins exactly that version so every contributor and
+# every CI leg builds with the same compiler. The CI matrix additionally runs
+# a `stable` leg (see .github/workflows/build.yml) to catch forward drift.
+[toolchain]
+channel = "1.78.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

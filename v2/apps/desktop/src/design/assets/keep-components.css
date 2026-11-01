@@ -1,0 +1,215 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   KEEP · component vocabulary — CredMgr V2 (Vault Next)
+   Loads AFTER keep.css. Declares zero raw colours/sizes; every value is a token.
+
+   The block vocabulary, adapted from the upstream document template:
+     shell · rail · inspector · node-chip · entry-row · field-row · stat-tile
+     · chip · note · section-frame · data-table · svgwrap · empty · sealed
+
+   LOCAL DEVIATIONS from the upstream package (2026-10-01) — token swaps, no raw values:
+   1. Type floor. keep.tokens.json says 9px is reserved for keyboard-shortcut tags and nothing
+      else may go below 10.5px, but .k-type, .k-chip, .k-stat .l, .k-hover .l and .k-tbl th used
+      --fs-2xs. They use --fs-xs here. .t-kbd (in keep.css) keeps 9px, as the rule allows.
+   2. Text-safe danger. --danger (#B3373A) is 3.3:1 on the dark grounds — fine for strokes,
+      below AA for small text. --danger-fg is the alias to use for danger TEXT: --danger-hi on
+      dark, --danger on light, a lighter mix under data-contrast="high" (≥ 7:1). Borders and the
+      sensitivity stroke keep --danger.
+   Both are logged for the package owner in BACKEND_HANDOFF_NOTES.md.
+   3. Selected-row text. --mute on --steel-3 is 4.19:1 (the token is only guaranteed AA against
+      --night), so the count inside a selected tree row uses --ash.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+:root { --danger-fg: var(--danger-hi); }
+[data-theme="light"] { --danger-fg: var(--danger); }
+[data-contrast="high"] { --danger-fg: color-mix(in srgb, var(--danger-hi) 60%, var(--bone)); }
+.is-danger { color: var(--danger-fg); }
+
+/* (end of local deviations; the upstream file continues unchanged below) */
+
+/* ── Application shell ─────────────────────────────────────────────────────
+   Three panes. Left rail = tree/nav. Centre = graph or tree. Right = inspector.
+   The inspector shows ONLY the selected node's own entries — never inherited,
+   never a child's. That is a hard product rule, expressed here as a layout
+   with exactly one data source. */
+.k-shell {
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--inspector-w);
+  grid-template-rows: var(--header-h) minmax(0, 1fr);
+  grid-template-areas: "head head head" "rail main insp";
+  height: 100vh;
+  background: var(--night);
+}
+.k-head { grid-area: head; display: flex; align-items: center; gap: var(--s-3);
+          padding: 0 var(--s-4); border-bottom: 1px solid var(--hair); }
+.k-rail { grid-area: rail; overflow-y: auto; border-right: 1px solid var(--hair);
+          background: var(--steel); }
+.k-main { grid-area: main; position: relative; overflow: hidden; background: var(--void); }
+.k-insp { grid-area: insp; overflow-y: auto; border-left: 1px solid var(--hair);
+          background: var(--steel); }
+
+@media (max-width: 1180px) {
+  .k-shell { grid-template-columns: minmax(0, 1fr) var(--inspector-w);
+             grid-template-areas: "head head" "main insp"; }
+  .k-rail { display: none; }            /* rail collapses into a sheet */
+}
+@media (max-width: 820px) {
+  .k-shell { grid-template-columns: minmax(0, 1fr);
+             grid-template-areas: "head" "main"; }
+  .k-insp { position: fixed; inset: var(--header-h) 0 0 0; z-index: 40;
+            transform: translateX(100%); transition: transform var(--t-md) var(--ease-out-expo); }
+  .k-insp[data-open="true"] { transform: none; }
+}
+
+/* ── Section frame — the document-system unit, reused in the inspector ───── */
+.k-section { padding: var(--s-5) var(--s-4); border-bottom: 1px solid var(--hair); }
+.k-section > .t-eyebrow { display: block; margin-bottom: var(--s-3); }
+.k-section:last-child { border-bottom: none; }
+
+/* ── Node chip — a node rendered inline (rail rows, breadcrumbs, pickers) ─── */
+.k-node-chip {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  font-family: var(--f-mono); font-size: var(--fs-base);
+  padding: var(--s-1) var(--s-2); border-radius: var(--r-sm);
+  border: 1px solid transparent;
+}
+.k-node-chip[data-kind="global"]  { font-weight: var(--fw-label); }
+.k-node-chip[data-kind="orphan"]  { color: var(--mute); border-style: dashed;
+                                    border-color: var(--faint); }
+.k-node-chip[aria-selected="true"]{ background: var(--steel-3); border-color: var(--hair-strong); }
+.k-node-chip:hover { background: var(--steel-2); }
+
+/* The node glyph: shape carries type, stroke carries state. No colour needed. */
+.k-node-glyph { width: 12px; height: 12px; flex: 0 0 12px; }
+.k-node-glyph circle { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.k-node-glyph[data-kind="global"]  circle { fill: currentColor; }
+.k-node-glyph[data-kind="sub"]     circle { stroke-width: 1; }
+.k-node-glyph[data-kind="orphan"]  circle { stroke-dasharray: 2 2; }
+
+/* ── Worktree rail — the list view of the same graph ──────────────────────── */
+.k-tree { list-style: none; margin: 0; padding: var(--s-2); }
+.k-tree ul { list-style: none; margin: 0; padding-left: var(--s-4);
+             border-left: 1px solid var(--hair); }
+.k-tree li { margin: 1px 0; }
+.k-tree-row { display: flex; align-items: center; gap: var(--s-2); width: 100%;
+              padding: var(--s-1) var(--s-2); border: 0; background: none;
+              color: var(--bone); cursor: pointer; border-radius: var(--r-sm);
+              font-family: var(--f-mono); font-size: var(--fs-base); text-align: left; }
+.k-tree-row:hover { background: var(--steel-2); }
+.k-tree-row[aria-current="true"] { background: var(--steel-3); }
+.k-tree-row[aria-current="true"] .k-tree-count { color: var(--ash); }
+.k-tree-count { margin-left: auto; color: var(--mute); font-size: var(--fs-xs);
+                font-variant-numeric: tabular-nums; }
+
+/* ── Entry row — one credential inside the inspector ──────────────────────── */
+.k-entry {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+  gap: var(--s-2); padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--hair); cursor: pointer;
+}
+.k-entry:hover { background: var(--steel-2); }
+.k-entry-name { font-family: var(--f-mono); font-size: var(--fs-base);
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k-entry-meta { font-family: var(--f-mono); font-size: var(--fs-xs); color: var(--mute); }
+
+/* ── Field row — one field inside a credential. Label is free text. ───────── */
+.k-field { display: grid; grid-template-columns: 140px minmax(90px, 1fr) auto;
+           gap: var(--s-3); align-items: start; padding: var(--s-2) 0;
+           border-bottom: 1px solid var(--hair); }
+.k-field.sens-low, .k-field.sens-medium, .k-field.sens-high, .k-field.sens-critical { padding-left: var(--s-3); }
+.k-field-label { font-family: var(--f-mono); font-size: var(--fs-sm);
+                 color: var(--mute); word-break: break-word; }
+.k-field-value { font-family: var(--f-mono); font-size: var(--fs-base);
+                 white-space: pre-wrap; word-break: break-all; }
+.k-field-value[data-masked="true"] { color: var(--mute); letter-spacing: 0.12em; }
+@media (max-width: 640px) { .k-field { grid-template-columns: minmax(0, 1fr); } }
+
+/* Type badge — achromatic, mono, outline. Type is information, not a state. */
+.k-type { font-family: var(--f-mono); font-size: var(--fs-xs);
+          letter-spacing: 0.1em; text-transform: uppercase; color: var(--mute);
+          border: 1px solid var(--faint); border-radius: var(--r-xs);
+          padding: 1px var(--s-1); white-space: nowrap; }
+
+/* ── Status chip — the ONLY pill in the system ────────────────────────────── */
+.k-chip { display: inline-flex; align-items: center; gap: var(--s-1);
+          font-family: var(--f-mono); font-size: var(--fs-xs);
+          letter-spacing: 0.1em; text-transform: uppercase;
+          padding: 2px var(--s-2); border-radius: var(--r-pill);
+          border: 1px solid var(--faint); color: var(--mute); }
+.k-chip[data-state="ok"]     { color: var(--sig);    border-color: var(--sig); }
+.k-chip[data-state="warn"]   { color: var(--warn);   border-color: var(--warn); }
+.k-chip[data-state="danger"] { color: var(--danger); border-color: var(--danger); }
+.k-chip[data-state="sealed"] { color: var(--mute); border-style: dashed; }
+
+/* ── Stat tile — the two-number hover card also uses this ─────────────────── */
+.k-stat { border: 1px solid var(--faint); border-radius: var(--r-sm);
+          padding: var(--s-3); }
+.k-stat .n { font-family: var(--f-mono); font-weight: var(--fw-label);
+             font-size: var(--fs-xl); font-variant-numeric: tabular-nums;
+             line-height: var(--lh-tight); }
+.k-stat .l { font-family: var(--f-mono); font-size: var(--fs-xs);
+             letter-spacing: 0.12em; text-transform: uppercase;
+             color: var(--mute); margin-top: var(--s-1); }
+
+/* Hover card on a graph node. EXACTLY two numbers. Nothing else is permitted. */
+.k-hover {
+  position: absolute; z-index: 30; pointer-events: none;
+  display: grid; grid-auto-flow: column; gap: var(--s-4);
+  padding: var(--s-2) var(--s-3);
+  background: var(--steel); border: 1px solid var(--hair-strong);
+  border-radius: var(--r-sm); box-shadow: 0 8px 24px var(--scrim);
+}
+.k-hover .n { font-family: var(--f-mono); font-weight: var(--fw-label);
+              font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+.k-hover .l { font-family: var(--f-mono); font-size: var(--fs-xs);
+              letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); }
+
+/* ── Note / callout ───────────────────────────────────────────────────────── */
+.k-note { border-left: 3px solid var(--faint); background: var(--steel-2);
+          padding: var(--s-3) var(--s-4); margin: var(--s-4) 0; }
+.k-note > .t-mono-label { display: block; margin-bottom: var(--s-1); }
+
+/* ── Data table ───────────────────────────────────────────────────────────── */
+.k-tblwrap { overflow-x: auto; margin: var(--s-4) 0; }
+.k-tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
+.k-tbl th { background: var(--steel-3); font-family: var(--f-mono);
+            font-size: var(--fs-xs); letter-spacing: 0.1em; text-transform: uppercase;
+            font-weight: var(--fw-label); text-align: left; padding: var(--s-2); }
+.k-tbl td { padding: var(--s-2); border-bottom: 1px solid var(--hair);
+            vertical-align: top; font-variant-numeric: tabular-nums; }
+
+/* ── Diagram canvas (documents) — the blueprint grid ──────────────────────── */
+.k-svgwrap { border: 1px solid var(--faint); border-radius: var(--r-sm);
+             padding: var(--s-4); margin: var(--s-5) 0;
+             background-image:
+               repeating-linear-gradient(0deg, transparent, transparent 21px, var(--hair) 22px),
+               repeating-linear-gradient(90deg, transparent, transparent 21px, var(--hair) 22px); }
+.k-svgwrap svg { width: 100%; height: auto; display: block; }
+.k-figcap { font-family: var(--f-mono); font-size: var(--fs-sm);
+            color: var(--mute); text-align: center; margin-top: var(--s-2); }
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.k-btn { font-family: var(--f-mono); font-size: var(--fs-sm); letter-spacing: 0.04em;
+         padding: var(--s-2) var(--s-3); border-radius: var(--r-sm);
+         border: 1px solid var(--faint); background: transparent;
+         color: var(--bone); cursor: pointer; min-height: 30px;
+         transition: background var(--t-xs) var(--ease-out-cubic); }
+.k-btn:hover { background: var(--steel-2); border-color: var(--hair-strong); }
+.k-btn[data-variant="primary"] { background: var(--bone); color: var(--night);
+                                 border-color: var(--bone); font-weight: var(--fw-label); }
+.k-btn[data-variant="danger"]  { color: var(--danger-fg); border-color: var(--danger); }
+.k-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Empty + sealed states ────────────────────────────────────────────────── */
+.k-empty { padding: var(--s-8) var(--s-4); text-align: center; color: var(--mute);
+           font-family: var(--f-mono); font-size: var(--fs-base); }
+.k-sealed-panel { padding: var(--s-6) var(--s-4); text-align: center;
+                  color: var(--mute); border: 1px dashed var(--faint);
+                  border-radius: var(--r-sm); margin: var(--s-4);
+                  background-image: repeating-linear-gradient(
+                    45deg, transparent, transparent 5px, var(--hatch) 5px, var(--hatch) 6px); }
+
+/* ── Hit-target floor — every interactive element ≥ 26px, ≥ 30px on touch ─── */
+button, [role="button"], a.k-btn, .k-tree-row, .k-entry { min-height: 26px; }
+@media (pointer: coarse) {
+  button, [role="button"], a.k-btn, .k-tree-row, .k-entry { min-height: 34px; }
+}

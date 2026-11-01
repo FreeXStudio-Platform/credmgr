@@ -1,0 +1,16 @@
+{
+  "id": "op-performance",
+  "visual": "boxplot",
+  "family": "distribution",
+  "summary": "Per-op-family latency distribution",
+  "canonical_reader_question": "Which op families are slowest?",
+  "required_fields": [
+    "data.categories",
+    "data.values"
+  ],
+  "defaults": {},
+  "semantics": {},
+  "job_extras": {},
+  "notes": "values are pre-computed [min,q1,med,q3,max] — engine does no stats",
+  "provenance": "CredMgr visual-engine preset v1.0.0 — lineage in tools/PROVENANCE.md."
+}

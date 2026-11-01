@@ -1,0 +1,304 @@
+{
+  "kind": "system_map",
+  "id": "platform-surface-built-vs-planned",
+  "title": "What actually runs, by platform and layer",
+  "caption": "Built = compiled & tested. Partial = compiles, never run. Planned = no code exists.",
+  "motion": false,
+  "width": 936.0,
+  "height": 1018.0,
+  "nodes": [
+    {
+      "id": "plat-macos",
+      "type": "source",
+      "label": "macOS",
+      "x": 302.0,
+      "y": 70.0,
+      "w": 150.0,
+      "h": 48.0
+    },
+    {
+      "id": "plat-windows",
+      "type": "source",
+      "label": "Windows",
+      "x": 524.0,
+      "y": 70.0,
+      "w": 150.0,
+      "h": 48.0
+    },
+    {
+      "id": "plat-linux",
+      "type": "source",
+      "label": "Linux",
+      "x": 746.0,
+      "y": 70.0,
+      "w": 150.0,
+      "h": 48.0
+    },
+    {
+      "id": "layer-core",
+      "type": "source",
+      "label": "Core & broker logic",
+      "x": 40.0,
+      "y": 190.0,
+      "w": 190.0,
+      "h": 48.0
+    },
+    {
+      "id": "cell-core-macos",
+      "type": "process",
+      "label": "Built",
+      "x": 302.0,
+      "y": 190.0,
+      "w": 150.0,
+      "h": 48.0,
+      "highlight": true
+    },
+    {
+      "id": "cell-core-windows",
+      "type": "process",
+      "label": "Built",
+      "x": 524.0,
+      "y": 190.0,
+      "w": 150.0,
+      "h": 48.0,
+      "highlight": true
+    },
+    {
+      "id": "cell-core-linux",
+      "type": "process",
+      "label": "Built",
+      "x": 746.0,
+      "y": 190.0,
+      "w": 150.0,
+      "h": 48.0,
+      "highlight": true
+    },
+    {
+      "id": "layer-swks",
+      "type": "source",
+      "label": "Software keystore",
+      "x": 40.0,
+      "y": 310.0,
+      "w": 190.0,
+      "h": 48.0
+    },
+    {
+      "id": "cell-swks-macos",
+      "type": "process",
+      "label": "Built",
+      "x": 302.0,
+      "y": 310.0,
+      "w": 150.0,
+      "h": 48.0,
+      "highlight": true
+    },
+    {
+      "id": "cell-swks-windows",
+      "type": "process",
+      "label": "Built",
+      "x": 524.0,
+      "y": 310.0,
+      "w": 150.0,
+      "h": 48.0,
+      "highlight": true
+    },
+    {
+      "id": "cell-swks-linux",
+      "type": "process",
+      "label": "Built",
+      "x": 746.0,
+      "y": 310.0,
+      "w": 150.0,
+      "h": 48.0,
+      "highlight": true
+    },
+    {
+      "id": "layer-hwks",
+      "type": "source",
+      "label": "Hardware keystore",
+      "x": 40.0,
+      "y": 430.0,
+      "w": 190.0,
+      "h": 48.0
+    },
+    {
+      "id": "cell-hwks-macos",
+      "type": "fallback",
+      "label": "Planned",
+      "x": 302.0,
+      "y": 430.0,
+      "w": 150.0,
+      "h": 48.0
+    },
+    {
+      "id": "cell-hwks-windows",
+      "type": "fallback",
+      "label": "Planned",
+      "x": 524.0,
+      "y": 430.0,
+      "w": 150.0,
+      "h": 48.0
+    },
+    {
+      "id": "cell-hwks-linux",
+      "type": "fallback",
+      "label": "Planned",
+      "x": 746.0,
+      "y": 430.0,
+      "w": 150.0,
+      "h": 48.0
+    },
+    {
+      "id": "layer-transport",
+      "type": "source",
+      "label": "Transport & peer ID",
+      "x": 40.0,
+      "y": 550.0,
+      "w": 190.0,
+      "h": 48.0
+    },
+    {
+      "id": "cell-transport-macos",
+      "type": "process",
+      "label": "Built",
+      "x": 302.0,
+      "y": 550.0,
+      "w": 150.0,
+      "h": 48.0,
+      "highlight": true
+    },
+    {
+      "id": "cell-transport-windows",
+      "type": "fallback",
+      "label": "Planned",
+      "x": 524.0,
+      "y": 550.0,
+      "w": 150.0,
+      "h": 48.0
+    },
+    {
+      "id": "cell-transport-linux",
+      "type": "gate",
+      "label": "Partial",
+      "x": 746.0,
+      "y": 550.0,
+      "w": 150.0,
+      "h": 48.0
+    },
+    {
+      "id": "layer-paths",
+      "type": "source",
+      "label": "Vault & state paths",
+      "x": 40.0,
+      "y": 670.0,
+      "w": 190.0,
+      "h": 48.0
+    },
+    {
+      "id": "cell-paths-macos",
+      "type": "process",
+      "label": "Built",
+      "x": 302.0,
+      "y": 670.0,
+      "w": 150.0,
+      "h": 48.0,
+      "highlight": true
+    },
+    {
+      "id": "cell-paths-windows",
+      "type": "process",
+      "label": "Built",
+      "x": 524.0,
+      "y": 670.0,
+      "w": 150.0,
+      "h": 48.0,
+      "highlight": true
+    },
+    {
+      "id": "cell-paths-linux",
+      "type": "process",
+      "label": "Built",
+      "x": 746.0,
+      "y": 670.0,
+      "w": 150.0,
+      "h": 48.0,
+      "highlight": true
+    },
+    {
+      "id": "layer-pack",
+      "type": "source",
+      "label": "Packaging & signing",
+      "x": 40.0,
+      "y": 790.0,
+      "w": 190.0,
+      "h": 48.0
+    },
+    {
+      "id": "cell-pack-macos",
+      "type": "fallback",
+      "label": "Planned",
+      "x": 302.0,
+      "y": 790.0,
+      "w": 150.0,
+      "h": 48.0
+    },
+    {
+      "id": "cell-pack-windows",
+      "type": "fallback",
+      "label": "Planned",
+      "x": 524.0,
+      "y": 790.0,
+      "w": 150.0,
+      "h": 48.0
+    },
+    {
+      "id": "cell-pack-linux",
+      "type": "fallback",
+      "label": "Planned",
+      "x": 746.0,
+      "y": 790.0,
+      "w": 150.0,
+      "h": 48.0
+    }
+  ],
+  "edges": [],
+  "legend": [
+    {
+      "kind": "swatch",
+      "key": "var(--sig)",
+      "label": "Built"
+    },
+    {
+      "kind": "node",
+      "key": "outline",
+      "label": "Partial (compiles, never run)"
+    },
+    {
+      "kind": "line",
+      "key": "dashed",
+      "label": "Planned (no code exists)"
+    }
+  ],
+  "data_sources": [
+    {
+      "kind": "cited",
+      "ref": "crates/brokerd/src/lib.rs (mod peer/server are #[cfg(unix)]; ops/state/scope/protocol/token are not)"
+    },
+    {
+      "kind": "cited",
+      "ref": "crates/brokerd/src/peer.rs (macOS module + #[cfg(all(unix, not(target_os=\"macos\")))] module; zero Windows code)"
+    },
+    {
+      "kind": "cited",
+      "ref": "crates/keystore/src/lib.rs (KeystoreId: 6 variants) and software.rs (the only `impl PlatformKeystore` in the workspace)"
+    },
+    {
+      "kind": "cited",
+      "ref": "crates/store/src/paths.rs::default_vault_dir/default_state_dir (per-target_os branches, all three present)"
+    },
+    {
+      "kind": "cited",
+      "ref": "16_CROSS_PLATFORM.md \u00a74.2-4.4 (hardware keystores), \u00a75.3 (Windows transport), \u00a78.3 (packaging) -- all `planned`"
+    }
+  ]
+}

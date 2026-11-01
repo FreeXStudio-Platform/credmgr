@@ -1,0 +1,45 @@
+{
+  "name": "credmgr-desktop",
+  "version": "2.0.0-beta.1",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "CredMgr desktop app: the KEEP design, precompiled, hosted in a Tauri 2 webview under a strict CSP.",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/dc/verify-build.mjs build",
+    "build:test": "vite build --mode test --outDir build-test && node scripts/dc/verify-build.mjs build-test --test-build",
+    "check": "tsc --noEmit && node scripts/dc/compile.mjs --check src/design/app.template.html",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:csp": "node scripts/verify-csp.mjs",
+    "test:e2e": "npm run build:test && playwright test",
+    "test:real": "node scripts/real-e2e.mjs",
+    "test:real:drift": "node --test tests/real/drift-guard.test.mjs tests/real/preview.test.mjs",
+    "test:design": "npm run build:test && node scripts/verify-design-audit.mjs --engine all",
+    "design:import": "node scripts/dc/import.mjs",
+    "design:extract": "node scripts/dc/extract.mjs",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.1",
+    "qrcode-generator": "2.0.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@tauri-apps/cli": "2.12.1",
+    "@types/node": "26.6.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "parse5": "8.0.1",
+    "playwright": "1.63.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.0.3"
+  }
+}

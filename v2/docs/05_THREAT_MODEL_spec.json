@@ -1,0 +1,78 @@
+{
+  "kind": "system_map",
+  "id": "plaintext-trust-boundaries",
+  "title": "Where a decrypted secret can exist",
+  "caption": "Plaintext exists in exactly three process classes -- the broker, a CLI/MCP client, and (new, 2026-08-18) a webview -- and the webview boundary arrived without the containment the other two already have (dashed = new, still uncontained).",
+  "width": 1300,
+  "height": 940,
+  "motion": false,
+  "nodes": [
+    {
+      "id": "vault_dir",
+      "type": "datastore",
+      "label": "Vault directory",
+      "x": 40,
+      "y": 90,
+      "w": 220,
+      "h": 90,
+      "note": "Ciphertext only"
+    },
+    {
+      "id": "broker",
+      "type": "process",
+      "label": "credmgrd (the broker)",
+      "x": 490,
+      "y": 90,
+      "w": 240,
+      "h": 90,
+      "highlight": true,
+      "note": "Single enforcement point (ADR-001)"
+    },
+    {
+      "id": "cli_client",
+      "type": "process",
+      "label": "CLI client",
+      "x": 40,
+      "y": 420,
+      "w": 220,
+      "h": 80,
+      "note": "Terminal -- operator scrollback is A5"
+    },
+    {
+      "id": "webview",
+      "type": "process",
+      "label": "Webview (Tauri)",
+      "x": 960,
+      "y": 420,
+      "w": 260,
+      "h": 80,
+      "note": "New 2026-08-18: no CSP, no lifetime, no distinct origin"
+    },
+    {
+      "id": "mcp_client",
+      "type": "process",
+      "label": "MCP client",
+      "x": 500,
+      "y": 640,
+      "w": 220,
+      "h": 80,
+      "note": "An agent's context window"
+    }
+  ],
+  "edges": [
+    { "src": "vault_dir", "dst": "broker", "label": "decrypt via keystore" },
+    { "src": "broker", "dst": "cli_client", "label": "entry.reveal (CLI)" },
+    { "src": "broker", "dst": "webview", "label": "48/48 ops incl. reveal", "style": "dashed" },
+    { "src": "broker", "dst": "mcp_client", "label": "entry.reveal (MCP)" }
+  ],
+  "legend": [
+    { "kind": "swatch", "key": "var(--sig)", "label": "single enforcement point" },
+    { "kind": "line", "key": "solid", "label": "boundary present since Pass 2" },
+    { "kind": "line", "key": "dashed", "label": "new 2026-08-18, still uncontained" }
+  ],
+  "data_sources": [
+    { "kind": "cited", "ref": "apps/desktop/src-tauri/src/lib.rs :: invoke_handler (50 commands registered: 48 broker-op commands and the shell's own two)" },
+    { "kind": "cited", "ref": "crates/brokerd/src/ops.rs (48 dispatched ops)" },
+    { "kind": "cited", "ref": "crates/brokerd/src/peer.rs (socket/peer contract, mode 0600)" }
+  ]
+}

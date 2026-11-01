@@ -1,0 +1,16 @@
+{
+  "visual_id": "SIM-02-op-test-matrix",
+  "selected_visual": "heatmap",
+  "preset": "op-test-matrix",
+  "theme": "project-theme",
+  "classification": "internal",
+  "engine": "echarts@6.1.0",
+  "adapter": "credmgr-visual-engine@1.0.0",
+  "width": 800,
+  "height": 480,
+  "svg_sha256": "1bbba1397f1263291a66f60282c77a9123e218407f325d4310715c38854781c0",
+  "option_sha256": "314f9460b56f26fd359f22f66a53fafdfcee628b826716d15b8298b61bf5e2f9",
+  "job_sha256": "99416ef03a28acb0527678eb275ef64380462bf2632b54652c63c2838148debd",
+  "render_ms": 12,
+  "warnings": []
+}

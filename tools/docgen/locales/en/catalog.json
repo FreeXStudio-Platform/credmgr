@@ -1,0 +1,11 @@
+{
+  "badge.classification.confidential": "Confidential",
+  "badge.classification.public": "Public",
+  "badge.classification.secret": "Secret",
+  "figure.caption_prefix": "Figure",
+  "theme.toggle.dark": "Dark",
+  "theme.toggle.label": "Toggle theme",
+  "theme.toggle.light": "Light",
+  "toc.heading": "Contents",
+  "verified.stamp": "Verified by CredMgr"
+}

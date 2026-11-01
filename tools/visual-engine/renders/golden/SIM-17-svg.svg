@@ -1,0 +1,35 @@
+<svg role="img" aria-label="Export test" width="800" height="480" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" baseProfile="full" viewBox="0 0 800 480">
+<rect width="800" height="480" x="0" y="0" fill="none"></rect>
+<path d="M70.5 48L70.5 422" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M211.5 48L211.5 422" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M352.5 48L352.5 422" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M493.5 48L493.5 422" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M635.5 48L635.5 422" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M776.5 48L776.5 422" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M70.5 48L70.5 422" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" stroke-linecap="round" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(62.16 141.5)" fill="#98A0AE">a</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(62.16 328.5)" fill="#98A0AE">b</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(70.16 430)" fill="#98A0AE">0</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(211.328 430)" fill="#98A0AE">1</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(352.496 430)" fill="#98A0AE">2</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(493.664 430)" fill="#98A0AE">3</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(634.832 430)" fill="#98A0AE">4</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(776 430)" fill="#98A0AE">5</text>
+<path d="M72.2 77L491.7 77A2 2 0 0 1 493.7 79L493.7 206L70.2 206L70.2 79A2 2 0 0 1 72.2 77Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="0" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M72.2 264L774 264A2 2 0 0 1 776 266L776 393L70.2 393L70.2 266A2 2 0 0 1 72.2 264Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="1" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M-5 -5l86.8 0l0 26l-86.8 0Z" transform="translate(13 11)" fill="rgb(0,0,0)" fill-opacity="0" stroke="#3c3c41" stroke-width="0" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:16px;font-family:Inter, system-ui, sans-serif;font-weight:600;" xml:space="preserve" y="8" transform="translate(13 11)" fill="#E9ECF1">Export test</text>
+<style ><![CDATA[
+.zr-cls-0:hover {
+pointer-events:none;
+}
+.zr-cls-1:hover {
+cursor:pointer;
+fill:rgba(255,255,255,1);
+}
+
+]]>
+
+</style>
+</svg>
+<!-- generated-by credmgr-visual-engine v1.0.0 · echarts@6.1.0 · theme:project-theme · content-sha256:db9cd161dcd6f68c15aff36953f111a6641eda303c6f2661510ca17048aa62f1 -->

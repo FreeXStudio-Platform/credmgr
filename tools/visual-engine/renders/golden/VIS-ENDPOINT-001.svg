@@ -1,0 +1,100 @@
+<svg role="img" aria-label="V2 broker operations — built vs. documented, by namespace" width="780" height="620" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" baseProfile="full" viewBox="0 0 780 620">
+<rect width="780" height="620" x="0" y="0" fill="none"></rect>
+<path d="M127.5 48L127.5 562" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M232.5 48L232.5 562" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M337.5 48L337.5 562" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M441.5 48L441.5 562" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M546.5 48L546.5 562" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M651.5 48L651.5 562" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M756.5 48L756.5 562" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.1" class="zr-cls-0"></path>
+<path d="M127.3 48L127.2 562" fill="none" pointer-events="visible" stroke="rgb(234,238,245)" stroke-opacity="0.18" stroke-linecap="round" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 63.1176)" fill="#98A0AE">entry</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 93.3529)" fill="#98A0AE">vault</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 123.5882)" fill="#98A0AE">merge</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 153.8235)" fill="#98A0AE">node</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 184.0588)" fill="#98A0AE">agent</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 214.2941)" fill="#98A0AE">audit</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 244.5294)" fill="#98A0AE">field</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 274.7647)" fill="#98A0AE">llm</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 305)" fill="#98A0AE">grant</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 335.2353)" fill="#98A0AE">keystore</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 365.4706)" fill="#98A0AE">maintenance</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 395.7059)" fill="#98A0AE">notes</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 425.9412)" fill="#98A0AE">totp</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 456.1765)" fill="#98A0AE">graph</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 486.4118)" fill="#98A0AE">search</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 516.6471)" fill="#98A0AE">util</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" transform="translate(119.25 546.8824)" fill="#98A0AE">whoami</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(127.25 570)" fill="#98A0AE">0</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(232.0417 570)" fill="#98A0AE">2</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(336.8333 570)" fill="#98A0AE">4</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(441.625 570)" fill="#98A0AE">6</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(546.4167 570)" fill="#98A0AE">8</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(651.2083 570)" fill="#98A0AE">10</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:10px;font-family:JetBrains Mono, ui-monospace, monospace;" y="5" transform="translate(756 570)" fill="#98A0AE">12</text>
+<path d="M129.3 52.1L544.4 52.1A2 2 0 0 1 546.4 54.1L546.4 62.6L127.2 62.6L127.2 54.1A2 2 0 0 1 129.3 52.1Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="0" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M129.3 82.3L754 82.3A2 2 0 0 1 756 84.3L756 92.8L127.2 92.8L127.2 84.3A2 2 0 0 1 129.3 82.3Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="1" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M127.2 112.6L127.2 123.1L127.2 112.6Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="2" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M129.3 142.8L387.2 142.8A2 2 0 0 1 389.2 144.8L389.2 153.3L127.2 153.3L127.2 144.8A2 2 0 0 1 129.3 142.8Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="3" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M127.2 173L127.2 183.5L127.2 173Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="4" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M129.3 203.3L230 203.3A2 2 0 0 1 232 205.3L232 213.8L127.2 213.8L127.2 205.3A2 2 0 0 1 129.3 203.3Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="5" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M127.2 233.5L127.2 244L127.2 233.5Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="6" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M127.2 263.7L127.2 274.2L127.2 263.7Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="7" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M129.3 294L282.4 294A2 2 0 0 1 284.4 296L284.4 304.5L127.2 304.5L127.2 296A2 2 0 0 1 129.3 294Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="8" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M127.2 324.2L127.2 334.7L127.2 324.2Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="9" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M129.3 354.4L282.4 354.4A2 2 0 0 1 284.4 356.4L284.4 364.9L127.2 364.9L127.2 356.4A2 2 0 0 1 129.3 354.4Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="10" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M127.2 384.7L127.2 395.2L127.2 384.7Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="11" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M129.3 414.9L230 414.9A2 2 0 0 1 232 416.9L232 425.4L127.2 425.4L127.2 416.9A2 2 0 0 1 129.3 414.9Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="12" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M129.3 445.1L177.6 445.1A2 2 0 0 1 179.6 447.1L179.6 455.7L127.2 455.7L127.2 447.1A2 2 0 0 1 129.3 445.1Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="13" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M129.3 475.4L177.6 475.4A2 2 0 0 1 179.6 477.4L179.6 485.9L127.2 485.9L127.2 477.4A2 2 0 0 1 129.3 475.4Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="14" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M127.2 505.6L127.2 516.1L127.2 505.6Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="15" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M129.3 535.8L177.6 535.8A2 2 0 0 1 179.6 537.8L179.6 546.4L127.2 546.4L127.2 537.8A2 2 0 0 1 129.3 535.8Z" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="16" ecmeta_ssr_type="chart" class="zr-cls-1"></path>
+<path d="M129.3 63.6L492 63.6A2 2 0 0 1 494 65.6L494 74.2L127.2 74.2L127.2 65.6A2 2 0 0 1 129.3 63.6Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="0" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M129.3 93.9L177.6 93.9A2 2 0 0 1 179.6 95.9L179.6 104.4L127.2 104.4L127.2 95.9A2 2 0 0 1 129.3 93.9Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="1" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M129.3 124.1L544.4 124.1A2 2 0 0 1 546.4 126.1L546.4 134.6L127.2 134.6L127.2 126.1A2 2 0 0 1 129.3 124.1Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="2" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M129.3 154.3L282.4 154.3A2 2 0 0 1 284.4 156.3L284.4 164.9L127.2 164.9L127.2 156.3A2 2 0 0 1 129.3 154.3Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="3" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M129.3 184.6L334.8 184.6A2 2 0 0 1 336.8 186.6L336.8 195.1L127.2 195.1L127.2 186.6A2 2 0 0 1 129.3 184.6Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="4" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M129.3 214.8L230 214.8A2 2 0 0 1 232 216.8L232 225.3L127.2 225.3L127.2 216.8A2 2 0 0 1 129.3 214.8Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="5" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M129.3 245.1L334.8 245.1A2 2 0 0 1 336.8 247.1L336.8 255.6L127.2 255.6L127.2 247.1A2 2 0 0 1 129.3 245.1Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="6" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M129.3 275.3L334.8 275.3A2 2 0 0 1 336.8 277.3L336.8 285.8L127.2 285.8L127.2 277.3A2 2 0 0 1 129.3 275.3Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="7" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M127.2 305.5L127.2 316L127.2 305.5Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="8" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M129.3 335.8L282.4 335.8A2 2 0 0 1 284.4 337.8L284.4 346.3L127.2 346.3L127.2 337.8A2 2 0 0 1 129.3 335.8Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="9" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M127.2 366L127.2 376.5L127.2 366Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="10" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M129.3 396.2L230 396.2A2 2 0 0 1 232 398.2L232 406.7L127.2 406.7L127.2 398.2A2 2 0 0 1 129.3 396.2Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="11" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M127.2 426.5L127.2 437L127.2 426.5Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="12" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M127.2 456.7L127.2 467.2L127.2 456.7Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="13" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M127.2 486.9L127.2 497.4L127.2 486.9Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="14" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M129.3 517.2L177.6 517.2A2 2 0 0 1 179.6 519.2L179.6 527.7L127.2 527.7L127.2 519.2A2 2 0 0 1 129.3 517.2Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="15" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M127.2 547.4L127.2 557.9L127.2 547.4Z" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="16" ecmeta_ssr_type="chart" class="zr-cls-2"></path>
+<path d="M-5 -5l137.6 0l0 24l-137.6 0Z" transform="translate(639.38 33)" fill="rgb(0,0,0)" fill-opacity="0" stroke="#b7b9be" stroke-width="0" class="zr-cls-0"></path>
+<path d="M3.5 0L21.5 0A3.5 3.5 0 0 1 25 3.5L25 10.5A3.5 3.5 0 0 1 21.5 14L3.5 14A3.5 3.5 0 0 1 0 10.5L0 3.5A3.5 3.5 0 0 1 3.5 0Z" transform="translate(639.38 33)" fill="#E9ECF1" ecmeta_series_index="0" ecmeta_data_index="0" ecmeta_ssr_type="legend" ecmeta_silent="true" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" x="30" y="7" transform="translate(639.38 33)" fill="#98A0AE">built</text>
+<path d="M0 0l50.2 0l0 14l-50.2 0Z" transform="translate(639.38 33)" fill="none" pointer-events="visible" ecmeta_series_index="0" ecmeta_data_index="0" ecmeta_ssr_type="legend" class="zr-cls-3"></path>
+<path d="M3.5 0L21.5 0A3.5 3.5 0 0 1 25 3.5L25 10.5A3.5 3.5 0 0 1 21.5 14L3.5 14A3.5 3.5 0 0 1 0 10.5L0 3.5A3.5 3.5 0 0 1 3.5 0Z" transform="translate(697.62 33)" fill="#98A0AE" ecmeta_series_index="1" ecmeta_data_index="1" ecmeta_ssr_type="legend" ecmeta_silent="true" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:11px;font-family:Inter, system-ui, sans-serif;" x="30" y="7" transform="translate(697.62 33)" fill="#98A0AE">planned</text>
+<path d="M0 0l69.4 0l0 14l-69.4 0Z" transform="translate(697.62 33)" fill="none" pointer-events="visible" ecmeta_series_index="1" ecmeta_data_index="1" ecmeta_ssr_type="legend" class="zr-cls-3"></path>
+<path d="M-5 -5l444.9 0l0 48l-444.9 0Z" transform="translate(13 11)" fill="rgb(0,0,0)" fill-opacity="0" stroke="#3c3c41" stroke-width="0" class="zr-cls-0"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:16px;font-family:Inter, system-ui, sans-serif;font-weight:600;" xml:space="preserve" y="8" transform="translate(13 11)" fill="#E9ECF1">V2 broker operations — built vs. documented, by namespace</text>
+<text dominant-baseline="central" text-anchor="start" style="font-size:12px;font-family:Inter, system-ui, sans-serif;" xml:space="preserve" y="32" transform="translate(13 11)" fill="#98A0AE">38 of 77 documented operations are dispatched today (crates/brokerd/src/ops.rs)</text>
+<style ><![CDATA[
+.zr-cls-0:hover {
+pointer-events:none;
+}
+.zr-cls-1:hover {
+cursor:pointer;
+fill:rgba(255,255,255,1);
+}
+.zr-cls-2:hover {
+cursor:pointer;
+fill:rgba(167,176,191,1);
+}
+.zr-cls-3:hover {
+cursor:pointer;
+fill:rgba(0,0,0,0);
+}
+
+]]>
+
+</style>
+</svg>
+<!-- generated-by credmgr-visual-engine v1.0.0 · echarts@6.1.0 · theme:project-theme · content-sha256:e848f6cd32ea4e035e142f5d5b50b362426c46d45194eb8ebe6c3e34b2d81232 -->

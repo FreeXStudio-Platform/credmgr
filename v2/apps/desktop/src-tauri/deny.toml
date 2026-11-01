@@ -1,0 +1,112 @@
+# cargo-deny configuration for the desktop shell.
+#
+# `apps/desktop/src-tauri` is its own Cargo workspace (ADR-035: Tauri 2's
+# dependency tree needs a newer toolchain than the 1.78 MSRV the security crates
+# are pinned to), so `v2/deny.toml` does not see it. This file is that policy,
+# mirrored, for the tree the desktop app actually links. Keep the two in step:
+# `tests/dependency_policy.rs` fails if this file stops banning what it bans.
+#
+# Run: cargo deny --locked check          (from this directory)
+# CI:  .github/workflows/security.yml
+
+[graph]
+# The platforms the app ships on. Tauri's own manifest depends on `reqwest` for
+# Android and iOS only; naming the desktop triples here is what keeps those
+# mobile-only edges out of the checked graph (see tests/dependency_policy.rs).
+#
+# macOS only, because the beta ships on macOS. Measured with `v2/deny.toml`'s four
+# targets (adding x86_64-pc-windows-msvc and x86_64-unknown-linux-gnu): bans,
+# licences and sources still pass, and only `advisories` fails, on
+# RUSTSEC-2024-0370 (a build-time proc-macro under Tauri's GTK 3 bindings, Linux
+# only; see .cargo/audit.toml). Extend this list, and re-read that advisory,
+# before a Linux or Windows build is released.
+targets = [
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-apple-darwin" },
+]
+all-features = false
+no-default-features = false
+
+[advisories]
+version = 2
+# Every entry needs a reason and an upstream reference. None are needed today.
+ignore = []
+
+[licenses]
+version = 2
+unused-allowed-license = "allow"
+confidence-threshold = 0.8
+# The same list as v2/deny.toml. Tauri's tree needs nothing beyond it except five
+# MPL-2.0 crates, which are excepted one by one below.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "0BSD",
+]
+
+# MPL-2.0 is weak, file-level copyleft: it obliges whoever ships a *modified* MPL
+# file to publish that file, and says nothing about the rest of the program, so
+# it does not touch this product's licence. None of these five crates is
+# modified here (they are pulled as published crates.io releases), and the
+# unmodified source each licence points to is the upstream below. They are a
+# Tauri dependency, not a choice made in this repository, so the exception is
+# per crate, never a blanket "MPL-2.0" in `allow`: a sixth MPL crate must fail
+# this check and be read.
+#
+#   cssparser, cssparser-macros, selectors, dtoa-short — reached through
+#     tauri -> tauri-utils -> dom_query (HTML / CSS handling for the app's CSP
+#     and asset pipeline).
+#   option-ext — reached through tauri / wry -> dirs -> dirs-sys (the platform
+#     directory lookup behind Tauri's path API).
+#
+# The third-party notices for a release list these five with their upstream.
+exceptions = [
+    { allow = ["MPL-2.0"], crate = "cssparser" },       # https://github.com/servo/rust-cssparser
+    { allow = ["MPL-2.0"], crate = "cssparser-macros" }, # https://github.com/servo/rust-cssparser
+    { allow = ["MPL-2.0"], crate = "selectors" },        # https://github.com/servo/stylo
+    { allow = ["MPL-2.0"], crate = "dtoa-short" },       # https://github.com/upsuper/dtoa-short
+    { allow = ["MPL-2.0"], crate = "option-ext" },       # https://github.com/soc/option-ext
+]
+
+# This crate carries the FreexStudio source-available licence (license-file, not an SPDX id)
+# and is `publish = false`, so the licence check skips it.
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+deny = [
+    { crate = "openssl", reason = "RustCrypto only — see 16_CROSS_PLATFORM.md §2" },
+    { crate = "native-tls", reason = "A-1: no TLS client, because no network client (17_AIRLOCK_AND_LLM.md)" },
+    { crate = "rustls", reason = "A-1: no TLS client, because no network client (17_AIRLOCK_AND_LLM.md)" },
+    # 17_AIRLOCK_AND_LLM.md A-1/A-2: the vault makes no outbound network
+    # connection and opens no listening port. The shell talks to the broker over a
+    # Unix domain socket and to nothing else.
+    { crate = "reqwest", reason = "A-1: the app never makes an outbound network connection" },
+    { crate = "hyper", reason = "A-1/A-2: no HTTP client or server in the app" },
+    { crate = "ureq", reason = "A-1: the app never makes an outbound network connection" },
+    { crate = "isahc", reason = "A-1: the app never makes an outbound network connection" },
+    { crate = "curl", reason = "A-1: the app never makes an outbound network connection" },
+    { crate = "surf", reason = "A-1: the app never makes an outbound network connection" },
+    { crate = "attohttpc", reason = "A-1: the app never makes an outbound network connection" },
+    { crate = "axum", reason = "A-2: the app opens no listening port" },
+    { crate = "actix-web", reason = "A-2: the app opens no listening port" },
+    { crate = "warp", reason = "A-2: the app opens no listening port" },
+    { crate = "tiny_http", reason = "A-2: the app opens no listening port" },
+]
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

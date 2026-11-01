@@ -1,0 +1,110 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# credmgr — deny-by-default secret hygiene
+#
+# This file is the SECOND line of defence, not the first. The first is that the
+# vault does not live here at all: lib/paths.js resolves it to the platform's
+# user-data directory (~/Library/Application Support/credmgr, %APPDATA%\credmgr,
+# ~/.local/share/credmgr). A path outside the repository is a guarantee; a
+# .gitignore is only a promise.
+#
+# The third line is scripts/guard-no-secrets.mjs, installed as a pre-commit
+# hook by `npm run hooks:install` and run in CI. It blocks the commit.
+#
+# If you are adding a new file type that could ever hold a secret, add it here
+# FIRST and commit that change on its own.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── The vault itself (belt and braces — it should never be in-tree) ─────────
+.credmgr/
+store/
+backups/
+archive/
+*.age
+*.tar.age
+vault.sha256
+
+# ── Key material, any shape, anywhere ──────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.kubeconfig
+*.asc
+*.gpg
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+*_rsa
+*_ecdsa
+*_ed25519
+!*.pub.example
+
+# ── Environment files ──────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# ── Cloud / service credential files ───────────────────────────────────────
+credentials.json
+service-account*.json
+gcp-key*.json
+firebase-adminsdk-*.json
+aws-credentials*
+.npmrc
+.netrc
+secrets.yaml
+secrets.yml
+secrets.toml
+*.mobileprovision
+
+# ── Wallet / chain material ────────────────────────────────────────────────
+*mnemonic*
+*seed-phrase*
+*seedphrase*
+keystore/
+wallets.json
+**/receive-addresses-*.json
+
+# ── Plaintext credential dumps people accidentally create ──────────────────
+*credential*.txt
+*credentials*.md
+*password*.txt
+*secret*.txt
+*token*.txt
+*.local
+*.rtf
+
+# ── Build / tooling / OS ───────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.swp
+*~
+
+# ── Local agent / editor state (not secrets, just not for git) ─────────────
+.codemap/
+.remember/
+.planning/
+.cleanup_state/
+
+# ── Local agent context, not product documentation ─────────────────────────
+# CLAUDE.md describes the maintainer's local three-location layout (live vault /
+# public source / V2 design) and their machine's paths. Useful to an agent working
+# here; meaningless and mildly revealing to anyone else. It stays on disk and out
+# of the repository.
+CLAUDE.md
+.claude/

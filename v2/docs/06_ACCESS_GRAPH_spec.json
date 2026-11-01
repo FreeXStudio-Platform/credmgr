@@ -1,0 +1,95 @@
+[
+  {
+    "kind": "flowchart",
+    "id": "access-rule-ladder",
+    "title": "resolve(): the R0-R8 ladder, in evaluation order",
+    "caption": "One function, evaluated top to bottom, first match wins — never a weighted or combined policy. Both orphan guards (subject-side, then R0's target-side) sit above every numbered rule; R8 at the bottom is the unconditional default deny.",
+    "nodes": [
+      { "id": "entry", "type": "source", "label": "resolve() called", "x": 80, "y": 60, "w": 220, "h": 64 },
+      { "id": "pre", "type": "decision", "label": "subject == orphan?", "x": 80, "y": 280, "w": 220, "h": 64 },
+      { "id": "pre_deny", "type": "output", "label": "DENY — reported as R8", "x": 510, "y": 280, "w": 220, "h": 64 },
+      { "id": "r0", "type": "decision", "label": "target == orphan? (R0)", "x": 80, "y": 500, "w": 220, "h": 64 },
+      { "id": "r0_allow", "type": "output", "label": "ALLOW (R0)", "x": 510, "y": 500, "w": 220, "h": 64 },
+      { "id": "r0_deny", "type": "output", "label": "DENY (R0)", "x": 510, "y": 720, "w": 220, "h": 64 },
+      { "id": "r1", "type": "decision", "label": "locked & cap in reveal/update? (R1)", "x": 80, "y": 940, "w": 220, "h": 64 },
+      { "id": "r1_deny", "type": "output", "label": "DENY (R1)", "x": 510, "y": 940, "w": 220, "h": 64 },
+      { "id": "r2", "type": "decision", "label": "subject == target? (R2)", "x": 80, "y": 1160, "w": 220, "h": 64 },
+      { "id": "r2_allow", "type": "output", "label": "ALLOW (R2)", "x": 510, "y": 1160, "w": 220, "h": 64 },
+      { "id": "r3", "type": "decision", "label": "target == global? (R3)", "x": 80, "y": 1380, "w": 220, "h": 64 },
+      { "id": "r3_allow", "type": "output", "label": "ALLOW (R3)", "x": 510, "y": 1380, "w": 220, "h": 64 },
+      { "id": "r4", "type": "decision", "label": "target is strict ancestor? (R4)", "x": 80, "y": 1600, "w": 220, "h": 64 },
+      { "id": "r4_allow", "type": "output", "label": "ALLOW (R4)", "x": 510, "y": 1600, "w": 220, "h": 64 },
+      { "id": "r5", "type": "decision", "label": "descendant & descendantRead? (R5)", "x": 80, "y": 1820, "w": 220, "h": 64 },
+      { "id": "r5_allow", "type": "output", "label": "ALLOW (R5)", "x": 510, "y": 1820, "w": 220, "h": 64 },
+      { "id": "r6", "type": "decision", "label": "depth-2 siblings, shared? (R6)", "x": 80, "y": 2040, "w": 220, "h": 64 },
+      { "id": "r6_allow", "type": "output", "label": "ALLOW (R6)", "x": 510, "y": 2040, "w": 220, "h": 64 },
+      { "id": "r7", "type": "decision", "label": "unexpired matching grant? (R7)", "x": 80, "y": 2260, "w": 220, "h": 64 },
+      { "id": "r7_allow", "type": "output", "label": "ALLOW (R7)", "x": 510, "y": 2260, "w": 220, "h": 64 },
+      { "id": "r8_default", "type": "output", "label": "DENY (default, R8)", "x": 80, "y": 2480, "w": 220, "h": 64 }
+    ],
+    "edges": [
+      { "src": "entry", "dst": "pre" },
+      { "src": "pre", "dst": "pre_deny", "condition": "yes" },
+      { "src": "pre", "dst": "r0", "condition": "no" },
+      { "src": "r0", "dst": "r0_allow", "condition": "native + presence" },
+      { "src": "r0", "dst": "r0_deny", "condition": "orphan, else" },
+      { "src": "r0", "dst": "r1", "condition": "not orphan" },
+      { "src": "r1", "dst": "r1_deny", "condition": "yes" },
+      { "src": "r1", "dst": "r2", "condition": "no" },
+      { "src": "r2", "dst": "r2_allow", "condition": "yes" },
+      { "src": "r2", "dst": "r3", "condition": "no" },
+      { "src": "r3", "dst": "r3_allow", "condition": "yes" },
+      { "src": "r3", "dst": "r4", "condition": "no" },
+      { "src": "r4", "dst": "r4_allow", "condition": "yes" },
+      { "src": "r4", "dst": "r5", "condition": "no" },
+      { "src": "r5", "dst": "r5_allow", "condition": "yes" },
+      { "src": "r5", "dst": "r6", "condition": "no" },
+      { "src": "r6", "dst": "r6_allow", "condition": "yes" },
+      { "src": "r6", "dst": "r7", "condition": "no" },
+      { "src": "r7", "dst": "r7_allow", "condition": "yes" },
+      { "src": "r7", "dst": "r8_default", "condition": "no" }
+    ],
+    "legend": [
+      { "kind": "node", "key": "decision", "label": "Rule condition (diamond)" },
+      { "kind": "node", "key": "output", "label": "Allow / Deny result" }
+    ],
+    "motion": false,
+    "width": 840,
+    "height": 2700,
+    "data_sources": [
+      { "kind": "cited", "ref": "v2/crates/core/src/access.rs:142-219 (resolve, the R0-R8 ladder in literal branch order)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "v2/crates/core/src/access.rs:156-157 (subject-orphan guard, denied and reported as Rule::R8)", "retrieved": "2026-08-23" }
+    ]
+  },
+  {
+    "kind": "state",
+    "id": "grant-lifecycle-built-vs-planned",
+    "title": "Grant lifecycle: what executes today vs. what only refuses",
+    "caption": "Removal executes today: active -> revoked deletes the grant outright, and active -> expired needs no sweep. Creation refuses everywhere -- propose -> confirm -> active always ends in presence_required.",
+    "nodes": [
+      { "id": "propose", "type": "state", "label": "propose", "x": 260, "y": 60, "w": 200, "h": 64 },
+      { "id": "confirm", "type": "state", "label": "confirm", "x": 260, "y": 320, "w": 200, "h": 64 },
+      { "id": "active", "type": "state", "label": "active", "x": 260, "y": 580, "w": 200, "h": 64 },
+      { "id": "revoked", "type": "state", "label": "revoked", "x": 60, "y": 860, "w": 200, "h": 64 },
+      { "id": "expired", "type": "state", "label": "expired", "x": 540, "y": 860, "w": 200, "h": 64 }
+    ],
+    "edges": [
+      { "src": "propose", "dst": "confirm", "style": "dashed", "condition": "blocked: presence_required" },
+      { "src": "confirm", "dst": "active", "style": "dashed", "condition": "blocked: presence_required" },
+      { "src": "active", "dst": "revoked", "condition": "built: grant.revoke" },
+      { "src": "active", "dst": "expired", "condition": "built: expires_at check" }
+    ],
+    "legend": [
+      { "kind": "line", "key": "solid", "label": "Transition built and tested" },
+      { "kind": "line", "key": "dashed", "label": "Transition planned, refuses today" }
+    ],
+    "motion": false,
+    "width": 820,
+    "height": 1120,
+    "data_sources": [
+      { "kind": "cited", "ref": "v2/crates/brokerd/src/ops.rs:2513-2572 (grant.create arm, validates everything then returns PresenceRequired unconditionally)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "v2/crates/brokerd/src/ops.rs:2585-2619 (grant.revoke arm, executes and deletes the grant from the registry)", "retrieved": "2026-08-23" },
+      { "kind": "cited", "ref": "v2/crates/core/src/access.rs:102-125 (has_matching_grant; expiry check at 108-113, no sweep or timer involved)", "retrieved": "2026-08-23" }
+    ]
+  }
+]

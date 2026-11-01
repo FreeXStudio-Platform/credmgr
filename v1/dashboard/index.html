@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title> </title>
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0F172A">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="credmgr">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <!-- No web fonts: system stacks only (--font/--mono in style.css). This is a
+       trust cue too — a vault that promises "no network egress" shouldn't
+       reach out to Google on every load. -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="brand">
+      <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+      <span class="brand-name">CredMgr</span>
+      <span class="health-badge" id="health-badge">
+        <span class="health-dot"></span>
+        <span id="health-text">checking</span>
+      </span>
+    </div>
+
+    <!-- Search is now the Command Palette launcher — the primary nav surface. -->
+    <div class="palette-launcher-wrap">
+      <button id="cm-search-btn" class="palette-launcher" title="Search or run a command">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="15" height="15"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span class="palette-launcher-text">Search or jump to a command…</span>
+        <kbd>⌘K</kbd>
+      </button>
+    </div>
+
+    <div class="header-actions">
+      <!-- Dedicated quick-add — always one click away, no palette digging -->
+      <button id="add-btn" class="btn btn-primary btn-sm header-add-btn" title="New credential (N)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New
+      </button>
+      <span class="trust-pill" id="trust-pill" title="Local dashboard — no network egress">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" width="11" height="11"><path d="M12 2 3 6v6c0 5.4 3.8 9.6 9 11 5.2-1.4 9-5.6 9-11V6l-9-4Z"/></svg>
+        <span id="trust-pill-text">Trusted local</span>
+      </span>
+      <button id="theme-toggle" class="btn-icon" title="Toggle theme (T)">
+        <svg id="theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg id="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+      <button id="chart-toggle" class="btn-icon" title="Vault stats (H)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      </button>
+      <button id="settings-btn" class="btn-icon" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button id="lock-now-btn" class="btn-icon" title="Lock vault (⌘L)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </button>
+    </div>
+
+    <!-- Actions still driven by their original handlers, just off the visible
+         header per the command-palette-first design — the palette / keyboard
+         shortcuts trigger these via .click() so no behavior changes. -->
+    <div id="header-hidden-triggers" style="display:none" aria-hidden="true">
+      <button id="batch-add-btn">Batch</button>
+      <button id="activity-toggle">Activity</button>
+      <button id="shortcuts-btn">Shortcuts</button>
+    </div>
+  </header>
+
+  <!-- ── Filter bar ── -->
+  <div id="filters-bar">
+    <div class="filter-section">
+      <div class="filter-group">
+        <select id="filter-project">
+          <option value="">All Projects</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <select id="filter-category">
+          <option value="">All Categories</option>
+        </select>
+      </div>
+      <div class="sens-pills" id="sens-pills">
+        <button class="sens-pill active" data-val="">All</button>
+        <button class="sens-pill pill-critical" data-val="critical">Critical</button>
+        <button class="sens-pill pill-high" data-val="high">High</button>
+        <button class="sens-pill pill-medium" data-val="medium">Medium</button>
+        <button class="sens-pill pill-low" data-val="low">Low</button>
+      </div>
+      <div class="filter-divider"></div>
+      <div class="smart-views" id="smart-views">
+        <button class="smart-view-chip" data-view="wallets">Wallets</button>
+        <button class="smart-view-chip" data-view="expiring">Expiring</button>
+        <button class="smart-view-chip" data-view="never-accessed">Never accessed</button>
+      </div>
+      <div class="merge-controls" id="merge-controls">
+        <button id="merge-proceed-btn" class="btn btn-primary btn-sm merge-proceed-btn" style="display:none">
+          Merge <span id="merge-proceed-count">0</span> Selected
+        </button>
+        <button id="merge-btn" class="btn btn-ghost btn-sm" title="Select credentials to merge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M8 6L21 6"/><path d="M8 12L21 12"/><path d="M8 18L21 18"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+          Merge
+        </button>
+      </div>
+    </div>
+    <div class="filter-stats" id="stats-bar"></div>
+  </div>
+
+  <!-- ── Command Palette (⌘K) — primary nav: search + every command ── -->
+  <div id="palette-modal" class="modal-overlay palette-overlay">
+    <div class="palette">
+      <div class="palette-input-row">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="palette-input" placeholder="Search credentials, run a command, or jump with #ref…" autocomplete="off" spellcheck="false">
+        <kbd>Esc</kbd>
+      </div>
+      <div class="palette-body" id="palette-body"></div>
+      <div class="palette-footer">
+        <span>↑↓ navigate · ⏎ open · #1180 jumps by ref</span>
+        <span id="palette-count"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Stats Modal ── -->
+  <div id="stats-modal" class="modal-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <div class="modal-title-row"><h2>Vault stats</h2></div>
+        <button class="btn-icon" id="stats-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="analytics-strip" id="analytics-strip">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-card-title">By Category</span>
+          </div>
+          <div class="chart-card-body">
+            <div id="donut-category" class="donut-wrap"></div>
+            <ul id="donut-legend" class="donut-legend"></ul>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-card-title">By Project</span>
+          </div>
+          <div class="chart-card-body chart-card-body--bars">
+            <div id="bars-project" class="hbars"></div>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-card-title">By Sensitivity</span>
+          </div>
+          <div class="chart-card-body chart-card-body--bars">
+            <div id="bars-sensitivity" class="hbars"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Content area (main + optional sidebar) ── -->
+  <div class="content-area">
+    <main>
+      <!-- ── Health & Automation Hub — the vault watches itself so you don't
+             have to go looking: integrity, doctor-fixable issues, dedupe
+             suggestions, expiring credentials, and recent activity. ── -->
+      <div id="health-hub" class="health-hub">
+        <div class="hub-left">
+          <div class="hub-status-row">
+            <div class="hub-ring" id="hub-ring">
+              <svg width="56" height="56" viewBox="0 0 56 56" style="transform:rotate(-90deg)">
+                <circle cx="28" cy="28" r="24" fill="none" stroke="var(--border)" stroke-width="4"/>
+                <circle id="hub-ring-arc" cx="28" cy="28" r="24" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-dasharray="150.8" stroke-dashoffset="150.8"/>
+              </svg>
+              <span class="hub-ring-icon" id="hub-ring-icon"></span>
+            </div>
+            <div class="hub-status-text">
+              <div class="hub-status-title" id="hub-status-title">Checking vault health…</div>
+              <div class="hub-status-sub" id="hub-status-sub"></div>
+            </div>
+          </div>
+          <div class="hub-rows" id="hub-rows"></div>
+        </div>
+        <div class="hub-right">
+          <div class="hub-activity-label">Recent activity</div>
+          <div class="hub-activity-list" id="hub-activity-list"></div>
+          <button class="hub-view-log-link" id="hub-view-log-btn">View full access log</button>
+        </div>
+      </div>
+
+      <div id="cred-list"></div>
+    </main>
+
+    <!-- ── Activity Sidebar ── -->
+    <aside id="activity-sidebar" class="activity-sidebar" style="display:none">
+      <div class="sidebar-header">
+        <h3>Activity</h3>
+        <div class="sidebar-time-tabs" id="sidebar-time-tabs">
+          <button class="stab active" data-window="3h">3h</button>
+          <button class="stab" data-window="12h">12h</button>
+          <button class="stab" data-window="1d">1D</button>
+          <button class="stab" data-window="1w">1W</button>
+          <button class="stab" data-window="1m">1M</button>
+        </div>
+      </div>
+      <div id="activity-list" class="activity-list"></div>
+    </aside>
+  </div>
+
+  <!-- ── Detail panel (slides in from right) ── -->
+  <div id="detail-backdrop" class="backdrop"></div>
+  <aside id="detail-panel" class="detail-panel">
+    <div class="detail-header">
+      <div class="detail-title-row">
+        <button class="btn-icon" id="panel-back" title="Back to search results" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        </button>
+        <span class="detail-sens-dot" id="detail-sens-dot"></span>
+        <h2 id="panel-title">Credential</h2>
+      </div>
+      <button class="btn-icon" id="panel-close" title="Close (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="panel-body" class="detail-body"></div>
+  </aside>
+
+  <!-- ── Add Credential Modal ── -->
+  <div id="add-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" stroke-linecap="round">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+          </svg>
+          <h2>New Credential</h2>
+        </div>
+        <button class="btn-icon" id="add-modal-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form id="add-form">
+        <div class="form-field">
+          <label for="add-name">Name <span class="required">*</span></label>
+          <input type="text" id="add-name" required placeholder="PROJECT_COMPONENT_TYPE" autocomplete="off">
+          <span class="field-hint">Convention: PROJECT_COMPONENT_TYPE — e.g. ACME_API_KEY</span>
+        </div>
+        <div class="form-field">
+          <label>Type</label>
+          <div class="type-presets" id="type-presets">
+            <button type="button" class="type-btn active" data-type="simple">Single Value</button>
+            <button type="button" class="type-btn" data-type="vps">VPS / Server</button>
+            <button type="button" class="type-btn" data-type="api">API</button>
+            <button type="button" class="type-btn" data-type="database">Database</button>
+            <button type="button" class="type-btn" data-type="wallet">Wallet</button>
+          </div>
+        </div>
+        <div class="form-field" id="simple-value-section">
+          <label for="add-value">Value <span class="required">*</span></label>
+          <div class="value-wrapper">
+            <textarea id="add-value" rows="3" placeholder="Secret value (multi-line supported)"></textarea>
+            <button type="button" class="value-toggle" id="value-toggle" title="Toggle visibility">
+              <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <div class="generate-row">
+            <button type="button" class="btn btn-sm" id="add-generate-btn" title="Fill with a strong random secret">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              Generate
+            </button>
+            <select id="add-generate-len" title="Length">
+              <option value="24">24 chars</option>
+              <option value="32" selected>32 chars</option>
+              <option value="48">48 chars</option>
+              <option value="64">64 chars</option>
+            </select>
+            <select id="add-generate-type" title="Character set">
+              <option value="password" selected>full (symbols)</option>
+              <option value="alnum">alphanumeric</option>
+              <option value="hex">hex</option>
+              <option value="base64url">base64url</option>
+            </select>
+          </div>
+          <div class="strength-meter" id="add-strength" style="display:none"></div>
+        </div>
+        <div id="fields-section" class="form-field" style="display:none">
+          <label>Fields <span class="required">*</span></label>
+          <div id="fields-list" class="fields-list"></div>
+          <button type="button" class="btn btn-sm" id="add-field-btn" style="margin-top:6px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Field
+          </button>
+        </div>
+        <div class="form-row-2">
+          <div class="form-field">
+            <label for="add-project">Project</label>
+            <select id="add-project"></select>
+          </div>
+          <div class="form-field">
+            <label for="add-category">Category</label>
+            <input type="text" id="add-category" placeholder="auto-detected">
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="add-description">Description</label>
+          <input type="text" id="add-description" placeholder="What is this credential used for?">
+        </div>
+        <div class="form-field">
+          <label for="add-tags">Tags</label>
+          <input type="text" id="add-tags" placeholder="production, api, staging  (comma-separated)">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" id="add-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Credential</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Changelog Modal ── -->
+  <div id="changelog-modal" class="modal-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" stroke-linecap="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          <h2>Change Log <span class="modal-subtitle">last 7 days · sealed archive</span></h2>
+        </div>
+        <button type="button" class="btn btn-sm btn-danger" id="changelog-purge" title="Permanently delete every archived entry now — no 7-day wait" style="margin-right:8px">
+          Empty archive
+        </button>
+        <button class="btn-icon" id="changelog-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="changelog-body" class="changelog-body"></div>
+    </div>
+  </div>
+
+  <!-- ── Merge Modal (split view) ── -->
+  <div id="merge-modal" class="modal-overlay">
+    <div class="modal modal-merge">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" stroke-linecap="round">
+            <path d="M8 6L21 6"/><path d="M8 12L21 12"/><path d="M8 18L21 18"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>
+          </svg>
+          <h2>Merge Credentials</h2>
+        </div>
+        <button class="btn-icon" id="merge-modal-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="merge-split">
+        <div class="merge-left">
+          <div class="merge-left-header">Selected Credentials <span id="merge-count" class="merge-count">0</span></div>
+          <div id="merge-left-list" class="merge-left-list"></div>
+        </div>
+        <div class="merge-right">
+          <div class="merge-right-header">New Consolidated Credential</div>
+          <div class="merge-right-form">
+            <div class="form-field">
+              <label for="merge-name">Name <span class="required">*</span></label>
+              <input type="text" id="merge-name" placeholder="MERGED_CREDENTIAL_NAME" autocomplete="off">
+            </div>
+            <div class="form-field">
+              <label for="merge-ref">Ref # <span class="field-hint" style="display:inline">(pick from source or enter new 4-digit number)</span></label>
+              <div class="merge-ref-row">
+                <input type="number" id="merge-ref" min="1000" max="9999" placeholder="e.g. 4821" autocomplete="off" class="merge-ref-input">
+                <div id="merge-ref-options" class="merge-ref-options"></div>
+                <span id="merge-ref-error" class="merge-ref-error" style="display:none">Duplicate ref!</span>
+              </div>
+            </div>
+            <div class="form-field">
+              <label>Fields</label>
+              <div id="merge-fields-list" class="fields-list"></div>
+              <button type="button" class="btn btn-sm" id="merge-add-field-btn" style="margin-top:6px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Field
+              </button>
+            </div>
+            <div class="form-row-2">
+              <div class="form-field">
+                <label for="merge-project">Project</label>
+                <select id="merge-project"></select>
+              </div>
+              <div class="form-field">
+                <label for="merge-category">Category</label>
+                <input type="text" id="merge-category" placeholder="auto-detected">
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="merge-description">Description</label>
+              <input type="text" id="merge-description" placeholder="What is this credential for?">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer merge-footer">
+        <button type="button" class="btn" id="merge-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="merge-save">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><path d="M8 6L21 6"/><path d="M8 12L21 12"/><path d="M8 18L21 18"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+          Merge &amp; Save
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Audit Modal ── -->
+  <div id="audit-modal" class="modal-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" stroke-linecap="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          <h2>Health Audit</h2>
+        </div>
+        <button class="btn-icon" id="audit-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="audit-body" class="changelog-body"></div>
+    </div>
+  </div>
+
+  <!-- ── Access Log Modal ── -->
+  <div id="access-log-modal" class="modal-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" stroke-linecap="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+          <h2>Access Log <span class="modal-subtitle">recent activity</span></h2>
+        </div>
+        <button class="btn-icon" id="access-log-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="access-log-body" class="changelog-body"></div>
+    </div>
+  </div>
+
+  <!-- ── Delete Confirmation Modal ── -->
+  <div id="delete-modal" class="modal-overlay">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" stroke-linecap="round" style="color:var(--danger)">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1.5 14a2 2 0 0 1-2 1.5H8.5a2 2 0 0 1-2-1.5L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V3.5A1.5 1.5 0 0 1 10.5 2h3A1.5 1.5 0 0 1 15 3.5V6"/>
+          </svg>
+          <h2>Delete Credential</h2>
+        </div>
+      </div>
+      <div class="modal-body-text">
+        <p id="delete-msg">Are you sure?</p>
+        <p class="delete-hint">Recoverable via Changelog for 7 days.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="delete-cancel">Cancel</button>
+        <button type="button" class="btn btn-danger" id="delete-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Generic Confirm Modal (replaces window.confirm — which is a silent
+         no-op inside the native macOS shell's WKWebView) ── -->
+  <div id="confirm-modal" class="modal-overlay">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <h2 id="confirm-title">Confirm</h2>
+        </div>
+      </div>
+      <div class="modal-body-text">
+        <p id="confirm-msg" style="white-space:pre-wrap"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="confirm-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="confirm-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Generic Prompt Modal (replaces window.prompt for the same reason) ── -->
+  <div id="prompt-modal" class="modal-overlay">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <h2 id="prompt-title">Input</h2>
+        </div>
+      </div>
+      <div class="modal-body-text">
+        <p id="prompt-msg" style="white-space:pre-wrap"></p>
+        <input type="text" id="prompt-input" class="edit-input" style="width:100%;margin-top:8px" autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="prompt-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="prompt-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Lock Screen ── -->
+  <div id="lock-screen" class="lock-screen" style="display:none">
+    <div class="lock-inner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48" stroke-linecap="round" class="lock-icon">
+        <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+      <h2>CredMgr is locked</h2>
+      <p class="lock-subtitle">Enter your PIN to unlock</p>
+      <div class="lock-pin-row">
+        <input type="password" id="lock-pin-input" class="lock-pin-input" maxlength="8" placeholder="PIN" autocomplete="off" inputmode="numeric">
+        <button id="lock-pin-submit" class="btn btn-primary lock-pin-btn">Unlock</button>
+      </div>
+      <p id="lock-error" class="lock-error" style="display:none">Incorrect PIN</p>
+      <p class="lock-subtitle" style="font-size:11px;opacity:.7;margin-top:14px">Enforced by the daemon — values stay sealed until unlocked</p>
+    </div>
+  </div>
+
+  <!-- ── Settings Modal ── -->
+  <div id="settings-modal" class="modal-overlay">
+    <div class="modal modal-settings">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" stroke-linecap="round">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <h2>Settings</h2>
+        </div>
+        <button class="btn-icon" id="settings-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="settings-body">
+        <div class="setting-group">
+          <h4>Security</h4>
+          <div class="setting-row" id="pin-setup-row">
+            <div class="setting-info">
+              <span class="setting-label">Vault PIN</span>
+              <span class="setting-desc" id="pin-status">Not set — value reveals are unprotected</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-sm" id="set-pin-btn">Set PIN</button>
+              <button class="btn btn-sm" id="remove-pin-btn" style="display:none">Remove</button>
+            </div>
+          </div>
+          <div class="setting-row setting-sub" id="autolock-options" style="display:none">
+            <div class="setting-info">
+              <span class="setting-label">Auto-lock after</span>
+              <span class="setting-desc">Server session expiry, and the same timeout re-locks the macOS app's Touch ID gate on inactivity</span>
+            </div>
+            <select id="setting-lock-timer">
+              <option value="1">1 minute</option>
+              <option value="5">5 minutes</option>
+              <option value="15" selected>15 minutes</option>
+              <option value="30">30 minutes</option>
+              <option value="60">1 hour</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Export password</span>
+              <span class="setting-desc" id="export-password-status">Checking…</span>
+              <span class="setting-desc">Separate from the Vault PIN — required for whole-database export, with no bypass for an unlocked session or agent token. Recommended.</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-sm" id="set-export-password-btn">Set</button>
+              <button class="btn btn-sm" id="remove-export-password-btn" style="display:none">Remove</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Machine lock</span>
+              <span class="setting-desc" id="machine-lock-status">Checking…</span>
+              <span class="setting-desc">Binds the master key to this machine's hardware/OS identity — a copied store/ + .credmgr/ refuses to decrypt anywhere else, even with raw `age`. Off by default; not reversible from any machine except this one.</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-sm" id="enable-machine-lock-btn">Enable</button>
+              <button class="btn btn-sm" id="disable-machine-lock-btn" style="display:none">Disable</button>
+            </div>
+          </div>
+        </div>
+        <div class="setting-group">
+          <h4>Agent Access</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">MCP / agent token</span>
+              <span class="setting-desc" id="agent-token-status">Checking…</span>
+              <span class="setting-desc">Gates `credmgr daemon` / MCP clients — takes effect the next time that process starts. This dashboard itself is always local-only and never needs it.</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="setting-agent-access">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="setting-row setting-sub" id="agent-token-row" style="display:none">
+            <div class="detail-secret blurred" id="agent-token-value" style="flex:1">••••••••••••••••••••••••••••••••</div>
+            <button class="btn btn-sm" id="agent-token-copy" style="display:none">Copy</button>
+            <button class="btn btn-sm" id="agent-token-rotate" title="Issue a new token and show it exactly once — the old one stops working immediately">Rotate &amp; show once</button>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <h4>AI Integrations</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Claude, ChatGPT, and other MCP clients</span>
+              <span class="setting-desc" id="integrations-status">Checking…</span>
+              <span class="setting-desc">One-click, sustained — connecting once doesn't need re-approval every day. Renaming isn't offered on purpose: if the connected account changes, disconnect and reconnect instead.</span>
+            </div>
+          </div>
+          <div id="integrations-list"></div>
+          <div class="setting-row setting-sub" style="gap:6px; flex-wrap:wrap">
+            <button class="btn btn-sm" id="connect-claude-btn">+ Connect Claude</button>
+            <button class="btn btn-sm" id="connect-chatgpt-btn">+ Connect ChatGPT</button>
+            <button class="btn btn-sm" id="connect-other-btn">+ Connect other…</button>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <h4>Layout</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Activity Sidebar</span>
+              <span class="setting-desc">Show agent usage leaderboard</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="setting-sidebar">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <h4>Bulk Operations</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Move all credentials</span>
+              <span class="setting-desc">Reassign every credential from one project to another</span>
+            </div>
+          </div>
+          <div class="setting-row setting-sub">
+            <select id="reassign-from" class="bulk-select"><option value="">From…</option></select>
+            <select id="reassign-to" class="bulk-select"><option value="">To…</option></select>
+            <button class="btn btn-sm" id="reassign-btn">Move</button>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Remove empty project</span>
+              <span class="setting-desc">Only works once no credentials reference it — removes it from every project dropdown and tag choice for good (e.g. after retiring a project and moving/removing all its credentials)</span>
+            </div>
+          </div>
+          <div class="setting-row setting-sub">
+            <select id="remove-project-select" class="bulk-select"><option value="">Project…</option></select>
+            <button class="btn btn-sm" id="remove-project-btn">Remove</button>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Batch import</span>
+              <span class="setting-desc">Paste KEY=value or JSON; auto-classified by name</span>
+            </div>
+            <button class="btn btn-sm" id="batch-import-btn">Open…</button>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Export .env</span>
+              <span class="setting-desc">Download a project's credentials as a .env file (stays local)</span>
+            </div>
+          </div>
+          <div class="setting-row setting-sub">
+            <select id="export-project" class="bulk-select"><option value="">Project…</option></select>
+            <button class="btn btn-sm" id="export-env-btn">Download</button>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <h4>Maintenance</h4>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Store doctor</span>
+              <span class="setting-desc">Diagnose refs, orphans, checksum — repair with one click</span>
+            </div>
+            <button class="btn btn-sm" id="doctor-btn">Diagnose</button>
+          </div>
+          <div id="doctor-results" class="doctor-results" style="display:none"></div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Encrypted backup</span>
+              <span class="setting-desc">Snapshot index + vault to backups/*.tar.age (local only)</span>
+            </div>
+            <button class="btn btn-sm" id="backup-btn">Back up now</button>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Dismissed suggestions</span>
+              <span class="setting-desc" id="dismissed-suggestions-status">0 dismissed</span>
+            </div>
+            <button class="btn btn-sm" id="restore-dismissed-btn">Restore all</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Batch Import Modal ── -->
+  <div id="batch-modal" class="modal-overlay">
+    <div class="modal modal-settings">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <h2>Batch Import</h2>
+        </div>
+        <button class="btn-icon" id="batch-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="settings-body">
+        <div class="setting-group">
+          <div class="batch-mode-tabs">
+            <button type="button" class="type-btn active" data-batch-mode="simple">KEY=value / JSON</button>
+            <button type="button" class="type-btn" data-batch-mode="wallets">Wallet batch</button>
+          </div>
+          <p class="setting-desc" id="batch-hint-simple" style="margin:8px 0">
+            One <code>KEY=value</code> per line (.env style), or a JSON array of
+            <code>{name, value}</code> / <code>{name, fields:[{label,value}]}</code>.
+          </p>
+          <p class="setting-desc" id="batch-hint-wallets" style="margin:8px 0;display:none">
+            One wallet per row — each becomes <strong>one entry</strong> with its
+            address, private key and seed phrase as sub-credentials. JSON array of
+            <code>{name, chain?, address?, privateKey?, seedPhrase?, xpub?}</code>.
+          </p>
+          <textarea id="batch-textarea" rows="10" class="edit-input" style="width:100%;font-family:var(--mono);font-size:12px;resize:vertical" placeholder="ACME_API_KEY=sk-...&#10;CF_ZONE_ID=abc123&#10;&#10;or&#10;[{&quot;name&quot;:&quot;X&quot;,&quot;value&quot;:&quot;y&quot;,&quot;project&quot;:&quot;global&quot;}]"></textarea>
+          <div class="setting-row setting-sub" style="margin-top:8px">
+            <div class="setting-info">
+              <span class="setting-label">Default project</span>
+            </div>
+            <select id="batch-project" class="bulk-select"></select>
+          </div>
+          <div id="batch-preview" class="batch-preview" style="display:none"></div>
+          <div id="batch-result" class="setting-desc" style="margin-top:8px;min-height:1em"></div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="btn btn-primary btn-sm" id="batch-submit">Import</button>
+            <button class="btn btn-sm" id="batch-cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── .env Import Drop Zone ── -->
+  <div id="import-overlay" class="import-overlay" style="display:none">
+    <div class="import-overlay-inner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <h3>Drop .env file to import</h3>
+      <p>Credentials will be auto-classified by name</p>
+    </div>
+  </div>
+
+  <!-- ── Keyboard Shortcuts Modal ── -->
+  <div id="shortcuts-modal" class="modal-overlay">
+    <div class="modal modal-shortcuts">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" stroke-linecap="round">
+            <rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M6 12h.01"/><path d="M18 12h.01"/><line x1="8" y1="16" x2="16" y2="16"/>
+          </svg>
+          <h2>Keyboard Shortcuts</h2>
+        </div>
+        <button class="btn-icon" id="shortcuts-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="shortcuts-body">
+        <div class="shortcut-group">
+          <h4>Navigation</h4>
+          <div class="shortcut-row"><kbd>↑</kbd> <kbd>↓</kbd> <span>Navigate credentials</span></div>
+          <div class="shortcut-row"><kbd>Enter</kbd> <span>Open selected credential</span></div>
+          <div class="shortcut-row"><kbd>Esc</kbd> <span>Close panel / modal · step back to search results</span></div>
+        </div>
+        <div class="shortcut-group">
+          <h4>Actions</h4>
+          <div class="shortcut-row"><kbd>⌘</kbd><kbd>K</kbd> <span>Command palette / search</span></div>
+          <div class="shortcut-row"><kbd>/</kbd> <span>Command palette (same as ⌘K)</span></div>
+          <div class="shortcut-row"><kbd>⌘</kbd><kbd>L</kbd> <span>Lock the vault</span></div>
+          <div class="shortcut-row"><kbd>N</kbd> <span>New credential</span></div>
+          <div class="shortcut-row"><kbd>E</kbd> <span>Edit (when panel open)</span></div>
+          <div class="shortcut-row"><kbd>R</kbd> <span>Reveal value (when panel open)</span></div>
+          <div class="shortcut-row"><kbd>C</kbd> <span>Copy value (when panel open)</span></div>
+          <div class="shortcut-row"><kbd>D</kbd> <span>Delete (when panel open)</span></div>
+          <div class="shortcut-row"><kbd>F</kbd> <span>Toggle favorite</span></div>
+        </div>
+        <div class="shortcut-group">
+          <h4>View</h4>
+          <div class="shortcut-row"><kbd>?</kbd> <span>This shortcuts panel</span></div>
+          <div class="shortcut-row"><kbd>T</kbd> <span>Toggle dark/light theme</span></div>
+          <div class="shortcut-row"><kbd>H</kbd> <span>Open vault stats</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Footer ── -->
+  <footer>
+    <div class="footer-left">
+      <button class="btn-ghost" id="changelog-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" stroke-linecap="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        Changelog
+      </button>
+      <button class="btn-ghost" id="verify-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" stroke-linecap="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        Verify
+      </button>
+      <button class="btn-ghost" id="audit-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" stroke-linecap="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        Audit
+      </button>
+      <button class="btn-ghost" id="access-log-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" stroke-linecap="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+        Access Log
+      </button>
+    </div>
+    <span id="footer-stats" class="footer-stats"></span>
+  </footer>
+
+  <!-- ── Suggestions Modal ── -->
+  <div id="suggestions-modal" class="modal-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2v2M12 6a6 6 0 0 1 6 6c0 2.5-1.5 4.5-3 5.5H9C7.5 18.5 6 16.5 6 12a6 6 0 0 1 6-6z"/></svg>
+          <h2>Smart Suggestions</h2>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" id="suggestions-auto-all" title="Auto-merge every group whose fields are unambiguous — wallets and known suffixes (user/pass/key/…)" style="margin-right:8px">
+          Auto-merge all safe
+        </button>
+        <button class="btn-icon" id="suggestions-modal-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="suggestions-list" class="suggestions-list"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
