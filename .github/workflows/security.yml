@@ -159,9 +159,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
       # The real-broker bridge tests drive a built credmgrd (tests/real_broker.rs); they refuse to skip silently.
-      - name: build the broker the bridge tests drive
+      - name: build the broker and the CLI the bridge tests drive (the restore test runs the bundled credmgr, ADR-166)
         working-directory: v2
-        run: cargo +1.94.1 build -p credmgr-brokerd --locked
+        run: cargo +1.94.1 build -p credmgr-brokerd -p credmgr-cli --locked
       - run: cargo test --locked
 
   semgrep:
