@@ -817,6 +817,75 @@ describe("a reveal that outlives its screen is dropped on arrival", () => {
     expect(m.secretCount).toBe(0);
   });
 
+  describe("window-inactive while a presence-gated request is in flight (ADR-149)", () => {
+    const flight = async (t: { v: number }) => {
+      const { m } = await open(new FakeSource(), { now: () => t.v });
+      await m.reveal("atlas", "a1");
+      const g = gate();
+      const call = m.withPresence(async () => { await g.wait; return "answer"; });
+      return { m, g, call };
+    };
+
+    it("blurred during the call is kept; during the grace after it settles too; after the grace it wipes", async () => {
+      const t = { v: 0 };
+      const { m, g, call } = await flight(t);
+      expect(m.presenceInFlight).toBe(1);
+      expect(m.windowInactive("blurred")).toBe(false);
+      expect(m.plain("atlas", "a1")).toBe("value-of-stripe");
+      g.release();
+      expect(await call).toBe("answer");
+      expect(m.presenceInFlight).toBe(0);
+      t.v = 1_000;
+      expect(m.windowInactive("blurred")).toBe(false); // the focus hand-back, inside the 1.5 s grace
+      expect(m.plain("atlas", "a1")).toBe("value-of-stripe");
+      t.v = 1_600;
+      expect(m.windowInactive("blurred")).toBe(true);
+      expect(m.plain("atlas", "a1")).toBeUndefined();
+    });
+
+    it("blurred with nothing in flight wipes", async () => {
+      const { m } = await open(new FakeSource(), { now: () => 0 });
+      await m.reveal("atlas", "a1");
+      expect(m.windowInactive("blurred")).toBe(true);
+      expect(m.plain("atlas", "a1")).toBeUndefined();
+    });
+
+    it("hidden, minimized and unknown reasons wipe even during the call, and the late answer is dropped", async () => {
+      for (const reason of ["hidden", "minimized", "something-new", undefined]) {
+        const { m, g, call } = await flight({ v: 0 });
+        expect(m.windowInactive(reason)).toBe(true);
+        expect(m.plain("atlas", "a1")).toBeUndefined();
+        g.release();
+        await call;
+      }
+    });
+
+    it("lock wipes during the call, and a rejected call still decrements the counter", async () => {
+      const { m, g, call } = await flight({ v: 0 });
+      m.clear();
+      expect(m.plain("atlas", "a1")).toBeUndefined();
+      g.release();
+      await call;
+      const { m: m2 } = await open();
+      await expect(m2.withPresence(async () => { throw new Error("presence_required"); })).rejects.toThrow();
+      expect(m2.presenceInFlight).toBe(0);
+    });
+
+    it("a presence-gated hold survives a blurred event while the answer is on its way (the orphaned node's reveal)", async () => {
+      const { src, m } = await open(new FakeSource(), { now: () => 0 });
+      m.orphanNodeId = "orphan";
+      src.values["orphan/o1/0"] = "sealed-value";
+      const g = gate();
+      src.holds["reveal:orphan/o1/0"] = [g.wait];
+      const p = m.reveal("orphan", "o1");
+      await started(src, "orphan/o1/0");
+      expect(m.windowInactive("blurred")).toBe(false);
+      g.release();
+      expect(await p).toBe(true);
+      expect(m.plain("orphan", "o1")).toBe("sealed-value");
+    });
+  });
+
   it("asking again supersedes the first request: one value is held, from the later answer", async () => {
     const { src, m } = await open();
     const g = gate();

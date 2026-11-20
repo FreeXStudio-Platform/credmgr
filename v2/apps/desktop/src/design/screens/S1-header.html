@@ -5,7 +5,7 @@
     <sc-if value="{{cosmStampShow}}" hint-placeholder-val="{{false}}"><span aria-label="milestone: {{cosmStampText}} entries" title="{{cosmStampText}} entries" style="font-family:var(--f-mono);font-size:var(--fs-xs);border:1px solid var(--hair-strong);padding:0 4px;line-height:16px;flex:none;color:var(--ash)">{{cosmStampText}}</span></sc-if>
     <sc-if value="{{cosmRing}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" title="supporter" style="width:7px;height:7px;border:1px solid var(--bone);border-radius:50%;display:inline-block;flex:0 0 auto"></span></sc-if>
     <div style="flex:1;min-width:0;display:flex;justify-content:center;position:relative">
-      <input class="cm-searchinput" value="{{searchQ}}" onChange="{{onSearch}}" onFocus="{{onSearchFocus}}" placeholder="search…  /" style="width:min(420px,100%);min-width:0;background:var(--steel);font-family:var(--f-mono);font-size:var(--fs-base)" data-comment-anchor="search-bar">
+      <input class="cm-searchinput" aria-label="search entries" value="{{searchQ}}" onChange="{{onSearch}}" onFocus="{{onSearchFocus}}" placeholder="search… or #ref  /" style="width:min(420px,100%);min-width:0;background:var(--steel);font-family:var(--f-mono);font-size:var(--fs-base)" data-comment-anchor="search-bar">
       <sc-if value="{{searchOpen}}" hint-placeholder-val="{{false}}">
         <div class="cm-searchdrop" data-screen-label="S7 Search" style="position:absolute;top:38px;width:min(420px,100%);max-height:360px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-sm);box-shadow:0 8px 24px var(--scrim);z-index:60;overflow-y:auto">
           <sc-for list="{{searchRows}}" as="r" hint-placeholder-count="2">

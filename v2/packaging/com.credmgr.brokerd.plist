@@ -7,9 +7,10 @@
     cp com.credmgr.brokerd.plist ~/Library/LaunchAgents/
     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.credmgr.brokerd.plist
 
-  Logs go to /tmp on purpose: launchd cannot open a redirect target under ~/Desktop,
-  ~/Documents or ~/Downloads (macOS privacy protection) and would fail the job with a
-  misleading EX_CONFIG. The broker logs no secret — it prints its socket path and errors only.
+  Standard output and error go to /dev/null (ADR-159 amendment): launchd never rotates a log
+  file, and the broker's start-up lines are name-free but still uncapped. The record is the
+  broker's own diagnostic log (CREDMGR_DIAG_LOG=1, rotated at 1 MiB, name-free; see
+  `credmgr status --log`). The broker prints no path, name or secret.
 
   KeepAlive restarts the broker if it exits. A restart locks the vault; unlock again with
   `credmgr unlock`.
@@ -29,8 +30,8 @@
   <key>ProcessType</key>
   <string>Interactive</string>
   <key>StandardOutPath</key>
-  <string>/tmp/com.credmgr.brokerd.log</string>
+  <string>/dev/null</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/com.credmgr.brokerd.log</string>
+  <string>/dev/null</string>
 </dict>
 </plist>

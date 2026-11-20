@@ -43,8 +43,8 @@ test("boot asks the broker once, shows the lock screen, and unlock -> list -> re
   const byNode = (cmd: string) => named(cmd).map((a) => a.node).sort();
   expect(named("graph_snapshot")).toEqual([{}]);
   expect(named("grant_list")).toEqual([{}]);
-  // every node's entries (and the orphaned node's items) and every node's review tray
-  expect(byNode("entry_list")).toEqual(["atlas", "beacon", "cobalt", "global", "orphaned", "staging"]);
+  // every node's entries and every node's review tray; the orphaned node's items come in the snapshot (ADR-120), its own list is refused (R0) and never asked
+  expect(byNode("entry_list")).toEqual(["atlas", "beacon", "cobalt", "global", "staging"]);
   expect(byNode("vault_pending_list")).toEqual(["atlas", "beacon", "cobalt", "global", "staging"]);
   expect(calls.map((c) => c.cmd)).not.toContain("entry_reveal"); // nothing is revealed by loading
 
@@ -77,7 +77,7 @@ test("boot asks the broker once, shows the lock screen, and unlock -> list -> re
   expect(await app.storageDump()).not.toContain(VALUE);
 
   // hide: the value leaves the screen and the model, with no new call
-  await page.getByRole("button", { name: "hide", exact: true }).click();
+  await page.getByRole("button", { name: /^hide(, re-masks in \d+ seconds)?$/ }).click();
   await expect(field).toHaveText(MASK);
   expect(await app.secretCount()).toBe(0);
   expect((await broker.calls("entry_reveal")).length).toBe(1);
@@ -185,7 +185,8 @@ test("an unreachable broker is a screen with a Retry, not a blank window", async
   await broker.set({ unreachable: false });
   await page.getByRole("button", { name: "Retry" }).click();
   await expect(app.screen("S16 Lock screen")).toBeVisible();
-  expect(await broker.commands()).toEqual(["vault_status", "vault_status"]);
+  // login_agent_status is the shell's own question (ADR-156: Start at login is offered on this screen); it never reaches the broker
+  expect((await broker.commands()).filter((c) => c !== "login_agent_status")).toEqual(["vault_status", "vault_status"]);
 });
 
 test("a first run (no vault yet) is routed to the first-run screen", async ({ app }) => {

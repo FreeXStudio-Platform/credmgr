@@ -43,7 +43,9 @@ test("interactive HTML is self-contained with a static fallback", () => {
   assert.ok(html.includes("prefers-reduced-motion"), "reduced-motion media query missing");
   assert.ok(!/src\s*=\s*["']https?:/.test(html), "external script/src found — must be self-contained");
   assert.ok(html.length > 500_000, "echarts not inlined");
-  assert.ok(html.includes(fixture.text_summary), "text summary not in figcaption");
+  // the figcaption is HTML-escaped (the fixture's summary holds an apostrophe), so compare against the escaped text
+  const escaped = fixture.text_summary.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  assert.ok(html.includes(escaped), "text summary not in figcaption");
 });
 
 test("every preset with a fixture-compatible family is loadable and typed", () => {

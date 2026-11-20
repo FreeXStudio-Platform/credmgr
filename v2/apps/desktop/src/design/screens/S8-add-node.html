@@ -30,7 +30,7 @@
           <label style="display:flex;min-height:24px;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" checked="{{advChildRead}}" onChange="{{onAdvChildRead}}" style="width:auto">This node can read its children</label>
           <label style="display:flex;gap:8px;align-items:center">Agent access <select aria-label="agent access" value="{{advAgentAccess}}" onChange="{{onAdvAgentAccess}}" style="font-family:var(--f-mono);font-size:var(--fs-sm)"><option value="read-write">read-write</option><option value="read-only">read-only</option><option value="none">none</option></select></label>
         </div>
-        <div class="t-caption" style="margin-top:8px">Letting a node read its children widens who can read what, so it needs presence (Touch ID), which this beta cannot attest yet. The node is still created, without that choice.</div>
+        <div class="t-caption" style="margin-top:8px">Letting a node read its children widens who can read what, so it asks for Touch ID. Without it set up (Settings → Security) the node is still created, without that choice.</div>
         <div class="t-caption" style="margin-top:8px">With a second factor set up, a reveal in this node by anything other than your own login needs the code you gave in the last five minutes. Your own window is not asked.</div>
       </div>
     </sc-if>

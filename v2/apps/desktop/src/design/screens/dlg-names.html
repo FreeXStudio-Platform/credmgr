@@ -1,0 +1,64 @@
+<sc-if value="{{dlgAlias}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S5d Aliases" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-alias-title" style="width:520px;max-width:calc(100vw - 32px);max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div id="dlg-alias-title" class="t-h3" style="font-family:var(--f-mono)">Aliases</div>
+      <div class="t-caption" style="overflow-wrap:anywhere">of the entry “{{anEntry}}”</div>
+    </div>
+    <div class="t-body-sm">Other names this entry answers to, one per line. A name or an alias that another entry in this node already has is refused. Aliases are names, not secrets: they are shown in lists and found by search.</div>
+    <textarea aria-label="aliases, one per line" value="{{anText}}" onChange="{{onAnText}}" rows="6" style="font-family:var(--f-mono);font-size:var(--fs-sm);resize:vertical" placeholder="one alias per line, at most 8"></textarea>
+    <div class="t-caption">{{anCount}}</div>
+    <sc-if value="{{anErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{anErr}}</div></sc-if>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="k-btn" onClick="{{cancelAliasDlg}}">Cancel</button>
+      <button class="k-btn" data-variant="primary" onClick="{{saveAliasForm}}" disabled="{{anSaveDisabled}}">Save aliases</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{dlgImport}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S6b Import .env" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-import-title" style="width:640px;max-width:calc(100vw - 32px);max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div id="dlg-import-title" class="t-h3" style="font-family:var(--f-mono)">Import a .env file</div>
+      <div class="t-caption" style="overflow-wrap:anywhere">into {{imNode}}</div>
+    </div>
+    <sc-if value="{{imIsInput}}" hint-placeholder-val="{{true}}">
+      <div class="t-body-sm">Each NAME=value line becomes its own entry named NAME. You see every name, and which are already taken, before anything is written. Values are never shown here.</div>
+      <textarea aria-label=".env text" value="{{imText}}" onChange="{{onImText}}" rows="9" style="font-family:var(--f-mono);font-size:var(--fs-sm);resize:vertical" placeholder="# paste the text of a .env file&#10;NAME=value"></textarea>
+      <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center">
+        <input type="file" aria-label="choose a .env file" onChange="{{onImFile}}" style="font-family:var(--f-mono);font-size:var(--fs-sm);max-width:100%">
+        <sc-if value="{{imFileShow}}" hint-placeholder-val="{{false}}"><span class="t-caption" style="overflow-wrap:anywhere">read from {{imFile}}</span></sc-if>
+      </div>
+    </sc-if>
+    <sc-if value="{{imIsPreview}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm" role="status" data-import-summary="true">{{imSummary}}</div>
+      <div style="display:flex;flex-direction:column;border:1px solid var(--hair);border-radius:var(--r-sm);max-height:260px;overflow-y:auto" data-import-rows="true">
+        <sc-for list="{{imRows}}" as="r" hint-placeholder-count="6">
+          <div data-import-row="{{r.status}}" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:6px 10px;border-bottom:1px solid var(--hair);font-family:var(--f-mono);font-size:var(--fs-sm)">
+            <span style="overflow-wrap:anywhere">{{r.name}}</span>
+            <span style="color:{{r.color}};white-space:nowrap">{{r.label}}</span>
+            <span class="t-caption" style="grid-column:1 / -1;overflow-wrap:anywhere">{{r.note}}</span>
+          </div>
+        </sc-for>
+        <sc-if value="{{imMoreShow}}" hint-placeholder-val="{{false}}"><div class="t-caption" style="padding:6px 10px">{{imMore}}</div></sc-if>
+      </div>
+      <sc-if value="{{imConflict}}" hint-placeholder-val="{{false}}">
+        <div role="radiogroup" aria-label="when a name is already there" style="display:flex;flex-direction:column;gap:6px">
+          <label style="display:flex;gap:6px;align-items:center;font-family:var(--f-mono);font-size:var(--fs-sm);cursor:pointer"><input type="radio" checked="{{imStopOn}}" onChange="{{onImStop}}" style="width:auto">stop: import nothing</label>
+          <label style="display:flex;gap:6px;align-items:center;font-family:var(--f-mono);font-size:var(--fs-sm);cursor:pointer"><input type="radio" checked="{{imSkipOn}}" onChange="{{onImSkip}}" style="width:auto">skip them: import the rest</label>
+        </div>
+      </sc-if>
+      <sc-if value="{{imBlocked}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{imBlockedText}}</div></sc-if>
+    </sc-if>
+    <sc-if value="{{imErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{imErr}}</div></sc-if>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="k-btn" onClick="{{cancelImportDlg}}">Cancel</button>
+      <sc-if value="{{imIsPreview}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{imBack}}">Back</button></sc-if>
+      <sc-if value="{{imIsInput}}" hint-placeholder-val="{{true}}"><button class="k-btn" data-variant="primary" onClick="{{imPreview}}" disabled="{{imPreviewDisabled}}">Preview</button></sc-if>
+      <sc-if value="{{imIsPreview}}" hint-placeholder-val="{{false}}"><button class="k-btn" data-variant="primary" onClick="{{imRun}}" disabled="{{imRunDisabled}}">{{imRunLabel}}</button></sc-if>
+    </div>
+  </div>
+</div>
+</sc-if>

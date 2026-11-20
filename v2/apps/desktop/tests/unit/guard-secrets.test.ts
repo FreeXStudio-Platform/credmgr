@@ -10,7 +10,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+
+// These tests spawn node/cargo subprocesses; 5 s is too short on a loaded machine (rc.2 gate runs at load 30-60).
+vi.setConfig({ testTimeout: 60_000 });
 
 const GUARD = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../scripts/guard-no-secrets.mjs");
 const work = mkdtempSync(join(tmpdir(), "guard-secrets-"));

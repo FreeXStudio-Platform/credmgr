@@ -6,3 +6,11 @@
     <button class="k-btn" onClick="{{dismissPendingBanner}}" style="min-width:24px;border:none;padding:4px 8px" aria-label="dismiss">✕</button>
   </div>
   </sc-if>
+  <sc-if value="{{anomalyBannerShow}}" hint-placeholder-val="{{false}}">
+  <div data-screen-label="S20b Anomaly alarm" role="alert" style="flex:none;display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--steel-2);border-bottom:1px solid var(--hair-strong);font-family:var(--f-mono);font-size:var(--fs-sm)">
+    <span class="k-chip" data-state="danger" style="flex:none">blocked</span>
+    <span style="flex:1;min-width:0;overflow-wrap:anywhere">{{anomalyBannerText}}</span>
+    <sc-if value="{{anomalyAuditShow}}" hint-placeholder-val="{{true}}"><button class="k-btn" data-variant="primary" data-anomaly-audit="1" onClick="{{anomalyOpenAudit}}" style="flex:none">Open audit</button></sc-if>
+    <button class="k-btn" data-anomaly-dismiss="1" onClick="{{dismissAnomalyBanner}}" style="min-width:24px;border:none;padding:4px 8px;flex:none" aria-label="dismiss the anomaly alarm">✕</button>
+  </div>
+  </sc-if>

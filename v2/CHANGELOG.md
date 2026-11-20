@@ -1,4 +1,4 @@
-<!-- artifact-hardened: Approved With Known Risks @ af0709a on 2026-11-01 via three-pass-v1. Evidence: GitHub-hosted CI on pull request #41 (FreeXStudio-Platform/credmgr): all 17 checks green at ee08394, including security.yml (cargo audit, cargo deny, semgrep, isolation suite, endpoint matrix 55/55 operations, desktop bridge) and CodeQL for Rust, JavaScript/TypeScript, Python and Actions with no open alert on the PR; build.yml run 41243452910, all 7 jobs green (macOS 15, Ubuntu 22.04, Windows; Rust 1.78.0 and stable); desktop unit tests 706 passed at 930c502; Playwright 672 and 681 passed in the two lanes that were combined at 930c502 (not re-run together); strict public export PASS, 860 files, literal blocklist not loaded; by-hand click-through of the rebuilt app on a throwaway vault (unlock, lock, auto-lock, graph, tree, search, reveal, copy, add entry, settings, integrity, doctor, audit, backup, capture switch, searchable help); final adversarial audit v2/docs/release-verification/AUDIT_2026-10-31.md (the P0 and both P1 fixed); known risks K-1 to K-20 in v2/docs/PHASE8_AUDIT_REPORT.md sections 4 and 7, each with bound, owner and resolution. Known risks that bear on this document: K-14 the idle lock and a real sleep or screen lock were not exercised by hand on this build; K-19 a seed in an unrecognised shape is not protected until its owner types it; K-20 the licence text has not been reviewed by counsel. K-12 (CI had not run) is closed. Not signed or notarised; Windows and Linux built in CI but not run. Not a claim about anything after af0709a. -->
+<!-- artifact-hardened: NEEDS RE-HARDENING — the ADR-167/ADR-168 entries (feat/rc2-v1-gaps, 2026-11-20), the rc.2 entries (feat/rc2-section1, 2026-11-20) and the ADR-162 to ADR-165 entries (feat/rc2-21-branches, 2026-11-20) were added after the last pass; that pass was Approved With Known Risks @ 3ba7435 on 2026-11-14 (its full evidence and the K-A..K-F risks are in git: `git show 3ba7435:v2/CHANGELOG.md`). Re-harden before rc.2 is published. -->
 
 # Changelog — CredMgr V2 "Vault Next"
 
@@ -22,11 +22,18 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## Timeline — what was added when, and what is coming
 
-Newest first. Dates are when the work landed; no date after today is a promise. Each row links to the version section below.
+The table is newest first (the version sections below run oldest first, with `[Unreleased]` on top). Dates are when the work landed; no date after today is a promise. Each row links to the version section below.
 
 | When | Version | What landed |
 |---|---|---|
-| 2026-11-01 | `2.0.0-beta.1` (public repository) | The repository is public as a single neutral commit; first release built from it. Source-available licence (ADR-096). First hosted CI and CodeQL runs on all three platforms. |
+| 2026-11-20 | `2.0.0-rc.2` (local build, unsigned) | Forgot your passphrase? Open the vault with the recovery code, from the Lock screen or `credmgr recover` (ADR-163); the machine lock, which ties the passphrase to this Mac (ADR-165); node-scoped agent tokens for AI assistants, the secret shown once (ADR-164); the Mac App Store edition behind a build feature, not submitted (ADR-162); restore from a backup in the app (ADR-166) and the rc.2 app controls. |
+| 2026-11-20 | `2.0.0-rc.2` (local build, unsigned) | Tags on entries (ADR-167) and merging duplicates inside one project, with suggestions, dismissals and undo (ADR-168). Broker operations 93 → 102, commands +2 (`tag`, `merge`); MCP tools 21 and error codes 27 unchanged. |
+| 2026-11-14 | `2.0.0-rc.2` (local build, unsigned) | Move an entry to another project, sealed again with that project's key in one crash-safe step, from the entry detail or `credmgr move` (ADR-158); Tidy up, the doctor's scan of your entries (shared values, near-identical names, misfiled, weak, mistyped, expired, expiring and stale), never showing a value, its "Move to <project>" applied one entry at a time through Move (ADR-161); a diagnostic log with no names or values, off unless you turn it on (ADR-159); reading an authenticator QR-code image in Add entry (ADR-160). Broker operations 91 → 93, commands 45 → 46; MCP tools 21 and error codes 27 unchanged. |
+| 2026-11-12 | `2.0.0-rc.2` (local build, unsigned) | The quick wins left for the app: the expiry chip and Set expiry dialog on an entry, the entry's History tab, and the broker carried inside `CredMgr.app` so Start at login starts it (ADR-157). Notes as MCP tools still waits on a decision. |
+| 2026-11-09 | `2.0.0-rc.2` (local build, unsigned) | The switchboard: every setting readable and changeable by you and by AI assistants, weakening changes waiting for your approval (ADR-155). The post-launch quick wins: change the passphrase, expiry dates, entry history, search within a project, lookup by reference, the anomaly notice, start at login, the airlock check in CI, the I-10 isolation test and five hardening items (ADR-156; 84 → 91 broker operations). |
+| 2026-11-08 | `2.0.0-rc.2` (local build, unsigned) | The 2.x plan (ADR-153) and the licence core, not wired (ADR-154); F01 recorded as known risk K-25. Confirm before showing secrets, a vault setting off by default, with the new `session.confirm` operation (75 → 76) and `confirmation_required` error (ADR-150); a Touch ID prompt no longer makes the app drop the seed it asked for (ADR-149); About shows the build commit; the design drop of 2026-11-08 merged (Settings › Security grouped, "hide seed"; ADR-151). |
+| 2026-11-07 | `2.0.0-rc.2` (local build, unsigned until a Developer ID is applied) | Touch ID on the Mac: a Secure Enclave key proves presence for the gated operations, sealed entries open in the app, and the vault can be unlocked with Touch ID (ADR-098); agent security levels and client wiring (ADR-140 to ADR-143); twelve broker operations (63 → 75); `credmgr restore` and the rc.1 backend batch (ADR-110 to ADR-115); pre-stable security fixes (ADR-148); scope (ADR-147). |
+| 2026-11-01 | `2.0.0-beta.1` (public repository) | The repository is public as a single neutral commit; first release built from it. Source-available licence (ADR-096). First hosted CI and CodeQL runs: the workspace on macOS 15 and Ubuntu 22.04, the desktop app also on Windows. |
 | 2026-10-31 | `2.0.0-beta.1` | Screen-capture protection switch in Settings; searchable in-app Help; `HELP.md`; the LLM capabilities manifest; V1 copy tool and the hygiene design. |
 | 2026-10 | `2.0.0-beta.1` | The desktop app wired to the real broker (zero mock screens); multi-field entries; sealing and restore; agent approvals, including while locked; two-factor with recovery; concealed clipboard; names and second factor per node; the final adversarial audit (one P0 and two P1 fixed). |
 | 2026-09-24 | `2.0.0-alpha.6` | The first packaged release: the daemon opens its own vault; command line, broker and MCP server in one tarball. |
@@ -34,9 +41,313 @@ Newest first. Dates are when the work landed; no date after today is a promise. 
 | 2026-08-16 | `2.0.0-alpha.2` | Phase 8 adversarial audit. |
 | 2026-08-05 to 08-10 | `2.0.0-alpha.1` | The Rust backend: core, keystore, store, broker, CLI, MCP (Phases 0 to 5 and 7). |
 
-**Coming next, in order and without dates.** `2.0.0-rc.1`: Touch ID and presence checks, Developer ID signing and notarisation, the doctor's duplicate and wallet-bundling scan (`docs/25_VAULT_HYGIENE.md`), the V1 copy folded into the app. `2.0.0`: the first stable release, with Windows and Linux. `2.1.0`: cross-device sync as ciphertext, and agents that use a credential without its value reaching the model. `2.2`: a signed, machine-bound, expiring licence (a failed licence never locks your vault). `2.3`: the first paid tier. **Future versions, platforms and devices may not be free; releases already published keep the licence they came with.** If CredMgr is useful to you, please keep using it, tell us what breaks, and consider a donation (`DONATE.md`): it is what lets us keep building it.
+**Coming next, in order and without dates.** `2.0.0-rc.2` is built locally and unsigned (2026-11-20); publishing it waits on Developer ID signing and notarisation (Touch ID and presence checks are already built and wait in the tree, ADR-098). `2.0.0`: the first stable release, macOS on Apple Silicon only. `2.1`: the rest of the doctor, wallet bundling, merging duplicates and applying a whole plan (`docs/25_VAULT_HYGIENE.md`; its first scan, Tidy up, is built, ADR-161), the V1 copy folded into the app, the machine lock (ADR-144), the Windows and Linux keystores and the named pipe, the org vault, sync and licensing (the operator's scope decision of 2026-11-07, ADR-147); `2.1.0` also brings cross-device sync as ciphertext, and agents that use a credential without its value reaching the model. `2.2`: a signed, machine-bound, expiring licence (a failed licence never locks your vault). `2.3`: the first paid tier. **Future versions, platforms and devices may not be free; releases already published keep the licence they came with.** If CredMgr is useful to you, please keep using it, tell us what breaks, and consider a donation (`DONATE.md`): it is what lets us keep building it.
 
 ---
+
+## [2.0.0-rc.2] — 2026-11-20 (local unsigned build; not published)
+
+(This section was `2.0.0-rc.1` until 2026-11-20 and `2.0.0-beta.2` until 2026-11-07; neither number was ever published. Final pre-stable security fixes: ADR-148. Scope: ADR-147.)
+
+Built from `feat/rc2-section1` and tagged `v2.0.0-rc.2` locally; unsigned and not notarised, no GitHub release. `2.0.0-beta.1` (published 2026-11-01) predates everything in this section. Broker operations: 55 in beta.1, 111 here. Error codes 28; MCP tools 21.
+
+### Forgot your passphrase? Open the vault with the recovery code (`ADR-163`)
+
+- **The recovery code alone opens the vault.** The Lock screen has "Forgot passphrase? Use recovery code": type the printed recovery code and a new passphrase, and the vault opens. The same step sets the new passphrase and shows a NEW recovery code once; the code you used and the old passphrase stop working. On the command line: `credmgr recover` (the code and the new passphrase are read from stdin, never the command line).
+- **Every attempt is audited**, including one made while the vault is locked (it is written with the next record). A wrong code changes nothing and counts in the unlock back-off. No AI assistant can call it, and it is not an MCP tool.
+- **One new broker operation:** `vault.recover`. One new command-line command, `recover`.
+
+### Machine lock: tie the vault's passphrase to this Mac (`ADR-165`)
+
+- **Settings › Security › Machine lock**, or `credmgr keystore status | bind | unbind`. While it is on, the passphrase opens the vault only on this Mac: the passphrase wrap is sealed to a device key file kept in CredMgr's state folder on this Mac, outside the vault folder. A copy of the vault folder on another computer opens only with the recovery code.
+- **Turning it on is a root rotation in two steps.** It needs the passphrase and the CURRENT recovery code; the new recovery code is shown first and the lock goes on only once you type it back. While the lock is on, backups are written to the state folder on this Mac, outside the vault folder, with the passphrase file unsealed inside the archive's own encryption and the restore ticket of the `ADR-148` amendment beside it, so a restore on another Mac opens with the passphrase; a recovery says what it did to the lock.
+- **Honest about what it is.** The device key is a file, not a Secure Enclave key; `status` says so. Windows and Linux keystores stay later work (ADR-147). No AI assistant can read, set or remove the lock.
+- **Three new broker operations:** `keystore.status`, `keystore.bind`, `keystore.unbind`; one new error code, `machine_lock_refused`; one new command-line command, `keystore`.
+- **A detached machine-lock record is said, never repaired** (ADR-165 M5). If the vault folder's `vault.id` is edited or removed, or the folder is put back to a copy from before the lock, this Mac's record no longer matches it; the owner's `credmgr status`, `credmgr keystore status` and the Machine lock row in Settings now say so (`vault.status` `warnings`, `keystore.status` `recordDetached`), and one audit record is written. An AI assistant's session is never told. Nothing is changed on disk.
+- **A passphrase change or a recovery now gives every project a new key** (ADR-165 N5). Before, a copy of the vault folder from before the change, opened with the old passphrase or the used recovery code, still opened entries written after it; now every live project gets a new key and everything it holds is re-sealed in the same crash-safe step, so it opens nothing written after. A locked project or a waiting write does not refuse it. The answer names the projects re-keyed (`nodesRekeyed`) and counts the files re-sealed (`filesResealed`); the change now takes time in proportion to the number of entries (about 8 s for 300 entries in a debug build).
+
+### Node-scoped agent tokens (`ADR-164`)
+
+- **A token for one AI assistant, on one project.** `credmgr agent token issue <node> --label … --cap …`, `ls`, `rotate <id>`, `revoke <id>`, or Settings › Agents › Agent tokens in the app. A token reaches exactly its project (no Global, no parents, no children, no grants), with its capabilities checked against the project's agent access on every request. A token lasts 24 hours by default and 7 days at most (never "forever"); tokens live in the broker's memory only, so a broker restart ends them all, and sealing a project ends its tokens.
+- **The secret is shown once.** The command line prints it once; the app never puts it on the page: it goes to the concealed clipboard, cleared after 30 seconds and at lock. Issuing needs your login, a second factor and Touch ID; no agent can issue, list, rotate or revoke a token, its own included.
+- **Four new broker operations:** `agent.token_issue`, `agent.token_status`, `agent.token_rotate`, `agent.token_revoke`. No new top-level command (`agent token …` extends `agent`), MCP tool or error code.
+
+### The Mac App Store edition, built but not submitted (`ADR-162`)
+
+- **A second, sandboxed flavour behind the `mas` build feature.** The vault, socket and state folder live in the app-group container; the broker runs as an `SMAppService` agent; the bundled CLI refuses what a sandbox cannot do and says what to use instead. `scripts/release-app.sh --mas` builds it beside the Developer ID edition; every Apple identifier is in `packaging/mas/identity.conf`. A default build cannot reach any of it.
+- **Not yet:** nothing is signed for or submitted to the App Store; the operator decisions and the review risks are in `docs/27_APP_STORE.md`.
+
+### rc.2 leftovers: security-touching broker work (lane L2)
+
+- **Apply all the moves Tidy up proposes, in one step (`ADR-169`).** New broker operation `vault.doctor_apply` (102 → 103, counted after the tags and merge operations): the exact moves the scan showed (entry, from, to, generation) are checked first, in order, against the vault as it is (a stale scan, a name clash or a locked project moves nothing), then moved one by one through Move's crash-safe step with one authenticator code and one Touch ID check for the whole list; it stops at the first move that fails and says which moved. In the app: Tidy up › Apply all moves, after a confirm that lists every move; on the command line: `credmgr doctor --scan --apply` (prints the plan and asks; `--yes` does not ask). Owner only, not an MCP tool; desktop bridge 103 commands.
+- **Entry-level grants work, for exactly one entry (`ADR-172`, PHASE8 K-10 (b)).** A grant to one entry (`grant.create` with `to: {kind: "entry", …}`) now lets the granted project see that entry's name, and read and/or reveal that entry (its value, its 2FA code), and nothing else of the node: no other name, no other value, no notes. Such a grant is one-way; `grant.create` refuses `notes`, `mutual` or an entry that is not there for it, and still needs your Touch ID. Before, an entry grant was accepted but did nothing.
+- **Backups no longer carry the rollback counter (`ADR-148` amendment, PHASE8 K-23 (e)).** A backup holds a restore ticket instead, signed with the vault's key for the exact registry it archives. `credmgr restore` (and the app's Restore) turns it into a one-time marker beside the restored vault when there is no counter yet; the first unlock accepts it only for that vault and that registry, sets the counter and deletes the marker. A missing counter with no matching marker is still refused, as are a marker from another vault, an edited one, or an old one put back later. `credmgr restore --json` answers `counter: "acceptMarker"` for it; backups made before this change restore as before.
+
+### Tags and merging duplicates (`ADR-167`, `ADR-168`)
+
+- **Tags (`ADR-167`).** Put lower-cased labels on an entry (`credmgr tag <name> --add prod`, or the chips under its name in the app) and list one project by tag (`credmgr list --node <id> --tag prod`); a tag is read like a name, is never searchable across projects, and only you set it. New broker operation `entry.tag_set`.
+- **Merging duplicates (`ADR-168`).** Inside one project, `credmgr merge suggest` names entries with identical values, a value in common, or names one letter apart (values compared inside the broker, never shown); `merge apply` keeps one and turns the others' names into its aliases (each merged entry can be undone for 7 days), `merge auto-all` is a dry run unless `--apply`, and a dismissed suggestion never comes back; in the app, Tidy up gains Merge and Dismiss. Eight new broker operations `merge.*`, none an MCP tool (93 → 102 with tags; commands +2, `tag` and `merge`; MCP tools 21 and error codes 27 unchanged; desktop bridge 93 → 102).
+
+### Agent requests that wait reach you, and approving needs your fingerprint (`ADR-173`)
+
+- A count beside the menu-bar icon, one macOS notification per waiting agent request (naming the project only, never a value, an entry name or an id) and a Dock bounce, so a request no longer waits for you to open the window. Approving an agent's request from a login now needs Touch ID once a presence key is enrolled (`vault.approval_decide`, broker-side; denying never does; the locked-vault passphrase form is unchanged). No new network surface; one macOS framework binding added (`objc2-user-notifications`).
+
+### Edit an entry's details in your editor
+
+- `credmgr edit <name> --node <id> [--dry-run]` opens the entry's metadata (aliases, expiry, sensitivity, type, tags when the broker offers them, field labels, types and masking) in `$VISUAL`, `$EDITOR` or `vi`, and applies only the keys you changed through the existing operations (`entry.alias`, `entry.set_expiry`, `entry.update`, `entry.tag_set`, `field.update`). It never fetches, shows or changes a value, and renaming is refused. A conflict keeps your edited file for a retry; the temp file is private (0600) and removed otherwise. No new broker operation.
+
+### App controls for operations the broker already had (rc.2 §1)
+
+- **Rotate, Remove and Undo-remove on an entry.** The entry detail has Rotate… (one field, a typed or generated value; the old one is kept and Undo puts it back) and Remove… (a confirm that says the entry is kept, sealed, for seven days); after a removal the node's list offers Undo, and Settings › Audit lists entries removed in the last seven days with Restore, or Restore as a copy when the name was taken since. No new broker operation.
+- **Restore from a backup in the app (`ADR-166`).** Settings › Backup › Restore…, and Restore from a backup… on the screen shown when no broker answers. The app runs the bundled `credmgr restore --json` (now inside `CredMgr.app`), so the app and the terminal share one restore and one refusal: a restore is refused while a broker answers on the vault's socket, before the passphrase is read. `credmgr restore` gains `--json`. Desktop shell commands 17 → 18 (`backup_restore`, local); four bridge-local error codes; no new broker operation or broker error code.
+- **Find by reference, node search and the audit report.** A number typed in the search box (`1042` or `#1042`) is looked up as an entry's reference (`entry.get_by_ref`) and opens that entry; the rail has a filter that narrows the nodes by name, in the page; a selected node has Find in this node (`entry.search`: names and other names, never values); Settings › Audit report (Pro) summarises the audit log for the last 24 hours to 366 days or two dates, optionally for one node (`audit.report`: actions, sessions by their public id, nodes, refusals with reasons, Touch ID uses, whether the hash chain verified). No new broker operation.
+- **A guard against bridged operations the app never calls.** `tests/unit/ui-callers.test.ts` fails when a command in `src/lib/bridge.ts` has no caller in the app and no `@no-ui-caller <reason>`; the 19 commands without a screen carry their reason (command-line only by design, covered by another command, driven by the shell, or not built yet).
+
+### The login agent no longer keeps uncapped logs (`ADR-159` amendment)
+
+- The broker's start-up and shutdown lines name no folder, socket or user, and the login agent sends its output to `/dev/null` instead of `brokerd.log` and `brokerd.err.log` (which launchd never rotates). The next "Start at login" install removes those two old files. The diagnostic log (off unless `CREDMGR_DIAG_LOG=1`) is unchanged.
+
+### Destroying sealed entries removes a node's archive folder last (`ADR-148`, P3)
+
+- A destroy of sealed entries now deletes a sealed node's removed-entry and history archives before the archive folder that keeps its id spoken for, so a new node cannot take the id while old files are still being deleted. No behaviour change otherwise.
+
+### Tidy up: the doctor's scan of your entries (`ADR-161`)
+
+- **What it finds.** Entries that hold the same value, exactly or once spaces and a web address's case are ignored; names one letter or separator apart; entries in Global named for one project; weak passwords (short, few kinds of character, a common pattern; no wordlist, nothing sent anywhere); values stored as the wrong kind (a whole `otpauth://` link saved as a password, or a live key in a test project and the reverse); and entries that have expired, expire soon (30 days by default; a token's own expiry date counts) or were not rotated for a year.
+- **Never a value.** Shared values are found inside the broker by comparing keyed fingerprints, under a key made for that one scan and thrown away when it ends. No value, fingerprint or part of a value reaches the app, the terminal or the audit log.
+- **It changes nothing.** Each finding says what to do. Where moving an entry fixes it (an entry in Global named for a project, or one value two sub-projects of a project share), **Move to <project>** opens the entry's Move dialog with that project chosen; the move asks for Touch ID as always, and the scan runs again after it. Merging entries, grants and a one-step "apply all" are later phases.
+- **What it reads.** Projects that are locked, or waiting for their own second-factor code, are listed as not fully scanned. Values are compared only where you could reveal them right now.
+- **Who and where.** Only you, from your own login: no AI assistant can run it or see its results, and it is not an MCP tool. In the app: Settings › Maintenance › Tidy up…, or Operations (Cmd+Shift+O) › Tidy up. On the command line: `credmgr doctor --scan [--stale-days N] [--expiring-days N] [--json]`, where a move proposal prints the `credmgr move` line that applies it. The plain `credmgr doctor` is unchanged.
+- **One new broker operation (92 → 93):** `vault.doctor_scan`. No new command-line command (46; `doctor` gained `--scan`), MCP tool (21) or error code (27). Desktop bridge 92 → 93 commands, shell 17.
+- **Not yet:** the Tidy up screen is tested against the fixture broker and the shell's bridge tests, not yet pressed in a built app. Wallet grouping, the breach-check helper, `merge.*`, applying a whole plan and its undo plan are later phases.
+
+### Read a 2FA QR code from an image (`ADR-160`)
+
+- **Add entry reads QR codes.** Drop a PNG or JPEG of an authenticator QR code on the new "2FA QR" area in Add entry, or choose one, and its `otpauth://` code goes into a field, shown as a 2FA seed, exactly as if you had pasted it. Nothing is saved until you press Save.
+- **Read on your computer, then forgotten.** The image is decoded inside the app by jsQR (Apache-2.0), with no network. It is never saved to disk, logged or shown; its pixels are wiped and the drawing surface cleared as soon as it has been read. A QR code that is not an authenticator code is refused without showing what it says.
+- **Not yet:** Google Authenticator's export codes (several accounts in one QR) are not read. The drop area has not been pressed in a built app.
+
+### A diagnostic log with no names or values (`ADR-159`)
+
+- **A log you can attach to a bug report.** When you are chasing a problem, start the broker with `CREDMGR_DIAG_LOG=1` (on a Mac, `launchctl setenv CREDMGR_DIAG_LOG 1` before starting it or the app) and it writes `credmgrd.log`; the app writes `desktop.log` beside it. Each line has a time, an operation's name, `ok` or an error code, and how long it took, plus start, stop and crash lines with the version. Never an entry or project name, a value, a note, a passphrase, a session token, a file path or anything you typed.
+- **Off by default.** Even without names, a line per request is a record of when you used your vault, kept outside the encrypted vault. So nothing is written until you turn it on.
+- **Where it is.** `~/Library/Logs/credmgr` on macOS, `%LOCALAPPDATA%\credmgr\logs` on Windows, `~/.local/state/credmgr/logs` on Linux (`CREDMGR_LOG_DIR` overrides). `credmgr status` now ends with the log's path, and `credmgr status --log` prints just that line, even when the broker will not start. It never grows past 3 MiB (three files of 1 MiB), readable only by you. Nothing is sent anywhere.
+- **No new broker operation, command, MCP tool or error code** (`status` gained `--log`).
+- **Not yet:** the login agent's own `brokerd.log` and `brokerd.err.log` (ADR-156) are separate files, not size-capped, and can contain your vault's path (and so your user name); making them name-free is a follow-up.
+
+### Move an entry to another project (`ADR-158`)
+
+- **Move to project.** An entry filed under the wrong project can now be moved: in the app, open the entry and choose "Move to project…", pick the project and choose Move entry; on the command line, `credmgr move <name> --node <from> --to <to>`. The value is sealed again with the new project's key inside the broker and never reaches the app or the terminal.
+- **Safe if anything stops part-way.** The move is one step: if the app, the broker or the Mac stops in the middle, the next unlock finishes it or undoes it. The entry is never readable in both projects and never lost.
+- **What goes with it.** Its name, other names, expiry, fields and reference number. **What does not:** grants on that entry are revoked (re-grant it in the new project if you need to), and earlier values kept for Undo are dropped; the app and the command line say how many. A name or other name the new project already uses is refused; rename one first.
+- **Who can do it.** Only you, from your own login: Touch ID every time, and a fresh second-factor code when one is set up. No AI assistant can move an entry, so none can carry one out of the project it was given. The entry's history shows the move in both projects.
+- **One new broker operation (91 → 92):** `entry.move`. One new command-line command (45 → 46): `move`. No new MCP tools (21) or error codes (27). Desktop bridge 91 → 92 commands, shell 17.
+- **Not yet:** the "Move to project…" control is tested against the fixture broker and the shell's bridge tests, not yet pressed in a built app. The doctor's Tidy up (above) proposes moves through it.
+
+### The quick wins left for the app (`ADR-157`)
+
+- **Expiry on an entry.** An entry with an expiry shows a chip with the date: grey, amber within 30 days, red once it has passed. "Set expiry…" (or "Change expiry…") opens a dialog: type a date or pick in 30 days, in 90 days or in a year, or remove it. A date is a calendar day in UTC, read the way `credmgr expire --at` reads it. Nothing is locked or deleted when the day passes.
+- **History tab.** An entry's detail has Fields and History tabs. History lists the entry's newest 200 audit records, newest first: when, what happened, who (you or an assistant's session) and whether it was refused, with the entry's last change, rotation and expiry. Never a value.
+- **The app carries its broker.** `CredMgr.app` now contains `credmgrd` (`Contents/MacOS/credmgrd`), built from the same commit and stamped and checked like the tarball's, so Start at login works without installing the command-line tarball. `scripts/release-app.sh` builds it, the release verifier refuses an app without it or with one from another commit, and `scripts/sign-notarise.sh` signs it.
+- **Not yet:** notes as MCP tools (needs a decision, ADR-072). The new screens and the login agent are tested against the fixture broker and in the shell's tests, not yet pressed in a built app.
+
+### rc.2 command-line additions
+
+- **`credmgr totp`.** `credmgr totp <name> [--node] [--field | --field-id] [--json]` prints the current one-time code (never the seed); `totp.code` now also answers `validForSeconds` (1–30).
+- **`credmgr generate --hex` and `--copy`.** `util.generate` takes `hex` (lower-case hex, same length bounds). `--copy` on `generate`, `get` and `totp` puts the value on the macOS clipboard instead of stdout and clears it after 30 seconds only if the clipboard still holds it.
+- **`credmgr import --format json`.** A `.json` file (or `--format json`) is an array of `{"name","value"}` or `{"name","fields":[{"label","value","type"}]}` entries, sent as one `entry.create_batch` call with the same 500-entry ceiling and partial-failure report.
+
+### Post-launch quick wins (`ADR-156`)
+
+- **Change your passphrase.** Settings › Security › "Change passphrase", or `credmgr passphrase` (both passphrases on stdin). It asks for the current passphrase, a second factor if you set one up, and Touch ID if it is enrolled; every entry stays readable and a new recovery code is shown once. A crash part-way leaves either the old or the new passphrase in force, never neither.
+- **Expiry dates.** `credmgr expire` sets or clears an entry's expiry; `credmgr expiring` lists what expires soon or already has. Expiry dates are shown to people, not to AI assistants.
+- **Entry history.** `credmgr history` lists an entry's create, update, rotate and expiry changes in order, never a value. Old retained versions are now pruned: an entry keeps its 20 most recent versions and anything from the last seven days.
+- **Search one project, look up by reference.** `credmgr search --node` finds names and aliases in one project; `credmgr ref <number>` finds the entry a short reference number belongs to, among the entries you could already list.
+- **Anomaly notice.** When an assistant is refused five times in ten minutes across projects, the app shows a notice bar (Open audit, or ✕ to dismiss) and `credmgr status` says so; `credmgr status --ack` clears it.
+- **Start at login (macOS).** Settings, and the screen shown when the broker is not running, offer to start the broker when you log in (a per-user login item, never root). Turning it off asks first.
+- **V1 copy tool carries more.** `tools/v1-to-v2/migrate.js` now carries each entry's expiry, aliases and sensitivity into V2 (sensitivity through the new `credmgr set --sensitivity low|medium|high|critical|auto`); a V1 description has no V2 home and is reported by name. An unknown V1 sensitivity is refused, not guessed. The tool has no built-in names or default vault path any more: it takes `V1_DIR`, `--exclude`, `--exclude-file` and `--exclude-project`.
+- **Touch ID row on a Mac without Touch ID** stays visible, greyed, with a line saying what protects your vault.
+- **Confirm before showing secrets** now also asks before a content search and before a note is read.
+- **Seven new broker operations (84 → 91):** `vault.set_passphrase`, `vault.anomalies_ack`, `entry.set_expiry`, `entry.expiring`, `entry.history`, `entry.search`, `entry.get_by_ref`. Five new command-line commands (40 → 45): `passphrase`, `expire`, `expiring`, `history`, `ref`. No new MCP tools (21) or error codes (27). Desktop bridge 91 commands, shell 17.
+- **Hardening.** The audit log is checked before each new record is signed, so a cut-off log stays visible to `credmgr verify` (K-9). One request is capped at 128 MiB and its strings are wiped after use (K-10 (a), K-23 (b)). The app honours the presence-helper override only in debug builds (K-23 (a)). `credmgr restore` refuses while a broker is running (K-23 (d)). Unlocked project keys sit on memory the system is asked not to swap or dump (`mlock`).
+- **Proved, not assumed.** A CI check builds the broker and fails if it carries network or TLS code or holds any internet socket while it runs (`scripts/airlock-check.sh`, job `v2-airlock`). The I-10 isolation test is written: a sealed project's names stay listable and its values open only to the app with Touch ID (28 of 28 isolation tests; known risk K-1 closed).
+- **Not yet:** the expiry chip on an entry and the History tab in the app (the command line has both; built since, ADR-157); notes as MCP tools (needs a decision).
+
+### The switchboard: every setting, for you and for AI assistants (`ADR-155`)
+
+- **One settings registry.** Every setting (25: the app's preferences, "confirm before showing secrets", and each project's policy) is described once, with what it is for, the values it takes, where it is stored and which direction is weaker. The app, the command line and the MCP server read and change the same values, so they can never disagree. The app's preferences now live in the signed vault registry, not only in the window.
+- **Ask your assistant.** Six new MCP tools (15 → 21): `credmgr_settings_list`, `credmgr_settings_get`, `credmgr_settings_set`, `credmgr_settings_revert`, `credmgr_settings_request` and `credmgr_kb`. Eight new broker operations (76 → 84): `settings.list`, `settings.get`, `settings.set`, `settings.revert`, `settings.request_get`, `settings.request_list`, `settings.request_decide`, `settings.kb`.
+- **Safety tiers.** An assistant's appearance change or a change that makes the vault stricter applies at once. A change that makes it less protected (a longer or no auto-lock, a looser reveal rule, a lower security level, more agent access, screen-capture protection off) waits as a request until you approve it in CredMgr, after confirming it is you (Touch ID or passphrase). Assistants can never approve, list or see others' requests; they reach only their own project's settings. Nothing is changed while the vault is locked.
+- **Recorded and revertible.** Every change is kept with the value it replaced (`settings.get` shows them) and can be put back with `credmgr settings revert` or `credmgr_settings_revert`.
+- **Command line.** `credmgr settings list|get|set|toggle|revert|requests|request|approve|deny` and `credmgr kb`.
+- **Visual check fixes (2026-11-09).** In Settings › Agents an agent's reason is shown whole (it was cut at 300 characters), and the "agent requests are waiting" notice no longer covers the list in a narrow window: opening the list clears it.
+- **Knowledge base for language models.** `docs/LLM_KB.md`: how to connect, where data lives, retention and backup, every feature and setting and how to change it, and the rules, generated from the registry and checked against it in the tests.
+
+
+- The app locked the vault whenever the page reported itself hidden. macOS also reports that when the window is only covered, or sits on a display that is asleep or switched off, so a window on a second screen locked itself. Now revealed values are still wiped at once, but the vault locks only when the shell confirms the window was minimised or hidden (new shell command `window_state`, 13 → 14 shell commands). The idle auto-lock, sleep, screen lock and closing the window still lock as before.
+- The screen-capture protection setting (Settings › Security) applies to the window on every display.
+
+### The 2.x plan and the licence core (`ADR-153`, `ADR-154`)
+
+- **Plan:** the order of work after 2.0.0 — agents that use a credential without receiving it, the doctor, licensing and the store editions, encrypted backup and sync, remote agents, more platforms (`ADR-153`). The 2026-10-30 sync and agent-use design is now in the tree as `docs/23`, marked historical.
+- **Known risk recorded:** an agent that can reveal a value receives it into its model's context (F01, `PHASE8_AUDIT_REPORT.md` K-25, `SECURITY.md`).
+- **Licence core (not wired, nothing gated):** `credmgr_core::licence` verifies one-time, offline-signed licences (ECDSA P-256) bound to one device or to the vault's licence identity, with a Free / Solo / Plus / Team entitlement table in which Free is the whole vault and no security control is ever sold (`ADR-154`). No operation, error code or MCP tool was added.
+
+### The strictest security level is called "Strict" (`ADR-152`)
+
+- The third per-node security level reads **Strict** in the window, in Help, in the agent prompt and `CREDMGR.md`, and in the docs. "Sealed" now means one thing: sealing a node into Orphaned.
+- Nothing stored or sent changes: the value is still `sealed` in the registry, the broker, the bridge, MCP and `graph.snapshot`. `credmgr node policy --security-level strict` is accepted as an alias for `sealed` (either spelling works); `credmgr whoami` and the policy report print `strict`.
+- Broker refusal text on a Strict node (rule `L1`) says "Strict (stored as sealed)". No operation, error code or MCP tool was added.
+
+### Design drop of 2026-11-08 merged (`ADR-151`)
+
+- **Settings › Security is grouped** under three labels: *unlock and confirmation*, *on this screen*, *who can read*. Same rows
+  and controls, new order.
+- **"hide seed".** While a TOTP seed is showing, its button reads *hide seed* and hides the seed only; a code shown beside it
+  stays. The reveal's *hide* still hides both.
+- The Operations panel's *Rotate root key* line says it asks for Touch ID.
+- Not taken from the drop: its sample Help topics, a *Restore from backup* row (restore is the offline `credmgr restore`), and
+  its mock data. Answers to the design side: `BACKEND_ANSWERS_2026-11-08.md`.
+
+### Confirm before showing secrets (`ADR-150`)
+
+- **A vault setting, off by default:** Settings → Security → *Confirm before showing secrets*. When it is on, revealing a value,
+  copying one or showing a one-time code asks you to confirm it is you — Touch ID, or the vault passphrase — and then does not ask
+  again for the trust window you choose (1, 5, 15 or 60 minutes; 5 by default). In Pro mode: *When to ask* (once per trust window, or
+  every time) and *Which secrets* (all, or only high and critical). Locking ends the trust window. Turning it off or making it ask less
+  needs a fresh confirmation; turning it on does not. Agents are not affected (their reads answer to the node's security level).
+- **New broker operation `session.confirm`** (owner's login only; a wrong passphrase counts in the unlock backoff) and **new error code
+  `confirmation_required`**, returned by `entry.reveal` (and the app's copy) and `totp.code`, by a change that weakens the setting,
+  and, under "only high and critical", by an owner edit that lowers an entry's sensitivity out of that band. `totp.seed`,
+  `orphan.reveal` and `node.export` are not asked again (each already needs a Touch ID proof); `search.content` and `notes.read`
+  are not gated. Approving a waiting request (`vault.approval_decide`, from a login) asks too, and the value an approval
+  released is gated when a login collects it; denying never asks, and the locked-vault form is authorised by the unlock factors.
+- **Fixes from an independent adversarial review of ADR-150** (amendment in `docs/14_DECISIONS.md`, each with a refusal test in
+  `crates/brokerd/tests/reveal_confirm.rs`): **P0** — locking a project, asking for a value and approving your own request handed the
+  value over unconfirmed; the approval and the collection are now both gated (in "every time" mode that costs two confirmations).
+  **P1** — a successful `session.confirm` reset the per-uid back-off, so a login could guess gate codes without limit; a confirm now
+  records failures only. Also: a Touch ID confirmation proof that does not verify counts in the back-off; an entry with no manifest
+  row is gated as critical; a confirmation is spent only after every other check passes (a bad field id, or a weakening refused for
+  presence, keeps it); a stored policy with unknown keys still loads (a request naming one is refused); the CLI holds the confirm
+  passphrase in a zeroised buffer; the Settings caption says it covers this app and your logged-in CLI, not agents (a token-less
+  `credmgr` run from a registered project folder is an agent).
+  The setting is kept in the signed registry on the `global` node's policy (`revealConfirm`, set with `node.policy`); an older registry
+  reads as off. `graph.snapshot` tells the owner's login the setting. No new MCP tool.
+- **CLI:** `credmgr get` (and any command that meets the refusal) asks at a terminal (Touch ID first, else the passphrase on
+  stderr) and sends the request once more; from a pipe it says to run `credmgr confirm [--touch-id]` (passphrase from stdin)
+  first. The CLI has no flag to turn the setting on; the app does.
+- **About** shows the build's git commit next to the version.
+
+### Agents: security levels, client wiring, the vault prompt
+
+- **Per-node security levels** (`ADR-140`): Open, Guarded (the default) and Strict (stored as `sealed`; named "Sealed" until
+  ADR-152). On a Guarded node an agent's read of a `high` or `critical` value waits for the owner's one-tap approval; Strict holds every read, holds an agent's new entries in the tray and
+  refuses its changes. The owner is never held. Lowering a level needs presence. `credmgr node policy --security-level`, a control in
+  the node inspector, `level` in `whoami`, `securityLevel` in `graph.snapshot`. **Existing nodes read as Guarded.**
+- **Coding-assistant wiring** (`ADR-141`…`ADR-143`): `credmgr mcp --print-config [<client>]`; `credmgr agent detect|connect|disconnect|init`
+  (shows a diff, backs the file up, writes only the `credmgr` entry on `--yes`; never Claude Code's `~/.claude.json`); Settings →
+  Agents in the app; `credmgr prompt`; `CREDMGR.md`; `v2/docs/AGENT_CONTRACT.md`.
+- **Decided, not built:** machine lock (`ADR-144`); **dropped:** the duress code (`ADR-145`) and the `llm.*` broker operations (`ADR-146`).
+  This group adds no broker operation, error code or MCP tool of its own; five new shell commands and three bridge-local error codes.
+
+### Twelve broker operations (63 → 75)
+
+- `entry.alias`, `entry.similar` (near-duplicate names, `credmgr similar`, ADR-121), `entry.import_env` (`.env` importer, ADR-122), `node.rekey` (ADR-130), `orphan.destroy` (ADR-131), `search.content` (ADR-132), `node.export` (`credmgr export --age`, ADR-133), `audit.report` (ADR-134) and a node's own second factor, `node.gate_enroll_begin`, `node.gate_enroll_confirm`, `node.gate_verify` and `node.gate_remove` (ADR-135, `credmgr gate enroll|verify|remove --node <id>`). A node without its own gate shares the vault-wide window. Counted with `corpus_check.broker_ops()`.
+
+### 2.0.0-rc.1 backend batch (issues #35 to #40)
+
+- **A private-names node no longer tells a guesser a name exists** (ADR-110, #35): `entry.create` and `entry.create_batch` from a
+  caller that may not see names create the entry under a free name (`name (2)`) instead of answering `entry_exists`, with the same
+  reply shape either way. The owner and nodes without `privateNames` are unchanged.
+- **`credmgr backup` is a complete archive and `credmgr restore` rebuilds the vault from it** (ADR-112, #36): notes, sealed-node
+  and removed-entry archives, rotation history, the tray, the audit log and the generation counter are now in the archive, with a
+  manifest; `credmgr restore <archive> [--to <empty dir>] [--state-dir <dir>]` validates the whole archive, writes all or nothing,
+  never merges into or overwrites a vault, and never lowers an existing generation counter. A backup is refused while a root-key
+  rotation is half finished. A version-1 archive still restores, with a note.
+- **`graph.snapshot` says `gate.twofa: "none"` on a vault with no second factor** (ADR-115, #37); `enrolled` now means an
+  enrolment begun and not confirmed.
+- **`scripts/release.sh --verify` reads the build stamp, the minimum macOS version and the packaged documents from the bytes**
+  (ADR-114, #38), without `--run-binaries`: the commit and dirty flag from a stamp built into each binary (`build.rs`),
+  `LC_BUILD_VERSION` against the 13.1 limit, and each packaged document against the same file at the stamped commit. The
+  self-test grew five cases.
+- **An authenticator code is no longer a command-line argument** (ADR-113, #39): `credmgr gate verify` reads it from a prompt or
+  stdin; `credmgr approve` reads the passphrase from the first stdin line and the code from the second, or asks at a terminal. The
+  argument form is `--code-on-argv`, documented as visible to `ps`. **Breaking for scripts:** `gate verify <code>` and
+  `approve --code` are refused.
+- **A field that could be a 2FA seed but is not typed as one is named** (ADR-111, #40): replies gain `possibleSeedFields` and the
+  `possible_totp_seed` warning, `entry.get` marks `possibleSeed`, and the command line warns, names `credmgr field set --type
+  totp-seed` and offers to type it at a terminal. The window now warns on the flagged field and offers "This is a 2FA
+  seed" (one click sends `field.update {type: totp-seed}`) (#40).
+
+### Pre-stable security fixes (ADR-148 and its addendum)
+
+- **Touch ID unlock is refused to a caller the broker recognises as an agent** (an agent token, or no token from inside a
+  registered project folder), before any prompt. For anyone else the dialog names the requesting process, its parents and
+  its folder (a hint, not proof), and a dismissed or timed-out prompt counts toward the unlock back-off.
+- **The Touch ID unlock wrap is authenticated.** `keys/root.wrap.se` carries an HMAC tag under the root key; a root-key
+  rotation re-seals only to a wrap whose tag verifies, and refuses an untagged one ("turn Touch ID unlock off and on
+  again").
+- **The signed registry holds `presenceKeys` and `deviceWraps`**, so deleting or putting back `keys/presence.enroll` or
+  `keys/root.wrap.se` enrols, unenrols or re-enables nothing; enrolling a presence key needs proof of possession.
+- **Agents cannot lower what they would need approval to read:** on a Guarded or Strict node an agent edit or undo that
+  lowers an entry's sensitivity is refused (`node_access_denied`, rule `L1`). Accepting or discarding a held entry is the
+  owner's alone. A node with its own second factor asks for that code before every reveal, whatever `requireTwoFactor`
+  says. An agent's `search.content` skips every entry it could not reveal without approval.
+- **Durability:** `node.gate_verify` is persisted (a spent code stays spent across a restart), and a rekey stage is
+  removed crash-safely and never overwrites a later edit.
+- **Hardening:** a release build ignores `CREDMGR_PRESENCE_HELPER` and accepts only the production helper; a `.env` line
+  that is only base64 padding is refused by line number; `credmgr agent init` refuses a symlinked `CREDMGR.md`; restore
+  refuses case-only name clashes and `keys/root.wrap.se`. No new broker operation, error code or MCP tool.
+
+### Fixes from the rc.1 checks
+
+- **Accessibility, from the VoiceOver pass (#22, 2026-11-08):** the header search field is named "search entries" (it had
+  no accessible name), and revealing a value now announces "hide, re-masks in 20 seconds" once instead of an unannounced
+  per-second countdown. Results in `docs/ACCESSIBILITY.md`.
+- **QT-1:** the four quarantined WebKit specs wait for `data-focus-settled` and run again.
+- **Text-input border is `--mute`, not `--faint`** (ADR-092 item 6, accepted in ADR-147).
+- **An operation on a node that does not exist answers `not_found` "no node <id>"** (it said "locked" or "no public key
+  registered"); **`credmgr backup` refuses a multi-line passphrase on stdin.**
+- **"show seed" displays the seed** (`d9e6c7c`): the `26da2d3` build said "The seed is not shown in this build"; the app
+  now holds the presence-gated seed in its private store, shows it with the re-mask countdown, never copies it and clears it
+  on lock, node change or hide.
+- **Built-app re-walk** (`docs/RELEASE_VERIFICATION.md` §15, 2026-11-07 and 2026-11-08, `26da2d3` build): a spot re-walk of
+  every screen by hand; the idle lock and a real screen lock locked the vault; Touch ID setup (with proof of possession),
+  fingerprint unlock and `credmgr unlock --touch-id` passed with the operator's finger, and the command was refused from a
+  project folder. One defect (the seed display) was found and fixed in `d9e6c7c`.
+- **A Touch ID prompt no longer makes the app drop its own answer** (ADR-149, `5e9bb29`): the system Touch ID sheet blurs
+  the window, and the page wiped revealed values on blur, so a seed (or a sealed entry) asked for with a fingerprint was
+  discarded on arrival. While a presence-gated request the page started is in flight (plus 1.5 s), a blur does not wipe;
+  minimising, hiding and locking still wipe at once. Checked by hand on 2026-11-08: after a fingerprint, "show seed"
+  displayed the seed and re-masked it on time.
+  Later the same day the ADR-150 setting was checked by hand and the VoiceOver pass (#22) ran (above); the per-control
+  press of every row and the built-app look of the design drop (ADR-151, `RELEASE_VERIFICATION.md` §16) remain.
+
+### Touch ID on the Mac — presence proofs and Touch ID unlock (ADR-098, 2026-11-06)
+
+- **A Secure Enclave key now proves that a person is present, and the gated operations run.** `audit.get`, `totp.seed`,
+  `node.reparent`, `grant.create`, `node.policy` when it widens reach, `maintenance.rotate_root`, `maintenance.doctor` with
+  `rebuildRegistry` and the sealed read no longer answer `presence_required` on a Mac with an enrolled key. The broker hands out
+  a single-use 60-second challenge bound to the operation, its exact parameters and the login session; the Enclave signs it
+  after Touch ID (or the device password where no fingerprint is enrolled); the broker verifies it against an enrolled public
+  key and burns the nonce either way. (The broker releases a `totp.seed` to the owner with a proof; since `d9e6c7c` the desktop app's "show seed" displays it, re-masks it after the reveal window, never copies it and clears it on lock; the CLI has no command.) **Without an enrolled key the old `presence_required` refusals stand**, and agents and
+  fixture tokens can never hold a proof.
+- **Sealed ("Orphaned") entries can be opened, in the desktop app only.** `orphan.list` names them; `orphan.reveal` needs the
+  owner's login, a fresh second factor **and** a Touch ID proof every time, and drops the second-factor window afterwards.
+  There is no CLI command and no MCP tool for it.
+- **Unlock the vault with Touch ID.** `credmgr touch-id enable` (and the app's Settings > Security > Touch ID) seals the root
+  key to a Secure Enclave key into `keys/root.wrap.se`; `credmgr unlock --touch-id` and the Lock screen's fingerprint icon (beside the passphrase field, dimmed with a set-up hint until Touch ID is on; commit 817c106, PR #53) open it. Touch ID setup and fingerprint unlock were checked by hand in the built unsigned app on 2026-11-07 (`docs/RELEASE_VERIFICATION.md` section 14). The passphrase and recovery wraps stay, it works on this Mac only, and it is an extra door, not a replacement:
+  a copy of the vault folder on another computer is still attackable offline by passphrase. The Enclave wrap is never in a backup;
+  the enrolment file (public keys only) is.
+- **Eight new broker ops** (55 → 63; 75 with the twelve in the batch above, 76 with `session.confirm`): `presence.status`, `presence.challenge`, `presence.enrol`, `presence.unenrol`,
+  `device.enrol`, `device.remove`, `orphan.list`, `orphan.reveal`; one new error, `presence_failed` (reasons `not_enrolled`,
+  `expired`, `invalid`, `cancelled`, `locked_out`, `unavailable`). New CLI: `presence status|enrol|unenrol`, `touch-id
+  enable|disable`, `unlock --touch-id`, `node reparent`. The CLI and the desktop shell answer a `presence_required` themselves.
+- **Touch ID does not need signing.** The Swift helper `credmgr-presence` uses a non-permanent Enclave key and works in an
+  ad-hoc-signed binary. The build and the tarball are still unsigned and not notarised until the operator supplies an Apple
+  Developer ID (`scripts/sign-notarise.sh`, #28). Windows Hello, TPM and Linux keystores are not built (#29).
+- **Documentation honesty pass:** the README, SECURITY, RELEASE and corpus documents that said "no Touch ID" or "nothing is
+  held in the Secure Enclave" now say what is built (macOS) and what is not (other platforms, signing).
 
 ## [2.0.0-alpha.1] — 2026-08-05 through 2026-08-10 · Backend, Phases 0–5 and 7
 
@@ -155,7 +466,7 @@ plus the design-handoff package's own refresh.
   rest of the theme. `tools/PROVENANCE.md` records the correction rather than quietly patching
   over its own earlier "removed outright" claim.
 
-### Changed — design handoff (`<local checkout>`, separate local repo)
+### Changed — design handoff (a separate local design repository, since deleted)
 - **`03_ENDPOINTS_CURRENT.md` re-verified against source and re-stamped**: 31 → **38** broker
   ops, 10 → **11** MCP tools, 14 → **24** CLI subcommands, plus ADR-056's new session-token
   response shape. Also fixed a leftover upstream-branded node in its `graph.snapshot` example.
@@ -254,7 +565,7 @@ full workspace listing, on 2026-10-26, was **900 passing in 59 test binaries**, 
 Chromium and WebKit Playwright suites, 80 real-daemon journeys and the 87-state design audit, all green on 2026-10-30
 (`docs/PRODUCTION_PLAN.md`, `BACKEND_REPORT.md`; the Playwright suites ran 658 passed and 2 skipped on 2026-10-26, the
 skips being WebKit specs quarantined as QT-1 — there are four now). The alpha.6-era figures were 448 tests in 37
-binaries and 65 shell tests. **None of it has run on GitHub for this release** (see Known issues).
+binaries and 65 shell tests. **None of it had run on GitHub when this was written** (correction: GitHub CI first ran on 2026-10-31 and 2026-11-01, pull request #41; see Known issues).
 
 > **Upgrading from an alpha, and not going back.** A vault opens unchanged, with no migration step, and every
 > existing entry is read in place as a single field. **A vault that 2.0.0-beta.1 has written to cannot be opened by
@@ -529,7 +840,7 @@ binaries and 65 shell tests. **None of it has run on GitHub for this release** (
   `docs/history/` folder for finished handover and planning documents.
 
 ### Changed
-- **Licence: MIT for everything and everyone, organisations included** (ADR-074). No licence key, seat
+- **Superseded by ADR-096 before release:** **Licence: MIT for everything and everyone, organisations included** (ADR-074). No licence key, seat
   limit or payment gate anywhere; money is voluntary donations plus an optional commercial licence
   (an invoice, a certificate, priority support) through the publisher. ADR-074's first wording had the desktop app
   with no donation toast and no supporter unlock code; ADR-082 (2026-10-18) superseded that part: the app shows a
@@ -551,7 +862,7 @@ binaries and 65 shell tests. **None of it has run on GitHub for this release** (
   `body-parser` 1.20.8 → 1.20.9 and `qs` 6.16.0 → 6.16.2. The shell's `tauri` crate family moved to 2.12.1 with the shell
   lane, level with the desktop npm packages and the Tauri CLI. The rest of the v2 workspace waits on a newer compiler
   (RustCrypto 0.11 / 0.13 needs Rust 1.85, `totp-rs` 6 needs 1.88).
-- **`tools/visual-engine`'s and `v1`'s package manifests state the MIT licence** (the engine said
+- **`tools/visual-engine`'s and `v1`'s package manifests state the licence** (MIT then; `SEE LICENSE IN LICENSE` since ADR-096) (the engine said
   `UNLICENSED`; `v1` said nothing).
 - **`v2/RELEASE.md`'s checksum step could not pass on a genuine download.** `SHA256SUMS` listed the
   two binaries inside the tarball as well as the tarball, so checking it before extracting reported
@@ -648,7 +959,7 @@ binaries and 65 shell tests. **None of it has run on GitHub for this release** (
   check found 27.2, the build host's version, in the first beta.1 build).
 - **The bundled fonts' licence texts are not copied into the built `.app`.** About → Licences names the three typefaces and
   says their SIL Open Font Licence texts ship in `third_party/fonts`, which is a folder of the repository, not of the app.
-- **GitHub CI has not run on this release.** The account's GitHub billing blocked every GitHub-hosted job (issue #33): the account is on the Free plan with **no payment method on file**, October's included Actions minutes were used up and about $36 of overage was billed with nothing to charge it to, so GitHub refuses to start any job ("recent account payments have failed or your spending limit needs to be increased"); the included allowance resets on 1 November. So
+- **Superseded 2026-11-01: GitHub CI has not run on this release.** The account's GitHub billing blocked every GitHub-hosted job (issue #33): the account is on the Free plan with **no payment method on file**, October's included Actions minutes were used up and about $36 of overage was billed with nothing to charge it to, so GitHub refuses to start any job ("recent account payments have failed or your spending limit needs to be increased"); the included allowance resets on 1 November. So
   `build.yml` and `security.yml` could not be dispatched for 2.0.0-beta.1. The evidence is the local gate runs recorded in
   `docs/PRODUCTION_PLAN.md` and `BUILD_LOG.md`, and the built-app check in `docs/RELEASE_VERIFICATION.md` §13. The
   `security.yml` job is still named "isolation suite (I-1..I-25)" and also runs I-27…I-29.
@@ -685,7 +996,7 @@ Nothing below is built (except the V1 copy tool noted above); each item is a des
 > (2026-08-05) as the target V2, and several rows describe things that are designed and **not built**.
 > Where this section says "V2" and the corpus marks a row `planned`, the corpus wins: the rows
 > below carry a marker for the ones that are not built today (`docs/00_README_START_HERE.md` is the
-> live status table). Built today: the Rust broker (55 operations), the per-node key hierarchy, grants,
+> live status table). Built when this was written: the Rust broker (55 operations; 76 in `2.0.0-rc.1`), the per-node key hierarchy, grants,
 > gate 2FA (vault-wide, with per-node `requireTwoFactor` and `privateNames` enforced), the CLI and a 15-tool MCP
 > server, on macOS (Apple Silicon) with the Software keystore tier; the desktop app hosts the design with every
 > screen wired to the broker, writes included (its per-control checklist was walked in a built app on 2026-10-18 and
@@ -698,9 +1009,9 @@ Nothing below is built (except the V1 copy tool noted above); each item is a des
 | **Isolation** | `project` is a **string label** used for filtering. Any caller with the key reads all 185 credentials. | A **node is a cryptographic boundary**. Per-node X25519 keys. Project A's material is under a different key from Project B's. |
 | **Enforcement points** | **Three** independent paths to plaintext (CLI, HTTP daemon, MCP), each with its own idea of authorisation. The PIN guarded HTTP; agents bypassed it by design. | **One** — the `credmgrd` broker. Every other surface is a client that never holds a key. |
 | **Agent scope** | Global. An agent in project B could read project A. | Derived from the client's working directory; a cross-node request returns a structured refusal naming the rule and the remedy. |
-| **Root key** | `master.key` on disk, readable by the user account | A passphrase wrap and a printed recovery code (**built**, the Software tier); wrapped by the platform keystore (Secure Enclave / TPM+Windows Hello / TPM2) is **planned** (`16_CROSS_PLATFORM.md`) |
-| **2FA** | none | One vault-wide gate, checked *after* the root key and *before* any node key loads (**built**); each node's `requireTwoFactor` is enforced against that gate (**built**, ADR-085); a per-node second-factor secret is **not built** (deferred to 2.0.0, ADR-093) |
-| **Deletion** | soft delete, 7-day recovery | **Seal, never delete** — into an Orphaned node. Names stay visible; values stay encrypted to a cold key and, until presence attestation exists, nothing in this release can read them |
+| **Root key** | `master.key` on disk, readable by the user account | A passphrase wrap and a printed recovery code (**built**, the Software tier); a Secure Enclave wrap and presence key are **built on macOS** (ADR-098); TPM, Windows Hello and TPM2 are **planned** (`16_CROSS_PLATFORM.md`) |
+| **2FA** | none | One vault-wide gate, checked *after* the root key and *before* any node key loads (**built**); each node's `requireTwoFactor` is enforced against that gate (**built**, ADR-085); a per-node second-factor secret is **built** (ADR-135); nodes without one share the vault-wide gate |
+| **Deletion** | soft delete, 7-day recovery | **Seal, never delete** — into an Orphaned node. Names stay visible; values stay encrypted to a cold key and are read only in the desktop app, through the owner's login, a fresh second factor and a Touch ID proof (ADR-098) |
 | **Cross-project reads** | implicit and unlimited | **Grants** — human-created, 2FA-gated, expiring, revocable, dashed on the graph. No agent path exists |
 | **Network** | `localhost` HTTP daemon with a bearer token | **No listening socket at all.** UDS / named pipe. No HTTP client compiled into the vault process |
 
@@ -712,7 +1023,7 @@ Nothing below is built (except the V1 copy tool noted above); each item is a des
 | Core | Node.js 22, zero runtime deps | **Rust** — `zeroize` and `secrecy` (**built**); page locking (`mlock`) and core-dump suppression are **not built** (`04_CRYPTO_AND_KEYS.md`, R-1) |
 | Shell | Swift + WKWebView | **Tauri 2** (system webview everywhere) |
 | Password KDF | scrypt | **Argon2id** |
-| Distribution | build from source | today an **unsigned** tarball of `credmgr` and `credmgrd`, plus an **ad-hoc sealed, not Developer-ID signed or notarised** `CredMgr.app`, `.dmg` and `.zip`, with `SHA256SUMS` (`RELEASE.md`); Developer-ID-signed and notarised builds and `.msi` / `.AppImage` + `.deb` / `.rpm` are **planned** (`21_RELEASE_AND_INTEGRITY.md`) |
+| Distribution | build from source | today an **unsigned** tarball of `credmgr`, `credmgrd` and the `credmgr-presence` Touch ID helper, plus an **ad-hoc sealed, not Developer-ID signed or notarised** `CredMgr.app`, `.dmg` and `.zip`, with `SHA256SUMS` (`RELEASE.md`); Developer-ID-signed and notarised builds and `.msi` / `.AppImage` + `.deb` / `.rpm` are **planned** (`21_RELEASE_AND_INTEGRITY.md`) |
 
 *The Argon2id and Rust rows close accepted risks AR-2 (scrypt) and AR-3 (Node heap zeroisation) outright; the platform and distribution rows above are the target, not the present.*
 
@@ -740,18 +1051,15 @@ yet verified control by control in the running app (`RELEASE_VERIFICATION.md`).*
 | MCP tools | 10, global scope | 15, scope-filtered (`whoami`, `list`, `search`, `get`, `create`, `update`, `rotate`, `remove`, `undo`, `totp_code`, `recent_changes` — the eleven of Pass 3, down from a Pass-1 estimate of 13 once the forbidden-tools list, `10_API_AND_MCP.md §3.2`, scoped grant/policy/orphan tools out entirely — plus ADR-078's `get_metadata`, `field_add`, `field_update` and `field_remove`) |
 | `credmgr_list_projects` | listed **every** project to every agent | → `credmgr_whoami`, returns only reachable nodes |
 | `credmgr_set` | create **and** update | split into `create` / `update` — update requires an unlocked vault (credential substitution, Pass 2 F-1) |
-| Setup | hand-edit `~/.claude.json` | **planned, not built:** auto-detect and wire Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Zed — with backup, atomic write, verify, and one-click undo. Today you add `credmgr mcp` to your agent's configuration yourself (`PRIVACY.md §4`) |
-| Rules for agents | none | the tool descriptions (**built**); the **Vault Protocol** prompt and `CREDMGR.md` per node are **planned, not built** (`17_AIRLOCK_AND_LLM.md`) |
-| Security levels | — | **Open / Guarded / Sealed**, global and per-node — **planned**; the broker has no per-node security level yet |
+| Setup | hand-edit `~/.claude.json` | **built** (ADR-141, ADR-142): `credmgr agent detect|connect|disconnect|init`, `credmgr mcp --print-config` and Settings → Agents, with a diff and a backup before any write |
+| Rules for agents | none | the tool descriptions (**built**); the vault prompt (`credmgr prompt`) and `CREDMGR.md` are **built** (ADR-143, `17_AIRLOCK_AND_LLM.md`) |
+| Security levels | — | **Open / Guarded / Strict** (stored `sealed`, ADR-152), per node — **built** (ADR-140) |
 
 ### ♻️ Carried forward from V1, unchanged in spirit
 
 **Built:** the 7-day recovery window (and the fact that no agent can shorten or erase it) · `undo` with `keep-both`
 collision handling · `verify` / `doctor` / `backup` · a stored per-entry sensitivity (it gates nothing yet).
-**Not built:** the auto-merge engine with its permanent dismissal memory · stable 4-digit refs that are never reused ·
-aliases surviving merges and renames and fuzzy near-name and near-duplicate detection (aliases and near-duplicates are
-item 4.7 of the `2.0.0-rc.1` milestone, `docs/PRODUCTION_PLAN.md`) · restoring a backup (there is a `backup` command and
-no restore command).
+**Not built:** the auto-merge engine with its permanent dismissal memory · stable 4-digit refs that are never reused. (Aliases and near-duplicate names are now built, `entry.alias` and `credmgr similar`, ADR-121; restoring a backup is built, `credmgr restore`, ADR-112.)
 
 ### ❌ Removed, with reasons
 
@@ -768,13 +1076,13 @@ reconciled** — in [`docs/18_ENDPOINT_INDEX.md`](docs/18_ENDPOINT_INDEX.md).
 ## Migration
 
 There is none. [`docs/11_MIGRATION.md`](docs/11_MIGRATION.md) records the decision: V2 ships empty and does not
-import from V1 — no migration, no dry run, no parallel window, no cut-over. V1 keeps running beside it and is never
-written to by V2, so using V2 changes nothing in a V1 vault; `credmgr import` reads a `.env` file and nothing else.
+import from V1 in the CLI or the app — no migration, no dry run, no parallel window, no cut-over. V1 keeps running beside it and is never
+written to by V2, so using V2 changes nothing in a V1 vault; `credmgr import` reads a `.env` file and nothing else. A read-only copy script, `tools/v1-to-v2/migrate.js`, exists (ADR-097); it never writes to the V1 vault.
 
 ## Versioning and release locking
 
-- A released tag is **immutable**. Fixes ship as a new version; a tag is never re-cut. (Policy: nothing is tagged or
-  published yet.)
+- A released tag is **immutable**. Fixes ship as a new version; a tag is never re-cut. (`v2.0.0-beta.1` was tagged and
+  published as a GitHub pre-release on 2026-11-01.)
 - What a release publishes today is `SHA256SUMS`, with no signature. A detached signature and the app verifying its own
   bundle at start are **planned, not built** (`docs/21_RELEASE_AND_INTEGRITY.md` §2 and §3).
 - There is **no updater**; the app makes no network request. A future updater is planned to be opt-in, signed, and to

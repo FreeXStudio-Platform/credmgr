@@ -39,7 +39,21 @@ fn parse_backup_timestamp(file_name: &str) -> Option<i64> {
 /// oldest first — never a manually renamed or placed file (ADR-054's
 /// retention-pruning safety property).
 pub fn list_backup_files(paths: &VaultPaths) -> Vec<PathBuf> {
-    let dir = paths.backups_dir();
+    list_backup_files_in(&[paths.backups_dir()])
+}
+
+/// [`list_backup_files`] across several folders (ADR-165 review N2: a machine-locked vault's archives are
+/// written outside the vault folder), oldest first.
+pub fn list_backup_files_in(dirs: &[PathBuf]) -> Vec<PathBuf> {
+    let mut found: Vec<(i64, PathBuf)> = Vec::new();
+    for dir in dirs {
+        found.extend(backup_files_with_time(dir));
+    }
+    found.sort_by_key(|(ts, _)| *ts);
+    found.into_iter().map(|(_, p)| p).collect()
+}
+
+fn backup_files_with_time(dir: &Path) -> Vec<(i64, PathBuf)> {
     let Ok(read_dir) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -53,11 +67,16 @@ pub fn list_backup_files(paths: &VaultPaths) -> Vec<PathBuf> {
         })
         .collect();
     found.sort_by_key(|(ts, _)| *ts);
-    found.into_iter().map(|(_, p)| p).collect()
+    found
 }
 
 pub fn find_latest_backup(paths: &VaultPaths) -> Option<PathBuf> {
     list_backup_files(paths).into_iter().next_back()
+}
+
+/// The newest backup across `dirs`.
+pub fn find_latest_backup_in(dirs: &[PathBuf]) -> Option<PathBuf> {
+    list_backup_files_in(dirs).into_iter().next_back()
 }
 
 /// Delete the oldest backups beyond `retain`, returning the file names
@@ -66,10 +85,15 @@ pub fn find_latest_backup(paths: &VaultPaths) -> Option<PathBuf> {
 /// "oldest beyond `retain`" always includes the one just created if `retain`
 /// is 0.
 pub fn prune_backups(paths: &VaultPaths, retain: usize) -> Vec<String> {
+    prune_backups_in(&paths.backups_dir(), retain)
+}
+
+/// [`prune_backups`] in one folder (the one the fresh backup was written to).
+pub fn prune_backups_in(dir: &Path, retain: usize) -> Vec<String> {
     if retain == 0 {
         return Vec::new();
     }
-    let files = list_backup_files(paths);
+    let files = list_backup_files_in(&[dir.to_path_buf()]);
     if files.len() <= retain {
         return Vec::new();
     }
@@ -144,7 +168,15 @@ pub fn load_rebuild_candidate(
     paths: &VaultPaths,
     passphrase: &SecretBox<String>,
 ) -> Result<RegistryDocument, RebuildCandidateError> {
-    let latest = find_latest_backup(paths).ok_or(RebuildCandidateError::NoBackupFound)?;
+    load_rebuild_candidate_in(&[paths.backups_dir()], passphrase)
+}
+
+/// [`load_rebuild_candidate`] from the newest backup across `dirs`.
+pub fn load_rebuild_candidate_in(
+    dirs: &[PathBuf],
+    passphrase: &SecretBox<String>,
+) -> Result<RegistryDocument, RebuildCandidateError> {
+    let latest = find_latest_backup_in(dirs).ok_or(RebuildCandidateError::NoBackupFound)?;
     load_rebuild_candidate_from(&latest, passphrase)
 }
 
@@ -281,7 +313,7 @@ mod tests {
             br#"{"nodes":{},"grants":[],"manifests":{},"vaultGeneration":1}"#,
         )
         .unwrap();
-        let plaintext = store_backup::create_backup(paths).unwrap();
+        let plaintext = store_backup::create_backup(paths, None).unwrap();
         backup_passphrase::encrypt_with_passphrase(passphrase, &plaintext)
     }
 
@@ -330,7 +362,7 @@ mod tests {
             br#"{"nodes":{},"grants":[],"manifests":{},"vaultGeneration":1}"#,
         )
         .unwrap();
-        let old_plain = store_backup::create_backup(&paths).unwrap();
+        let old_plain = store_backup::create_backup(&paths, None).unwrap();
         let old_cipher = backup_passphrase::encrypt_with_passphrase(&pass, &old_plain);
         atomic::write(
             &paths.backups_dir().join(backup_file_name(100)),
@@ -343,7 +375,7 @@ mod tests {
             br#"{"nodes":{},"grants":[],"manifests":{},"vaultGeneration":7}"#,
         )
         .unwrap();
-        let new_plain = store_backup::create_backup(&paths).unwrap();
+        let new_plain = store_backup::create_backup(&paths, None).unwrap();
         let new_cipher = backup_passphrase::encrypt_with_passphrase(&pass, &new_plain);
         atomic::write(
             &paths.backups_dir().join(backup_file_name(200)),

@@ -18,7 +18,7 @@
   /** Work folders that "exist" on the fixture's disk (the real broker canonicalises and checks them). */
   var HOME = "/opt/fixture-home";
   var DIRS = [HOME + "/projects/alpha", HOME + "/projects/beta", HOME + "/projects/gamma"];
-  var DEFAULT_POLICY = { siblingVisibility: "shared", descendantRead: false, requireTwoFactor: "reveal", lockAfterSeconds: null, privateNames: false, agentAccess: "read-write" };
+  var DEFAULT_POLICY = { siblingVisibility: "shared", descendantRead: false, requireTwoFactor: "reveal", lockAfterSeconds: null, privateNames: false, agentAccess: "read-write", securityLevel: "guarded" };
 
   function orphanNode() {
     return B.S.nodes.filter(function (n) { return n.kind === "orphan"; })[0] || null;
@@ -27,7 +27,7 @@
   function exists(node, name) {
     var S = B.S;
     var all = (S.entries[node] || []).concat(S.pending[node] || []);
-    return all.some(function (e) { return e.name === name; });
+    return all.some(function (e) { return e.name === name || (e.aliases || []).indexOf(name) >= 0; });
   }
 
   /**
@@ -77,7 +77,9 @@
     B.requireNode(a.node);
     var r = create(a.node, a.name, parseBody(a, "params"));
     B.audit("create", a.node, r.entry);
-    return B.nameWarnings(r, [a.name]);
+    B.nameWarnings(r, [a.name]);
+    if (!r.pending) B.seedHint(r, (B.S.entries[a.node] || []).filter(function (x) { return x.id === r.entry; })[0]);
+    return r;
   };
 
   H.entry_create_batch = function (a) {
@@ -139,7 +141,7 @@
     }
     var out = { node: a.node, entry: e.id, generation: B.S.generation[a.node], fieldCount: e.fields.length, fieldIds: e.fields.map(function (f) { return f.id; }) };
     for (var k in extra || {}) out[k] = extra[k];
-    return out;
+    return B.seedHint(out, e);
   }
 
   H.field_add = function (a) {
@@ -180,6 +182,67 @@
     B.materialize(e);
     e.fields = e.fields.filter(function (f) { return f.id !== a.field; });
     return changed(a, e, "field.remove");
+  };
+
+  // ───────────────────────────── rotate, remove, restore (rc.2 §1 item 1) ─────────────────────────────
+  // entry.rotate: entry.update's body, keeping history (entry.undo puts it back) and stamping rotatedAt.  The app sends `field` + `value`.
+  H.entry_rotate = function (a) {
+    var e = fieldEntry(a);
+    if (a.fields !== undefined) throw B.error("malformed_request", "the fixture rotates one field: send field and value");
+    if (typeof a.value !== "string") throw B.error("malformed_request", "params.value is required");
+    B.materialize(e);
+    var f;
+    if (a.field === undefined || a.field === null) {
+      if (e.fields.length !== 1) throw B.error("malformed_request", "this entry has several fields: say which with params.field");
+      f = e.fields[0];
+    } else f = fieldNamed(e, a.field);
+    f.value = a.value;
+    e.rotatedAt = B.now();
+    return changed(a, e, "entry.rotate", { rotatedAt: e.rotatedAt });
+  };
+
+  // entry.remove (ADR-048): the entry leaves the list and is kept seven days; entry.restore brings it back under its name, or, with
+  // mode "keep-both", under "<name> old" when an entry took the name since.  `broker.set({ removalExpired: true })` closes the window.
+  H.entry_remove = function (a) {
+    B.requireLogin();
+    B.requireNodeOpen(a.node);
+    if (typeof a.generation !== "number") throw B.error("malformed_request", "params.generation is required");
+    var e = (B.S.entries[a.node] || []).filter(function (x) { return x.id === a.entry; })[0];
+    if (!e) throw B.error("not_found", "no entry " + a.entry + " on node " + a.node, { node: a.node, entry: a.entry });
+    var current = B.S.generation[a.node] || 1;
+    if (a.generation !== current) throw B.error("conflict", "the node changed since it was read", { node: a.node, expectedGeneration: a.generation, currentGeneration: current });
+    B.S.entries[a.node] = B.S.entries[a.node].filter(function (x) { return x.id !== e.id; });
+    B.S.removed = B.S.removed || {};
+    (B.S.removed[a.node] = B.S.removed[a.node] || {})[e.id] = e;
+    B.S.generation[a.node] = current + 1;
+    B.audit("entry.remove", a.node, e.id);
+    return { node: a.node, entry: e.id, removed: true, generation: B.S.generation[a.node] };
+  };
+  H.entry_restore = function (a) {
+    B.requireLogin();
+    B.requireNodeOpen(a.node);
+    if (typeof a.generation !== "number") throw B.error("malformed_request", "params.generation is required");
+    var mode = a.mode === undefined || a.mode === null ? "replace" : a.mode;
+    if (mode !== "replace" && mode !== "keep-both") throw B.error("malformed_request", "params.mode must be \"replace\" or \"keep-both\"");
+    var current = B.S.generation[a.node] || 1;
+    if (a.generation !== current) throw B.error("conflict", "the node changed since it was read", { node: a.node, expectedGeneration: a.generation, currentGeneration: current });
+    var e = ((B.S.removed || {})[a.node] || {})[a.entry];
+    if (!e) throw B.error("not_found", "no removed entry " + a.entry + " on node " + a.node, { node: a.node, entry: a.entry });
+    if (B.S.removalExpired) throw B.error("entry_removal_expired", "the seven days to restore it have passed", { node: a.node, entry: a.entry });
+    var lc = function (n) { return String(n).toLowerCase(); };
+    var taken = function (n) { return (B.S.entries[a.node] || []).some(function (x) { return [x.name].concat(x.aliases || []).map(lc).indexOf(lc(n)) >= 0; }); };
+    var name = e.name;
+    if (taken(name)) {
+      if (mode === "replace") throw B.error("entry_exists", "an entry is called " + name + " now", { node: a.node });
+      name = e.name + " old";
+      for (var i = 2; taken(name); i++) name = e.name + " old " + i;
+    }
+    e.name = name;
+    delete B.S.removed[a.node][a.entry];
+    B.S.entries[a.node].push(e);
+    B.S.generation[a.node] = current + 1;
+    B.audit("entry.restore", a.node, e.id);
+    return { node: a.node, entry: e.id, restoredName: name, generation: B.S.generation[a.node] };
   };
 
   H.field_reorder = function (a) {
@@ -271,14 +334,17 @@
     var patch = a.policy;
     var fields = patch && typeof patch === "object" ? Object.keys(patch) : [];
     if (!fields.length) throw B.error("malformed_request", "params.policy sets no field - nothing to change");
-    var allowed = { siblingVisibility: ["shared", "isolated"], requireTwoFactor: ["never", "reveal", "always"], agentAccess: ["read-write", "read-only", "none"] };
+    var allowed = { siblingVisibility: ["shared", "isolated"], requireTwoFactor: ["never", "reveal", "always"], agentAccess: ["read-write", "read-only", "none"], securityLevel: ["open", "guarded", "sealed"] };
     fields.forEach(function (f) {
       if (!(f in DEFAULT_POLICY)) throw B.error("malformed_request", "params.policy: unknown field " + f);
       if (allowed[f] && allowed[f].indexOf(patch[f]) < 0) throw B.error("malformed_request", "params.policy: bad value for " + f);
     });
     node.policy = node.policy || B.clone(DEFAULT_POLICY);
     // Widening reach needs presence, which no transport can attest yet; the patch is all-or-nothing.
-    if ((patch.descendantRead === true && !node.policy.descendantRead) || (patch.siblingVisibility === "shared" && node.policy.siblingVisibility === "isolated")) {
+    // ADR-140: a LOWER security level (open < guarded < sealed) lets an agent do more, so it is widening too.
+    var RANK = { open: 0, guarded: 1, sealed: 2 };
+    var lowering = "securityLevel" in patch && RANK[patch.securityLevel] < RANK[node.policy.securityLevel || "guarded"];
+    if (lowering || (patch.descendantRead === true && !node.policy.descendantRead) || (patch.siblingVisibility === "shared" && node.policy.siblingVisibility === "isolated")) {
       throw B.error("presence_required", "presence cannot be attested by this transport");
     }
     fields.forEach(function (f) { node.policy[f] = patch[f]; });
@@ -426,6 +492,27 @@
     { reset: OPEN, args: function () { return { node: "atlas", entry: "e-a2", generation: GEN(), order: ["f_00a20005", "f_00a20004", "f_00a20003", "f_00a20002", "f_00a20001"] }; } },
     { reset: OPEN, args: function () { return { node: "atlas", entry: "e-a2", generation: GEN(), order: ["f_00a20005"] }; }, error: "malformed_request" },
   ];
+  E.entry_rotate = [
+    { reset: OPEN, args: function () { return { node: "atlas", entry: "e-a2", generation: GEN(), field: "f_00a20004", value: "fixture-value-rotated" }; } },
+    { reset: OPEN, args: function () { return { node: "atlas", entry: "e-a1", generation: GEN(), value: "fixture-value-rotated" }; } },
+    { reset: OPEN, args: { node: "atlas", entry: "e-a2", generation: 99, field: "f_00a20004", value: "x" }, error: "conflict" },
+    { reset: OPEN, args: function () { return { node: "atlas", entry: "e-a2", generation: GEN(), value: "x" }; }, error: "malformed_request" },
+    { reset: OPEN, args: { node: "cobalt", entry: "e-c1", generation: 1, value: "x" }, error: "node_locked" },
+  ];
+  var REMOVED = function () { H.entry_remove({ node: "atlas", entry: "e-a1", generation: GEN() }); };
+  E.entry_remove = [
+    { reset: OPEN, args: function () { return { node: "atlas", entry: "e-a1", generation: GEN() }; } },
+    { reset: OPEN, args: { node: "atlas", entry: "e-a1", generation: 99 }, error: "conflict" },
+    { reset: OPEN, args: function () { return { node: "atlas", entry: "e-nope", generation: GEN() }; }, error: "not_found" },
+    { reset: { locked: true }, args: { node: "atlas", entry: "e-a1", generation: 1 }, error: "vault_locked" },
+  ];
+  E.entry_restore = [
+    { reset: OPEN, setup: REMOVED, args: function () { return { node: "atlas", entry: "e-a1", generation: GEN() }; } },
+    { reset: OPEN, setup: function () { REMOVED(); H.entry_create({ node: "atlas", name: "stripe-live", value: "fixture-value-new" }); }, args: function () { return { node: "atlas", entry: "e-a1", generation: GEN() }; }, error: "entry_exists" },
+    { reset: OPEN, setup: function () { REMOVED(); H.entry_create({ node: "atlas", name: "stripe-live", value: "fixture-value-new" }); }, args: function () { return { node: "atlas", entry: "e-a1", generation: GEN(), mode: "keep-both" }; } },
+    { reset: OPEN, setup: function () { REMOVED(); B.S.removalExpired = true; }, args: function () { return { node: "atlas", entry: "e-a1", generation: GEN() }; }, error: "entry_removal_expired" },
+    { reset: OPEN, args: function () { return { node: "atlas", entry: "e-a1", generation: GEN() }; }, error: "not_found" },
+  ];
   // The shell's local preview (no broker, no session, no audit record).  Exactly one of text / fields.
   E.fields_preview = [
     { reset: OPEN, args: { text: "host: db.example.test\nport: 5432\npassword: fixture-value-pw" } },
@@ -453,6 +540,9 @@
     { reset: OPEN, args: { node: "atlas", reason: "fixture reason", policy: { agentAccess: "read-only", requireTwoFactor: "never" } } },
     { reset: OPEN, args: { node: "atlas", reason: "fixture reason", policy: { descendantRead: true } }, error: "presence_required" },
     { reset: OPEN, args: { node: "atlas", reason: "  ", policy: { agentAccess: "none" } }, error: "malformed_request" },
+    { reset: OPEN, args: { node: "atlas", reason: "fixture reason", policy: { securityLevel: "sealed" } } },
+    { reset: OPEN, args: { node: "atlas", reason: "fixture reason", policy: { securityLevel: "open" } }, error: "presence_required" },
+    { reset: OPEN, args: { node: "atlas", reason: "fixture reason", policy: { securityLevel: "paranoid" } }, error: "malformed_request" },
   ];
   // entry.undo: a field change just made, undone at the node's current generation; unknown ids and stale generations are refused.
   var CHANGED = function () { H.field_update({ node: "atlas", entry: "e-a2", generation: GEN(), field: "f_00a20005", patch: { label: "remarks" } }); };

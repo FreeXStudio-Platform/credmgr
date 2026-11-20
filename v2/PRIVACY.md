@@ -1,4 +1,4 @@
-<!-- artifact-hardened: Approved With Known Risks @ 09721b5 on 2026-11-01 via three-pass-v1. Evidence: GitHub-hosted CI on pull request #41 (FreeXStudio-Platform/credmgr): all 17 checks green at ee08394, including security.yml (cargo audit, cargo deny, semgrep, isolation suite, endpoint matrix 55/55 operations, desktop bridge) and CodeQL for Rust, JavaScript/TypeScript, Python and Actions with no open alert on the PR; build.yml run 41243452910, all 7 jobs green (macOS 15, Ubuntu 22.04, Windows; Rust 1.78.0 and stable); desktop unit tests 706 passed at 930c502; Playwright 672 and 681 passed in the two lanes that were combined at 930c502 (not re-run together); strict public export PASS, 860 files, literal blocklist not loaded; by-hand click-through of the rebuilt app on a throwaway vault (unlock, lock, auto-lock, graph, tree, search, reveal, copy, add entry, settings, integrity, doctor, audit, backup, capture switch, searchable help); final adversarial audit v2/docs/release-verification/AUDIT_2026-10-31.md (the P0 and both P1 fixed); known risks K-1 to K-20 in v2/docs/PHASE8_AUDIT_REPORT.md sections 4 and 7, each with bound, owner and resolution. Known risks that bear on this document: K-14 the idle lock and a real sleep or screen lock were not exercised by hand on this build; K-19 a seed in an unrecognised shape is not protected until its owner types it; K-20 the licence text has not been reviewed by counsel. K-12 (CI had not run) is closed. Not signed or notarised; Windows and Linux built in CI but not run. Not a claim about anything after 09721b5. -->
+<!-- artifact-hardened: Approved With Known Risks @ 81c0134 on 2026-11-08 via three-pass-v1. Evidence: prior verifier passes (3abb4fe, 320a8f2) and this pass 3 against the code at 9bc33d7 (corpus_check broker_ops 76; 27 error codes; highest ADR 152; --security-level strict alias of stored sealed in cli main.rs; "Strict (stored as sealed)" in core agentcfg.rs and brokerd ops.rs; search entries, hide seed, re-masks in, Settings › Security groups in apps/desktop); independent ADR-150 review P0/P1 fixed with refusal tests (19ccf39); CI green on PRs #56–#60 (17 checks each); full gates.sh green at dbef0c7 incl. legacy alpha.6; VoiceOver pass 2026-11-08, two defects fixed (ACCESSIBILITY.md, #22 closed); Touch ID, idle and screen lock, ADR-150 confirm checked by hand (RELEASE_VERIFICATION §14, §15 and addenda); corpus_check, gen_help --check, release_verification_check clean; secret scan clean. Known risks: K-A not signed or notarised (bound: Gatekeeper quarantine, SHA256SUMS only provenance, Apple Silicon only; owner: operator; resolution: scripts/sign-notarise.sh with a Developer ID before publishing rc.1); K-B per-control re-press of all rows and the built-app look of the 2026-11-08 design merge (§16) not done by hand (bound: §15 spot re-walk of every screen plus e2e/design audit; owner: operator; resolution: record in RELEASE_VERIFICATION before publishing); K-D Touch ID dialog residual, PHASE8 K-21 (bound: refused to identified agents, dialog names the requester, back-off after five; owner: backend and the user at the dialog; resolution: stated in SECURITY.md, none planned for 2.0.0). Not a claim about anything after 81c0134. -->
 
 # Privacy policy
 
@@ -35,7 +35,17 @@ Everything. Specifically:
 | Audit log | the same directory | No: plaintext, `0600`, hash-chained, its tip signed. Records *decisions* (who, which operation, which node and entry id, allowed or denied, and the reason you typed for a policy change) — never a value, a label or a note. It is written with the root key, so a request made while the vault is locked leaves no record; the one exception is an approval decided with the unlock factors, which writes its own. |
 | Rollback counter | `~/Library/Application Support/credmgr-state` (override `CREDMGR_STATE_DIR`) | No: plaintext `0600` number with a signature; holds no secret |
 | Desktop window layout and cosmetic choices | the desktop window's own local storage (WebKit), eleven keys listed in §2.1, plus two short lock notes in session storage | No: plaintext, and holds no secret and no vault name — see §2.1 |
+| Touch ID enrolment and unlock wrap (macOS, only if you turn Touch ID on) | `keys/presence.enroll` (the public half of this Mac's Secure Enclave key, integrity-tagged) and `keys/root.wrap.se` (the root key sealed to that Secure Enclave key) inside the vault directory | The enrolment holds public keys only; the wrap is an encrypted blob that opens only on this Mac, with Touch ID or the Mac password. The private key never leaves the Secure Enclave. `keys/root.wrap.se` is never put in a backup; `keys/presence.enroll` (public keys only) is. CredMgr never sees or stores a fingerprint: macOS does the matching. Since ADR-148 the signed registry (`registry.json`, plaintext metadata) also holds the enrolled presence public keys (`presenceKeys`) and the public points of the Touch ID wraps this vault set up (`deviceWraps`); both are public values and both are in a backup, while `keys/root.wrap.se` never is. The Touch ID dialog shows the requesting process's name, its parent processes and its folder; that text goes only to macOS and is not stored. |
 | Backups (`credmgr backup`, or Operations in the app) | the `backups/` folder inside the vault directory; copy them wherever you like | Yes: one file, encrypted under a separate backup passphrase you choose (Argon2id, 256 MiB, 3 passes). It is only as strong as that passphrase. |
+
+The vault's own settings live in the registry with the names. Since ADR-150 that includes "Confirm before showing
+secrets": one field, `revealConfirm` (`mode`, `windowSeconds`, `scope`), on the `global` node's policy in
+`registry.json` — plaintext metadata, signed against tampering, written only while it differs from the
+default (off), and carried in a backup like the rest of the registry. A confirmation itself is kept only in `credmgrd`'s
+memory, for your login, and is forgotten when the vault locks; nothing about it is written to disk except the audit
+line every request already gets (`session.confirm`, allowed or denied — never the passphrase). The
+Touch ID dialog's sentence for it ("Show your saved secrets") goes only to macOS. The feature adds no network call:
+nothing new leaves your computer.
 
 Nothing in that table leaves your computer unless you personally copy it somewhere. The vault lives
 in your platform's per-user data directory (macOS: `~/Library/Application Support/credmgr`;
@@ -145,10 +155,20 @@ call: it leaves an audit record of the decision, never of the value.
 
 ## 4. What CredMgr does with other applications
 
-CredMgr does not read or write any other application's configuration. To let an agent use a vault
-you add `credmgr mcp` to that agent's own MCP configuration yourself. A one-click "LLM Integration"
-setting that would do it for you, and a generated "Vault Protocol prompt", are designed
-(`docs/17_AIRLOCK_AND_LLM.md`) and **not built**; the desktop app does not offer them.
+CredMgr does not read or write another application's configuration unless you ask it to, one file at a time.
+`credmgr agent connect <client>` (and Settings → Agents in the app) adds one `credmgr` entry to that agent's own MCP
+configuration file (Claude Desktop, Cursor, VS Code, Windsurf; Claude Code's `~/.claude.json` is never written). Before
+it writes, it shows you the file, the exact change and the name of a backup, and it needs your confirmation; it copies
+the file to `<file>.credmgr-backup-<time>` first, writes through a temporary file, and reads the result back.
+`credmgr agent disconnect` removes only that entry, the same way. What it writes is the path of the `credmgr` binary
+and fixed text, never a credential value. `credmgr mcp --print-config` and `credmgr prompt` only print to your
+terminal. `credmgr agent detect` reads those configuration files to say which agents are installed and already
+connected; it sends nothing anywhere (ADR-141 to ADR-143).
+
+`credmgr agent init` writes `CREDMGR.md` into the folder you name (the current one by default) so an agent
+working there knows the rules: node names and rules, never a value. If that folder is a git repository, those
+names are committed unless you ignore the file. Replacing an existing `CREDMGR.md` shows the diff, asks first and
+keeps a backup.
 
 ## 5. What an AI agent can see
 

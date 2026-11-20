@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- ADR-162: the privacy manifest of CredMgr.app (Contents/Resources/PrivacyInfo.xcprivacy), Mac App Store
+     edition. It covers every executable in the bundle: credmgrd, the CLI and credmgr-presence are single-file
+     tools, which cannot carry a manifest of their own, so the app's declares what they use too.
+
+     No tracking, no tracking domains, no data collected: CredMgr makes no network request at all (ADR-001) and
+     sends nothing anywhere; the vault never leaves the Mac.
+
+     Required-reason APIs (Apple's list, checked against the code on 2026-11-14, docs/27_APP_STORE.md section 4):
+       File timestamp: Rust's std::fs::metadata, File::metadata, Path::is_file / exists call stat, fstat and
+         lstat, which are on the list. Used throughout on files inside the app-group container only (the vault,
+         the state directory, backups): reason C617.1.
+       System boot time: the auto-lock timer, the rate limits and the unlock back-off measure elapsed time with
+         std::time::Instant, which reads a monotonic clock; declared with 35F9.1 (elapsed time between events in
+         the app, never sent anywhere) because the clock call can resolve to mach_absolute_time depending on the
+         toolchain. Confirm both against Xcode's privacy report on the first real MAS build.
+       Not used, so not declared: disk space (no statfs or volume capacity query), UserDefaults (the shell keeps
+         its few preferences in the webview's own storage; WebKit is a system framework, exempt), active keyboard. -->
+<plist version="1.0">
+<dict>
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>C617.1</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>35F9.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

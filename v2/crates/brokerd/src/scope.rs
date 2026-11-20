@@ -7,7 +7,7 @@ use credmgr_core::access::Origin;
 use credmgr_core::registry::{AgentAccess, Capability, Registry, GLOBAL_ID};
 
 use crate::peer::PeerInfo;
-use crate::token::{Token, TokenStore};
+use crate::token::{AgentLookup, Token, TokenStore};
 
 #[derive(Clone, PartialEq)]
 pub struct BrokerScope {
@@ -22,6 +22,17 @@ pub struct BrokerScope {
     /// [`crate::token::Token::public_id`] instead.
     pub token_id: Option<String>,
     pub bound_workdir: Option<String>,
+}
+
+/// ADR-164 review P2-5: the scope carries a copy of the presented bearer for the length of one request; it is wiped
+/// when the scope goes, whichever kind of bearer it is.
+impl Drop for BrokerScope {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        if let Some(t) = self.token_id.as_mut() {
+            t.zeroize();
+        }
+    }
 }
 
 /// `Debug` shows that a token is present, never what it is (ADR-077).
@@ -54,7 +65,7 @@ impl BrokerScope {
 /// regardless of `agentAccess` — `06 §3`: "`notes` ... must be granted
 /// explicitly, never inherited by default"); read-only agents can see and
 /// reveal but not write; `none` gets nothing, full stop.
-fn capabilities_for_agent_access(access: AgentAccess) -> Vec<Capability> {
+pub fn capabilities_for_agent_access(access: AgentAccess) -> Vec<Capability> {
     match access {
         AgentAccess::ReadWrite => vec![
             Capability::List,
@@ -71,7 +82,7 @@ fn capabilities_for_agent_access(access: AgentAccess) -> Vec<Capability> {
 /// A registered `workdirs[]` entry matches `cwd` if `cwd` equals it or is a
 /// subdirectory of it ("launched inside", `02 §3`). Longest match wins so a
 /// sub-node's own `workdirs` entry beats an ancestor's.
-fn match_workdir<'a>(registry: &'a Registry, cwd: &str) -> Option<&'a str> {
+pub(crate) fn match_workdir<'a>(registry: &'a Registry, cwd: &str) -> Option<&'a str> {
     let mut best: Option<(&str, &str)> = None;
     for (node_id, node) in &registry.nodes {
         for wd in &node.workdirs {
@@ -95,6 +106,9 @@ pub enum AnomalyKind {
     /// A token's `boundWorkdir` disagrees with the presenting process's
     /// live cwd (`06 §4`, `05 §7`).
     TokenWorkdirMismatch,
+    /// ADR-164 review P2-10: an agent token presented from a folder registered to another node — a sign it was
+    /// copied to where it does not belong. Logged only; the request proceeds under the token's own node.
+    AgentTokenWorkdirMismatch,
 }
 
 /// `06_ACCESS_GRAPH.md §4`'s resolution order. Returns the scope plus any
@@ -107,8 +121,79 @@ pub fn resolve_scope(
     peer: &PeerInfo,
     presented_token: Option<&str>,
 ) -> (BrokerScope, Option<Anomaly>) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
+    resolve_scope_at(registry, tokens, peer, presented_token, now)
+}
+
+/// ADR-164: what an agent token may hold on `node_id` right now — the token's
+/// own capabilities, cut down to what the node's `agentAccess` gives an agent
+/// today. The owner narrowing a node's agent access narrows every token on it
+/// at the next request; a node that is gone gives nothing.
+pub fn agent_token_ceiling(
+    registry: &Registry,
+    node_id: &str,
+    capabilities: &[Capability],
+) -> Vec<Capability> {
+    let ceiling = registry.nodes.get(node_id).map_or_else(Vec::new, |n| {
+        capabilities_for_agent_access(n.policy.agent_access)
+    });
+    capabilities
+        .iter()
+        .copied()
+        .filter(|c| ceiling.contains(c))
+        .collect()
+}
+
+/// [`resolve_scope`] at a given time — the clock an agent token's expiry is
+/// read against (the server passes the request's own `now`).
+pub fn resolve_scope_at(
+    registry: &Registry,
+    tokens: &TokenStore,
+    peer: &PeerInfo,
+    presented_token: Option<&str>,
+    now: i64,
+) -> (BrokerScope, Option<Anomaly>) {
+    // 1a. ADR-164: an agent token — exactly one node, its own capability subset
+    // under the node's agent ceiling, `origin: agent`. A dead or unknown one
+    // falls through like a dead login does, and the server refuses it
+    // (`session_expired`, ADR-068).
+    if let Some(bearer) = presented_token.filter(|b| crate::token::is_agent_bearer(b)) {
+        if let AgentLookup::Live(t) = tokens.lookup_agent(bearer, now) {
+            // Review P1-1: a token whose node is not in the registry (sealed, or gone some other way) is dead, not
+            // dormant: it is revoked here, so a restore or a new node under the same id never revives it.
+            if !registry.nodes.contains_key(&t.node_id) {
+                tokens.kill_agent(&t.public_id, crate::token::AgentTokenDeath::NodeGone, now);
+            } else {
+                let capabilities = agent_token_ceiling(registry, &t.node_id, &t.capabilities);
+                // Re-review N-4: the record is filed under the token's own node, whose readers may not see the other
+                // project, so it names neither that node nor the folder: only that it was another project's.
+                let anomaly = peer.cwd.as_deref().and_then(|cwd| {
+                    let other = match_workdir(registry, cwd)?;
+                    (other != t.node_id).then(|| Anomaly {
+                        kind: AnomalyKind::AgentTokenWorkdirMismatch,
+                        detail: format!(
+                            "agent token {} for node {} presented from a folder registered to another project",
+                            t.public_id, t.node_id
+                        ),
+                    })
+                });
+                return (
+                    BrokerScope {
+                        node_id: t.node_id,
+                        capabilities,
+                        origin: Origin::Agent,
+                        token_id: Some(bearer.to_string()),
+                        bound_workdir: None,
+                    },
+                    anomaly,
+                );
+            }
+        }
+    }
     // 1. Explicit token — its nodeId wins, always.
-    if let Some(token_id) = presented_token {
+    if let Some(token_id) = presented_token.filter(|b| !crate::token::is_agent_bearer(b)) {
         if let Some(Token {
             id,
             public_id,

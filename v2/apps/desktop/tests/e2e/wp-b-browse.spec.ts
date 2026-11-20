@@ -64,11 +64,11 @@ test("the rail, the tree and the graph are drawn from the broker's data and noth
   // the id is not the label: a node called "Quartz" must not be drawn as "quartz"
   await expect(page.locator(".cm-rail")).not.toContainText("quartz-ci");
 
-  // ---- the reads that built it: one snapshot, one grant list, every node's entries (and the orphan's), no value
+  // ---- the reads that built it: one snapshot, one grant list, every node's entries, no value
   const reads = (cmd: string) => broker.calls(cmd);
   expect((await reads("graph_snapshot")).length).toBe(1);
   expect((await reads("grant_list")).length).toBe(1);
-  expect((await reads("entry_list")).map((c) => c.args.node).sort()).toEqual(["ember", "ember-eu", "ember-us", "global", "lone", "quartz", "quartz-ci", "sealed", "vaulted"]);
+  expect((await reads("entry_list")).map((c) => c.args.node).sort()).toEqual(["ember", "ember-eu", "ember-us", "global", "lone", "quartz", "quartz-ci", "vaulted"]); // the orphaned node is not asked (R0): its items come in the snapshot (ADR-120)
   expect((await reads("entry_reveal")).length).toBe(0);
 
   // ---- tree view: the same nodes with their counts
@@ -151,7 +151,9 @@ test("a node the broker will not list is shown as unreadable, not as empty, and 
   const broker = (await app.open({ broker: { locked: true } }))!;
   await expect(app.screen("S16 Lock screen")).toBeVisible();
   await seedVault(app, VAULT);
-  await broker.script("entry_list", { error: { code: "node_access_denied", detail: { rule: "R8" } } }); // the first node read is refused
+  const denied = { error: { code: "node_access_denied", detail: { rule: "R8" } } };
+  const pass = { delayMs: 0 };
+  await broker.script("entry_list", denied, pass, pass, pass, pass, pass, pass, pass, denied); // the first of eight nodes is refused, and so is the read when it is selected (#23)
   await unlockUi(app);
   await expect(app.screen("S1 Main")).toBeVisible();
   await expect(app.screen("S16 Lock screen")).toHaveCount(0); // a per-node refusal is not a lost login
@@ -163,7 +165,7 @@ test("a node the broker will not list is shown as unreadable, not as empty, and 
   await expect(page.locator("aside.cm-insp [data-node-unreadable]")).toHaveAttribute("data-node-unreadable", "node_access_denied");
   await expect(page.locator("aside.cm-insp")).toContainText("This login is not allowed to read this node");
   await expect(page.locator("aside.cm-insp")).not.toContainText("No entries in this node");
-  expect((await broker.calls("entry_list")).filter((c) => c.args.node === refused).length).toBe(1);
+  expect((await broker.calls("entry_list")).filter((c) => c.args.node === refused).length).toBe(2); // the load, and the read when it was selected (#23); no retry loop beyond that
   // every other node is as the broker said
   await railRow(app, "Quartz").click();
   await expect(page.locator("aside.cm-insp button.k-entry")).toHaveCount(3);
@@ -270,7 +272,7 @@ test("the orphaned node lists its items from the broker; opening one is refused 
 
   // "open" asks the broker for the item; the broker refuses (R0: native + presence only) and the user gets the standard presence notice, nothing shown
   await panel.getByRole("button", { name: "open" }).first().click();
-  await expect(notice(app, "Needs presence (Touch ID), which this beta cannot attest yet. Nothing was changed. (entry.reveal)")).toBeVisible();
+  await expect(notice(app, "Needs Touch ID. Set it up in Settings, Security, then try again. Nothing was changed. (entry.reveal)")).toBeVisible();
   await expect(app.page.locator('[data-notice="presence"]')).toBeVisible();
   expect(await broker.calls("entry_reveal")).toEqual([{ cmd: "entry_reveal", args: { node: "sealed", entry: "o1" } }]);
   expect(await app.secretCount()).toBe(0);

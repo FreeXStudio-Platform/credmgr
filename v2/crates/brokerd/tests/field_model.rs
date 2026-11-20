@@ -274,6 +274,8 @@ impl Mem {
                 expires_at: None,
                 rotated_at: None,
                 has_totp: false,
+                aliases: Vec::new(),
+                tags: Vec::new(),
             },
         );
     }
@@ -1975,6 +1977,8 @@ fn a_flipped_or_moved_envelope_is_refused_never_shown_as_a_value() {
             expires_at: None,
             rotated_at: None,
             has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
         },
     );
     credmgr_store::atomic::write(&m.state.paths.entry_env("b", "e_b1"), &good).unwrap();

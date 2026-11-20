@@ -81,6 +81,13 @@ fn no_forbidden_flag_is_ever_defined() {
 /// carries - which is the review this test exists to force (ADR-078).
 const VALUE_TAKING_FLAGS: &[(&str, &str)] = &[
     ("--node", "a node id"),
+    ("--on-conflict", "refuse or skip (what import-env does with a name that is already taken)"),
+    ("--add", "an alias or a tag: another name for an entry, or a label on it, listed in the clear"),
+    ("--remove", "an alias or a tag to take off an entry"),
+    ("--tag", "a tag that filters one node's list (ADR-167)"),
+    ("--keep", "the name of the entry a merge keeps (ADR-168)"),
+    ("--drop", "the name of an entry a merge folds into the kept one (ADR-168)"),
+    ("--group", "a merge suggestion's key: entry ids joined with + (ADR-168)"),
     ("--parent", "a node id"),
     ("--workdir", "a directory"),
     ("--scope", "a capability name"),
@@ -91,12 +98,17 @@ const VALUE_TAKING_FLAGS: &[(&str, &str)] = &[
     ("--field", "a field's label, to select it"),
     ("--field-id", "a field id (f_ and hex), to select it"),
     ("--type", "a field type name, or auto"),
+    ("--sensitivity", "low, medium, high, critical or auto (a level, never a value)"),
     ("--mask", "on, off or auto"),
     ("--at", "a position, counted from 0"),
-    ("--to", "a position, counted from 0"),
+    (
+        "--to",
+        "a position, counted from 0 (`field mv`), an empty directory (`restore`), or a node id (`move`, ADR-158)",
+    ),
+    ("--state-dir", "a directory (`restore`)"),
     (
         "--reason",
-        "why a policy change or grant was made - recorded in the audit log",
+        "why a policy change, grant or move was made - recorded in the audit log",
     ),
     ("--mode", "replace or keep-both"),
     ("--limit", "a number"),
@@ -107,10 +119,37 @@ const VALUE_TAKING_FLAGS: &[(&str, &str)] = &[
     ("--agent-access", "read-write, read-only or none"),
     ("--require-two-factor", "never, reveal or always"),
     ("--sibling-visibility", "shared or isolated"),
+    ("--security-level", "open, guarded or strict (strict is stored as sealed)"),
+    ("--binary", "an absolute path to the credmgr binary, written into an agent client's config"),
+    ("--dir", "a folder to write CREDMGR.md into"),
     ("--length", "a number of characters (8-128) for `generate`"),
+    ("--format", "json or env, the file format `import` reads"),
+    ("--out", "the path `export` writes its encrypted file to"),
     (
-        "--code",
-        "an authenticator code, worthless after about ninety seconds (the passphrase `approve` needs comes from stdin)",
+        "--age-recipient",
+        "an age PUBLIC recipient (age1...) the export is encrypted to - public by design; the export passphrase itself comes from stdin",
+    ),
+    (
+        "--count",
+        "how many sealed entries `orphan destroy` was shown - a number the broker compares",
+    ),
+    (
+        "--confirm",
+        "the fixed word `destroy-sealed-entries` that says the person means it - not a secret",
+    ),
+    ("--days", "a number of days for `audit report` and `expiring` (ADR-156)"),
+    ("--in", "a number of days from now for `expire` (ADR-156)"),
+    ("--stale-days", "a number of days for `doctor --scan` (ADR-161)"),
+    ("--expiring-days", "a number of days for `doctor --scan` (ADR-161)"),
+    ("--from", "a date, YYYY-MM-DD, for `audit report`"),
+    (
+        "--cap",
+        "capability names (list,read,...) an agent token carries (ADR-164); the token itself is printed, never taken",
+    ),
+    ("--expires", "a duration (90m, 8h, 2d or seconds) an agent token lives (ADR-164)"),
+    (
+        "--code-on-argv",
+        "an authenticator code on purpose, visible to `ps` while the command runs, worthless after about ninety seconds; the default is a prompt or stdin (issue #39) and `help` says what the flag costs",
     ),
 ];
 
@@ -220,6 +259,32 @@ fn unlock_and_set_read_their_secret_from_stdin() {
     assert!(
         set_fn.contains("read_stdin_value()"),
         "cmd_set must read the new value from stdin"
+    );
+}
+
+/// ADR-163: `credmgr recover` takes the recovery code, the new passphrase and any second-factor code from
+/// stdin (or a prompt), and takes no flag that carries a value at all.
+#[test]
+fn recover_reads_the_code_and_the_new_passphrase_from_stdin() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/quick_cmds.rs");
+    let source = fs::read_to_string(path).expect("crates/cli/src/quick_cmds.rs must exist");
+    let start = source
+        .find("pub(crate) fn cmd_recover")
+        .expect("quick_cmds.rs must define cmd_recover");
+    let rest = &source[start..];
+    let body = &rest[..rest[1..].find("\n// ---- ").map_or(rest.len(), |i| i + 1)];
+    for prompt in [
+        "ask_secret(\"Recovery code\")",
+        "ask_secret(\"New passphrase\")",
+    ] {
+        assert!(
+            body.contains(prompt),
+            "cmd_recover must read {prompt} from stdin"
+        );
+    }
+    assert!(
+        !body.contains("take_flag_value") && !body.contains("take_text_flag"),
+        "cmd_recover takes no value from argv"
     );
 }
 

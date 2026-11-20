@@ -10,7 +10,7 @@ surface: repo
 last_reviewed: 2026-08-18
 ---
 
-<!-- artifact-hardened: NEEDS RE-HARDENING — rewritten to ultimate-destination state on
+<!-- artifact-hardened: NEEDS RE-HARDENING — edited 2026-11-06 for ADR-098 (Touch ID honesty pass). Earlier note: rewritten to ultimate-destination state on
      2026-08-18 (Session 21). The previous stamp (Approved With Known Risks @ 6ee1e5f on
      2026-08-10, ADR-052) attested a body with two defects a full re-derivation against
      `v2/crates/` found. First, §3 described notes as encrypted, node-scoped storage in the
@@ -55,10 +55,12 @@ last_reviewed: 2026-08-18
 > (`ADR-072`) the broker stores, seals and serves one note per node behind the separate `notes`
 > capability; since 2026-10-02 the CLI (`credmgr notes show|set|clear`) and the inspector (which shows a node's
 note) reach it, and no MCP tool does. **The native-presence door §2 describes is
-> unreachable by anyone today, human included** (§2.2) — the field it depends on,
-> `presence_attested`, is hardcoded `false` on every transport, so a sealed node is currently
-> unreadable by every caller, not opened by "a human at the keyboard." Both are designed here in
-> full and claimed nowhere as shipped, per the vocabulary `ADR-059` fixes for this whole corpus.
+> built on macOS since ADR-098** (§2.2): the broker verifies a Secure Enclave signature (a Touch ID proof) and only
+> then builds the `Origin::Native` / `presence_attested: true` subject R0 asks for, so a sealed entry is opened by
+> the owner, in the desktop app, one entry at a time. **Without an enrolled presence key, and on any platform but
+> macOS, the door stays shut and a sealed node is unreadable by every caller, as it was before.** Earlier
+> revisions of this document said the door was unreachable on every transport; that was true until ADR-098 and is
+> corrected here, per the vocabulary `ADR-059` fixes for this whole corpus.
 
 ## 1. The one-sentence change
 
@@ -91,7 +93,7 @@ not a filter you forgot to apply — it is a decision someone made, once, on the
    └────┘  └────┘                        └────┘ └────┘ └────┘
 
    ┌ ─ ─ ─ ─ ─ ┐
-     ORPHANED     off-tree · sealed · names visible, values unreadable by everyone (§2.2)
+     ORPHANED     off-tree · sealed · names visible, values open only to the owner with Touch ID (§2.2)
    └ ─ ─ ─ ─ ─ ┘
 ```
 
@@ -112,16 +114,14 @@ not a filter you forgot to apply — it is a decision someone made, once, on the
    the exact matrix and how to flip either default. **`built`**, `ADR-006`.
 4. **Anything else requires a grant.** A grant is a dashed line drawn by a human, through a
    dialog, behind 2FA, with an optional expiry, recorded in the audit log, revocable in one
-   click. **`partial`.** Grant *resolution* is fully built and tested — rule R7 and its
-   `mutual` variant (`06_ACCESS_GRAPH.md §1c`) — and an existing grant can be listed
-   (`grant.list`) or revoked (`grant.revoke`) today. **Minting a new grant cannot be done by
-   anyone yet.** `grant.create` validates the reason string, the scope, and
-   `Capability::Admin` against the target node — then unconditionally returns
-   `PresenceRequired`, for every caller including one that already holds `Admin`
-   (`crates/brokerd/src/ops.rs:2513-2570`). It is the same architectural gap as §2.2's orphan
-   door: both need a presence attestation nothing on any transport can supply today. "Through
-   a dialog, behind 2FA" is the target design, designed in full at §2.2; it is not yet a
-   callable path.
+   click. **`built`** on macOS since ADR-098 (**`partial`** elsewhere). Grant *resolution* is fully built and
+   tested — rule R7 and its `mutual` variant (`06_ACCESS_GRAPH.md §1c`) — and a grant can be listed
+   (`grant.list`), revoked (`grant.revoke`) and now minted (`grant.create`). `grant.create` validates the reason
+   string, the scope, and `Capability::Admin` against the target node — then requires a presence proof
+   (`crates/brokerd/src/ops.rs`, the `"grant.create"` arm; `04_CRYPTO_AND_KEYS.md §5.3`): the owner's login plus a
+   Touch ID signature over the exact parameters. **With no presence key enrolled it still answers
+   `PresenceRequired`**, for every caller including one that already holds `Admin`, and an agent can never hold a
+   proof, so an agent still cannot create a grant. It is the same door as §2.2's orphan reveal.
 
 ### 2.1 Removal — **`built`**: seals for seven days before it stops being reversible
 
@@ -142,48 +142,36 @@ same way `node.seal` does, so an admin token scoped to an unrelated node cannot 
 it could not have sealed (`ADR-053`, closing a real hole `i21b_…` was written to catch, and
 did).
 
-### 2.2 Unsealing after day seven — **`planned`**: today, sealed data answers to no one, not only to no agent (the cold key exists; nothing opens it)
+### 2.2 Unsealing after day seven — **`built`** on macOS (ADR-098): `orphan.reveal` opens one entry, for the owner, after Touch ID and a fresh second factor
 
-**What is true right now, stated plainly because the promise above was not stating it.** Past
-the seven-day window, the orphan node's *private* key exists but is not for use (`ADR-079`, 2026-10-03):
-`keys/cold/orphan.key` holds it sealed under a key derived from the vault's root key, `credmgr init` writes
-it, the loader never puts it in the hot key set, and the only code that opens it is `node.seal`'s pre-flight
-(to prove the key is recoverable before data is committed to it) — while the 53
-broker ops contain no orphan-reveal operation of any kind. The access resolver's own rule, R0,
-denies `orphan` as a target to every subject **except** one whose `origin` is `native` *and*
-which carries a live `presence_attested: true` — and no transport built through Phase 5 can
-construct that subject. Not the CLI. Not the MCP server. Not the new Tauri bridge: its session
-layer derives every scope as `Origin::Agent` from the caller's cwd
-(`apps/desktop/src-tauri/src/session.rs`) and constructs no `Origin::Native` anywhere. **The
-door in the diagram above is real in the sense that the rule exists and is tested — R0 has
-exactly the shape described — and unreal in the sense that nothing today can walk through it.
-A sealed node past day seven is unreadable by every caller including the operator, at the
-keyboard, with the master factor and 2FA, because none of those factors is the one R0 checks.**
-This is not softened anywhere else in the corpus either:
-`04_CRYPTO_AND_KEYS.md §5.2` states it in the same words, and
+**What is true right now.** Past the seven-day window, the orphan node's *private* key exists but is not for
+general use (`ADR-079`, 2026-10-03): `keys/cold/orphan.key` holds it sealed under a key derived from the vault's
+root key, `credmgr init` writes it, the loader never puts it in the hot key set, and the only code that opens it is
+`node.seal`'s pre-flight (to prove the key is recoverable before data is committed to it) and, since ADR-098
+(2026-11-06), **`orphan.reveal`**. The access resolver's own rule, R0, denies `orphan` as a target to every subject
+**except** one whose `origin` is `native` *and* which carries a live `presence_attested: true`. No transport can
+*claim* that subject: the CLI, the MCP server and the Tauri bridge's session layer (`session.rs`) all derive scopes
+as `Origin::Agent` or `Origin::HumanUi`. What ADR-098 added is that the broker itself **builds** the native
+subject, inside `orphan.reveal`, only after it has verified a presence proof for that exact call (a Secure Enclave
+signature over the exact parameters, single-use, 60 seconds, bound to the login session — `04_CRYPTO_AND_KEYS.md
+§5.3`) and a fresh second factor. A sealed entry is therefore readable by the operator at the keyboard, in the
+desktop app, with their fingerprint (or the device password where no fingerprint is enrolled) and their
+authenticator code — and by no one else. **There is no CLI command and no MCP tool for it, by design;** `orphan.list`
+(names only) has none either. **With no presence key enrolled, or on any platform but macOS, nothing can mint the
+subject and a sealed node past day seven is unreadable by every caller including the operator, exactly as this
+section used to say unconditionally.**
 `success_criterion_2_seal_leaves_the_value_recoverable_listable_and_unreadable`
-(`crates/cli/tests/success_criteria.rs`) proves it by refusing even an orphan-scoped
+(`crates/cli/tests/success_criteria.rs`) still proves what it proved: it refuses even an orphan-scoped
 `Capability::List` token, not merely an ordinary agent.
 
-**The target design, in full, unbuilt.** A fourth branch will be added to how a caller's scope
-is established: a request arriving over the desktop shell's own channel, carrying a presence
-proof the platform's biometric API produced immediately before the call, will resolve to
-`origin: 'native'` with `presence_attested: true`. The broker will verify the proof itself
-rather than trust the client's word for it — the same custody rule `ADR-057` already applies
-to the session token, which is held in Rust and never crosses into the webview. Everything
-downstream of that one new branch already exists and needs no further change: R0's exception is
-already written, and five operations — `audit.get`, `totp.seed`, `node.reparent`,
-`grant.create`, and `maintenance.doctor --rebuild-registry` — already check
-`presence_attested` and are already refusing correctly for want of it, rather than granting
-something they should not. Landing presence turns five silent refusals into five working
-gates without touching their logic. (A sixth, conditional refusal is the exception:
-`node.policy` answers `presence_required` for a patch that widens reach, `ADR-071`, without
-consulting `presence_attested` — that arm will need the check in place of its refusal.) The exact key-wrap mechanism the orphan path will use — an
-HKDF over an ECDH between the platform keystore key and the orphan node's wrap key, salted by
-a fresh single-use gate proof, never cached, never batched, no `--yes` — is specified in full in
-`04_CRYPTO_AND_KEYS.md §5.2`; the resolver branch itself is specified in
-`06_ACCESS_GRAPH.md §10.3`. This document states the consequence rather than repeating the
-mechanism, so the mechanism has exactly one place it can drift from.
+**The design that is built, and the part that is not.** The reveal costs, every time: the owner's own session, a
+fresh second factor (when one is on), a presence proof, and then **drops the second-factor window** so the next
+reveal costs both again — no session, no cache, no batch, no `--yes`. The cold key is opened under the resident
+root key for the one read and zeroised; it is still root-derived, so on a compromised broker the cold property is
+the broker's, not cryptography's (`04_CRYPTO_AND_KEYS.md §5.2`). The earlier idea of an HKDF over an ECDH between a
+platform key and the orphan wrap key, so that hardware alone could open the cold key, is **not built** and stays
+`planned`; this document states the consequence rather than repeating the mechanism, so the mechanism has exactly
+one place it can drift from (`04_CRYPTO_AND_KEYS.md §5.2`, `06_ACCESS_GRAPH.md §10.3`).
 
 **Removal never deletes — that half is true today.** What "recoverable" means for the first
 seven days, and what "sealed" means after, are two different mechanisms with two different
@@ -262,8 +250,8 @@ boundary. So, stated plainly and derived precisely in `05_THREAT_MODEL.md §5`:
 - **At rest**, A and B are under different keys. A backup, a stolen disk image, a synced
   folder, or a partially-unlocked vault exposes only the nodes whose keys are open.
 - **Orphaned and locked nodes stay sealed even while the vault is unlocked**, because their
-  keys are never in the broker's hot set — and, as of today, orphaned nodes stay sealed for
-  everyone, full stop (§2.2).
+  keys are never in the broker's hot set — and orphaned nodes stay sealed for everyone except the owner
+  proving presence with `orphan.reveal` (§2.2).
 - **Blast radius of any single mistake shrinks** from "the whole vault" to "one node," and a
   `list` that would have returned 185 names now returns only what one node can see, which
   removes single-call reconnaissance as a free win.
@@ -277,8 +265,8 @@ boundary. So, stated plainly and derived precisely in `05_THREAT_MODEL.md §5`:
   bounded by that node's policy, which can include `reveal`.
 - Anyone who can attach a debugger to the unlocked broker reads its memory.
 - The operator, at the keyboard, can — by design — open anything a real login session's token
-  reaches, which is everything except orphan (§2.2 explains why even the operator cannot reach
-  orphan today, and why that is a gap being closed rather than a permanent limitation).
+  reaches, which is everything except orphan; the operator reaches orphan only through `orphan.reveal` with
+  Touch ID and a fresh second factor (§2.2), and not at all on a vault with no presence key enrolled.
 
 The design's job is to make the *common* failure impossible and the *exotic* failure loud.
 Claiming more than that would be theatre, and this document refuses to.
@@ -349,8 +337,9 @@ V2 is finished when all of these are true and demonstrated:
    by any agent. Proven by
    `success_criterion_2_seal_leaves_the_value_recoverable_listable_and_unreadable`, which goes
    further than the criterion asks: it also shows an orphan-scoped `Admin`/`List` token is
-   refused, not only an ordinary agent — because, as §2.2 states plainly, sealed data is
-   unreadable by *everyone* today, a strictly stronger guarantee than "any agent" describes.
+   refused, not only an ordinary agent — because, as §2.2 states, sealed data is
+   unreadable by every token (agent, CLI, MCP and a login's own scope alike) and opens only through
+   `orphan.reveal` with a presence proof, a strictly stronger guarantee than "any agent" describes.
 3. *(UI-observable — proven in Phase 6's exit gate, `12_BUILD_PLAN.md §4`)* Adding a credential
    takes one label box and one value box, with no dropdown of field names anywhere in the flow.
 4. *(UI-observable — proven in Phase 6's exit gate)* Lite mode's search bar offers exactly one
@@ -379,9 +368,9 @@ V2 is finished when all of these are true and demonstrated:
 | feeds | `02_ARCHITECTURE.md §1` | the node-as-boundary model whose single enforcement point (the broker) that document makes real |
 | depends on | `06_ACCESS_GRAPH.md §1` | the R0–R8 resolution rules that make §2's inheritance, sibling-sharing and grant promises enforced, not advisory |
 | depends on | `06_ACCESS_GRAPH.md §9` | the seal/restore mechanism §2.1 describes as `built`, and the day-7 destruction gap it names |
-| depends on | `06_ACCESS_GRAPH.md §10.3` | the native-presence resolver branch §2.2 designs at the concept level and cites for the exact mechanism |
+| depends on | `06_ACCESS_GRAPH.md §10.3` | the native-presence resolver branch §2.2 describes at the concept level and cites for the exact mechanism |
 | depends on | `04_CRYPTO_AND_KEYS.md §5.1` | why restore is a move from a retained key, not an unseal, the fact §2.1 states |
-| depends on | `04_CRYPTO_AND_KEYS.md §5.2` | the orphan cold-key wrap formula §2.2's target design cites rather than repeats |
+| depends on | `04_CRYPTO_AND_KEYS.md §5.2` | the orphan cold-key mechanism and the presence proof (§5.3) that §2.2 cites rather than repeats |
 | depends on | `03_DATA_MODEL.md §4` | the `Note` type and storage shape §3's target design is built from |
 | depends on | `03_DATA_MODEL.md §6` | the `Grant` type's `direction` and grantable-scope fields D-04/D-05 and §2's fourth promise depend on |
 | depends on | `05_THREAT_MODEL.md §5` | the precise claim about what scope resolution stops and where it stops, that §4 restates |
@@ -397,14 +386,14 @@ the header, status-vocabulary and figure-artifact contract this rewrite applies.
 
 **Code.** `crates/core/src/registry.rs` — the `Capability` enum (seven variants, no `write`,
 lines 145–153), `Node`/`NodeKind`, and the depth-cap check. `crates/core/src/access.rs` — rule
-`resolve`, R0's native-plus-presence exception. `crates/brokerd/src/ops.rs` — `presence_attested`
-hardcoded `false` at lines 91, 124, 314; `grant.create`'s unconditional `PresenceRequired` at
-lines 2513–2570; the five presence-gated ops (`audit.get`, `totp.seed`, `node.reparent`,
-`grant.create`, `maintenance.doctor --rebuild-registry`), and the `notes.read`/`notes.write` arms
-(`ADR-072`). `crates/store/src/paths.rs` and `manifest.rs` — the `notes.env` path and
+`resolve`, R0's native-plus-presence exception. `crates/brokerd/src/ops.rs` — the `require_presence` check
+every presence-gated arm calls (`audit.get`, `totp.seed`, `node.reparent`, `grant.create`,
+`maintenance.doctor --rebuild-registry`, `maintenance.rotate_root`, `orphan.reveal`; ADR-098), the native subject
+`orphan.reveal` builds only after a verified proof, and the `notes.read`/`notes.write` arms (`ADR-072`).
+`crates/core/src/presence.rs` and `crates/brokerd/tests/presence.rs` (ADR-098). `crates/store/src/paths.rs` and `manifest.rs` — the `notes.env` path and
 `notesSha256` slot, reserved until `ADR-072` and used since.
 `apps/desktop/src-tauri/src/session.rs` — the Tauri bridge deriving `Origin::Agent` from cwd,
-never `Origin::Native`.
+never `Origin::Native` (the native subject exists only inside `orphan.reveal`, after a proof).
 
 **Tests.** `cargo test --workspace -- --list` lists 813 tests in 50 test binaries (2026-10-03); the last full run recorded is 571 passing, 0 failing, 41 test binaries, exit 0 (2026-10-02; earlier: 448 passing, 37 test binaries on 2026-09-24, re-measured 2026-10-01; 406 passing as of 2026-09-13, run 34743281942; 397 passing,
 verified 2026-08-18).

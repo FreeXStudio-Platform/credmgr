@@ -76,6 +76,8 @@ fn one_entry_manifest(node_id: &str, entry_id: &str, name: &str, generation: u64
             expires_at: None,
             rotated_at: None,
             has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
         }],
         counts: Counts {
             entries: 1,
@@ -83,6 +85,7 @@ fn one_entry_manifest(node_id: &str, entry_id: &str, name: &str, generation: u64
         },
         notes_sha256: None,
         generation,
+        merge_sha256: None,
     }
 }
 

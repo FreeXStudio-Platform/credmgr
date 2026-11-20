@@ -57,6 +57,14 @@ zeroize = { version = "1.7", features = ["alloc"] }
 # transitively (x25519-dalek's "zeroize" feature) and Cargo would otherwise
 # resolve it to 1.5.0, which hits the same edition2024 wall as above.
 zeroize_derive = "=1.4.2"
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+# ADR-133: the `age` file format (age-encryption.org/v1), written in `age_format.rs` rather than through
+# the `age` crate, whose dependency tree (the i18n stack: tinystr, icu, rust-embed) does not build on this
+# workspace's 1.78 pin. `scrypt` (passphrase recipients) and `bech32` (`age1…` recipients) are the only
+# additions besides `base64`; all three build on 1.78.
+base64 = "0.22"
+bech32 = "0.9"
+scrypt = { version = "0.11", default-features = false }
 
 [dev-dependencies]
 # Pinned below latest for the same edition2024/MSRV reason as the crypto

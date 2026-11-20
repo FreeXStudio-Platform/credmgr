@@ -59,7 +59,7 @@ test.describe("reveal", () => {
     await button.click({ noWaitAfter: true, timeout: 2000 }).catch(() => {}); // it may already have turned into "hide"; either way no second request
     await expect(field).toHaveText(STRIPE);
     expect((await broker.calls("entry_reveal")).length).toBe(1);
-    await page.getByRole("button", { name: "hide", exact: true }).click();
+    await page.getByRole("button", { name: /^hide(, re-masks in \d+ seconds)?$/ }).click();
     await expect(field).toHaveText(MASK);
     expect(await app.secretCount()).toBe(0);
     expect((await broker.calls("entry_reveal")).length).toBe(1);
@@ -208,7 +208,7 @@ test.describe("a TOTP entry", () => {
     expect(await app.storageDump()).not.toContain("123456");
     expect(await page.content()).not.toContain("123456"); // shown as "123 456" only
 
-    await page.getByRole("button", { name: "hide", exact: true }).click();
+    await page.getByRole("button", { name: /^hide(, re-masks in \d+ seconds)?$/ }).click();
     await expect(field).toHaveText(MASK);
     expect(await app.secretCount()).toBe(0);
   });
@@ -218,10 +218,103 @@ test.describe("a TOTP entry", () => {
     const broker = await open(app);
     await openNodeEntry(app, "atlas", "deploy-otp");
     await page.getByRole("button", { name: "show seed" }).click();
-    await expect(notice(app, "Needs presence (Touch ID)")).toBeVisible();
+    await expect(notice(app, "Needs Touch ID")).toBeVisible();
     await expect(notice(app, "(totp.seed)")).toBeVisible();
     expect(await broker.calls("totp_seed")).toEqual([{ cmd: "totp_seed", args: { node: "atlas", entry: "e-a3", field: "f_00000000" } }]);
     await expect(page.locator(".k-field-value")).toHaveText(MASK);
+    expect(await app.secretCount()).toBe(0);
+  });
+
+  test("show seed with Touch ID: the seed is shown in the row, re-masks after the window, and is never copied or kept", async ({ app }) => {
+    const { page } = app;
+    const broker = await open(app);
+    await broker.set({ touchId: true });
+    await page.evaluate(() => (window as any).__cm.setState({ revealWindowSecs: 2 }));
+    await openNodeEntry(app, "atlas", "deploy-otp");
+    const field = page.locator(".k-field-value");
+    await page.getByRole("button", { name: "show seed" }).click();
+    await expect(field).toHaveText(valueOf("deploy-otp"));
+    expect(await broker.calls("totp_seed")).toEqual([{ cmd: "totp_seed", args: { node: "atlas", entry: "e-a3", field: "f_00000000" } }]);
+    expect(await app.secretCount()).toBe(1);
+    expect(await app.viewJson()).not.toContain(valueOf("deploy-otp"));
+    expect(await app.storageDump()).not.toContain(valueOf("deploy-otp"));
+    expect(await broker.calls("entry_copy")).toEqual([]);
+    await expect(page.getByRole("button", { name: "copy", exact: true })).toHaveCount(0);
+    await expect(page.getByText(/re-masks in \d+s/)).toBeVisible();
+    await expect(field).toHaveText(MASK, { timeout: 6000 }); // the same timer as a reveal
+    await expect.poll(() => app.secretCount()).toBe(0);
+  });
+
+  test("ADR-149: a blurred event while the Touch ID sheet is up does not drop the seed; hidden still does", async ({ app }) => {
+    const { page } = app;
+    const broker = await open(app);
+    await broker.set({ touchId: true });
+    await openNodeEntry(app, "atlas", "deploy-otp");
+    const field = page.locator(".k-field-value");
+    // the system sheet takes focus while the broker is still answering: the shell says `blurred`
+    await broker.script("totp_seed", { delayMs: 800 });
+    await page.getByRole("button", { name: "show seed" }).click({ noWaitAfter: true });
+    await expect.poll(async () => (await broker.calls("totp_seed")).length).toBe(1);
+    expect(await broker.emit("credmgr://window-inactive", "blurred")).toBeGreaterThan(0);
+    await expect(field).toHaveText(valueOf("deploy-otp"), { timeout: 4000 });
+    expect(await app.secretCount()).toBe(1);
+
+    // the hand-back after the answer (inside the grace) is absorbed too; once it is shown, a real hide still wipes
+    expect(await broker.emit("credmgr://window-inactive", "blurred")).toBeGreaterThan(0);
+    await expect(field).toHaveText(valueOf("deploy-otp"));
+    expect(await broker.emit("credmgr://window-inactive", "hidden")).toBeGreaterThan(0);
+    await expect(field).toHaveText(MASK);
+    expect(await app.secretCount()).toBe(0);
+
+    // `hidden` DURING the call still drops the answer on arrival
+    await broker.script("totp_seed", { delayMs: 800 });
+    await page.getByRole("button", { name: "show seed" }).click({ noWaitAfter: true });
+    await expect.poll(async () => (await broker.calls("totp_seed")).length).toBe(2);
+    expect(await broker.emit("credmgr://window-inactive", "hidden")).toBeGreaterThan(0);
+    await page.waitForTimeout(1300);
+    expect(await app.secretCount()).toBe(0);
+    await expect(field).toHaveText(MASK);
+    expect(await page.content()).not.toContain(valueOf("deploy-otp"));
+  });
+
+  test("a shown seed is hidden by hide and wiped on lock", async ({ app }) => {
+    const { page } = app;
+    const broker = await open(app);
+    await broker.set({ touchId: true });
+    await openNodeEntry(app, "atlas", "deploy-otp");
+    const field = page.locator(".k-field-value");
+    await page.getByRole("button", { name: "show seed" }).click();
+    await expect(field).toHaveText(valueOf("deploy-otp"));
+    await page.getByRole("button", { name: /^hide(, re-masks in \d+ seconds)?$/ }).click();
+    await expect(field).toHaveText(MASK);
+    expect(await app.secretCount()).toBe(0);
+    await page.getByRole("button", { name: "show seed" }).click();
+    await expect(field).toHaveText(valueOf("deploy-otp"));
+    await page.evaluate(() => (window as any).__cm.lockVault());
+    await expect(app.screen("S5 Entry detail")).toHaveCount(0);
+    expect(await app.secretCount()).toBe(0);
+    expect(await page.content()).not.toContain(valueOf("deploy-otp"));
+  });
+
+  test("Q4 (drop 2026-11-08): while the seed shows, its button reads 'hide seed' and hides the seed only; the code stays", async ({ app }) => {
+    const { page } = app;
+    const broker = await open(app);
+    await broker.set({ touchId: true });
+    await openNodeEntry(app, "atlas", "deploy-otp");
+    const field = page.locator(".k-field-value");
+    await page.getByRole("button", { name: "show code" }).click();
+    await expect(field).toHaveText("123 456");
+    await page.getByRole("button", { name: "show seed" }).click();
+    await expect(field).toHaveText(valueOf("deploy-otp"));
+    expect(await app.secretCount()).toBe(2);
+    await page.getByRole("button", { name: "hide seed" }).click();
+    await expect(field).toHaveText("123 456"); // the code is still shown
+    expect(await app.secretCount()).toBe(1);
+    await expect(page.getByRole("button", { name: "show seed" })).toBeVisible();
+    expect((await broker.calls("totp_seed")).length).toBe(1); // hiding asks the broker nothing
+    expect(await page.content()).not.toContain(valueOf("deploy-otp"));
+    await page.getByRole("button", { name: /^hide(, re-masks in \d+ seconds)?$/ }).click();
+    await expect(field).toHaveText(MASK);
     expect(await app.secretCount()).toBe(0);
   });
 
@@ -336,14 +429,14 @@ test.describe("rename (node.update)", () => {
     const broker = await open(app);
     const menu = await ctxMenu(app, "atlas");
     await menu.getByRole("button", { name: "Rename" }).click();
-    const input = page.locator(".cm-rail input");
+    const input = page.locator(".cm-rail li input");
     await expect(input).toHaveValue("atlas");
     await input.fill("  Atlas Prod  ");
     await input.press("Enter");
     await expect(railRow(app, "Atlas Prod")).toBeVisible();
     expect(await broker.calls("node_update")).toEqual([{ cmd: "node_update", args: { node: "atlas", label: "Atlas Prod" } }]); // trimmed, once (Enter and the blur after it make one request)
     await expect(notice(app, "Renamed.")).toBeVisible();
-    await expect(page.locator(".cm-rail input")).toHaveCount(0);
+    await expect(page.locator(".cm-rail li input")).toHaveCount(0);
     // the id is what children, grants and entries hang off: untouched
     expect(await page.evaluate(() => (window as any).__cm.vault.nodes.map((n: any) => `${n.id}:${n.label}`).filter((s: string) => s.startsWith("atlas") || s.startsWith("staging")))).toEqual(["atlas:Atlas Prod", "staging:staging"]);
     expect(await page.evaluate(() => (window as any).__cm.gd.nodes.find((n: any) => n.id === "atlas").label)).toBe("Atlas Prod"); // and the graph
@@ -356,7 +449,7 @@ test.describe("rename (node.update)", () => {
     const broker = await open(app);
     let menu = await ctxMenu(app, "beacon");
     await menu.getByRole("button", { name: "Rename" }).click();
-    await page.locator(".cm-rail input").fill("Beacon East");
+    await page.locator(".cm-rail li input").fill("Beacon East");
     await page.locator("header.k-head").click({ position: { x: 3, y: 3 } }); // blur
     await expect(railRow(app, "Beacon East")).toBeVisible();
     expect((await broker.calls("node_update")).length).toBe(1);
@@ -368,8 +461,8 @@ test.describe("rename (node.update)", () => {
     ] as const) {
       menu = await ctxMenu(app, "Beacon East");
       await menu.getByRole("button", { name: "Rename" }).click();
-      await act(page.locator(".cm-rail input"));
-      await expect(page.locator(".cm-rail input"), name).toHaveCount(0);
+      await act(page.locator(".cm-rail li input"));
+      await expect(page.locator(".cm-rail li input"), name).toHaveCount(0);
       await expect(railRow(app, "Beacon East"), name).toBeVisible();
     }
     expect((await broker.calls("node_update")).length).toBe(1); // none of those three asked the broker
@@ -380,8 +473,8 @@ test.describe("rename (node.update)", () => {
     const broker = await open(app);
     const menu = await ctxMenu(app, "beacon");
     await menu.getByRole("button", { name: "Rename" }).click();
-    await page.locator(".cm-rail input").fill("x".repeat(121));
-    await page.locator(".cm-rail input").press("Enter");
+    await page.locator(".cm-rail li input").fill("x".repeat(121));
+    await page.locator(".cm-rail li input").press("Enter");
     await expect(notice(app, "1 to 120 characters")).toBeVisible();
     expect(await broker.calls("node_update")).toEqual([]);
     await expect(railRow(app, "beacon")).toBeVisible();
@@ -393,8 +486,8 @@ test.describe("rename (node.update)", () => {
     await broker.script("node_update", { error: { code: "node_access_denied", detail: { rule: "R2" } } });
     const menu = await ctxMenu(app, "beacon");
     await menu.getByRole("button", { name: "Rename" }).click();
-    await page.locator(".cm-rail input").fill("Nope");
-    await page.locator(".cm-rail input").press("Enter");
+    await page.locator(".cm-rail li input").fill("Nope");
+    await page.locator(".cm-rail li input").press("Enter");
     await expect(notice(app, "Not permitted (R2).")).toBeVisible();
     await expect(railRow(app, "beacon")).toBeVisible();
     await expect(page.locator(".cm-rail")).not.toContainText("Nope");

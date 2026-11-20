@@ -1621,6 +1621,7 @@ fn node_policy_tightens_at_once_refuses_a_widening_without_presence_and_records_
         credmgr_brokerd::scope::resolve_scope(&registry, &state.tokens, &peer, None)
             .0
             .capabilities
+            .clone()
     };
     assert!(
         agent_caps(&state).contains(&Capability::Reveal),

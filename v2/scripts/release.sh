@@ -5,7 +5,11 @@
 #   scripts/release.sh --dev           same, but allows a dirty tree and stamps the build "dirty"
 #   scripts/release.sh --verify [DIR]  re-check an existing dist/ (default: v2/dist); builds nothing.
 #                                      Add --run-binaries to also execute the binaries (--version); off by default
-#                                      so a verifier never runs what it has not yet vouched for.
+#                                      so a verifier never runs what it has not yet vouched for. Without it the
+#                                      verifier still reads each binary's build stamp (commit, dirty) from its
+#                                      bytes, checks the Mach-O minimum macOS version against 13.1, and compares
+#                                      the packaged RELEASE/CHANGELOG/SECURITY/LICENSE with the stamped commit
+#                                      (git, when that commit is in this repository).
 #     --allow-dev-build                  (verify) accept a "dirty" stamp - never publish such a build
 #     --allow-version-skew               (verify) accept assets of mixed versions - never publish them
 #
@@ -145,6 +149,9 @@ find "$DIST" -mindepth 1 -maxdepth 1 \( -name 'credmgr-*' -o -name 'CredMgr.app'
 STAGE="$WORK/stage/$NAME"
 mkdir -p "$STAGE/bin" "$STAGE/packaging" "$STAGE/sbom"
 cp target/release/credmgr target/release/credmgrd "$STAGE/bin/"
+# ADR-098: the Secure Enclave / Touch ID helper ships beside the CLI and the broker (they find it there).
+"$V2/native/macos/presence/build.sh" "$WORK/native" >/dev/null || rl_die "the Touch ID helper did not build (needs Xcode's swiftc)"
+cp "$WORK/native/credmgr-presence" "$STAGE/bin/"
 cp packaging/com.credmgr.brokerd.plist "$STAGE/packaging/"
 cp RELEASE.md CHANGELOG.md SECURITY.md LICENSE "$STAGE/"
 

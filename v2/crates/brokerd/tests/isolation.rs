@@ -3,8 +3,9 @@
 //! claim without a test here is a hope, not a claim.
 //!
 //! **Coverage in THIS file:** I-1, I-2, I-3, I-4, I-5, I-6, I-7, I-8, I-9,
-//! I-11, I-12, I-14, I-15, I-16, I-18, I-19, I-20, I-21, I-22, I-23, I-24,
-//! I-25, and (ADR-078, the multi-field entry model) I-27, I-28, I-29.
+//! I-10, I-11, I-12, I-14, I-15, I-16, I-18, I-19, I-20, I-21, I-22, I-23,
+//! I-24, I-25, (ADR-078, the multi-field entry model) I-27, I-28, I-29, and
+//! (ADR-164, node-scoped agent tokens) I-30.
 //!
 //! **Elsewhere in the workspace** (this list is the whole suite's index — keep
 //! it true, a coverage note that lags the code is how a gap hides in plain
@@ -16,15 +17,13 @@
 //! - **I-17** — `crates/core/tests/isolation_i17.rs`. resolve()'s random-graph
 //!   fuzz is a pure access-graph property, not a broker one.
 //!
-//! **Still not implemented anywhere: I-10.** Its first half (a sealed node's
-//! values are unreachable on every transport this build has) *is* proven —
-//! `i21_seal_then_restore_…` and `i21b_…` here, plus
-//! `crates/cli/tests/success_criteria.rs`'s criterion 2 over a real socket.
-//! Its second half — "names remain listable" via native-with-presence — is not
-//! testable yet because no transport can set `presence_attested: true` (the
-//! same honest gap ADR-046 names for the hardware keystores). Tracked as a
-//! known risk in `docs/PHASE8_AUDIT_REPORT.md`; do not mark I-10 done until a
-//! native transport exists to make the positive path real.
+//! **I-10** (closed by ADR-156, was accepted risk K-1): its denial half is
+//! proven by `i21_seal_then_restore_…`, `i21b_…` and
+//! `crates/cli/tests/success_criteria.rs`'s criterion 2 over a real socket;
+//! its positive half — names stay listable, values open only to
+//! native-with-presence — by `i10_sealed_node_names_stay_listable_…` at the end
+//! of this file, on a durable vault (`f1_support`), now that ADR-098's presence
+//! proofs make `presence_attested: true` reachable.
 //!
 //! Fixture: `docs/06_ACCESS_GRAPH.md §2`'s own worked example — Global;
 //! projects A, B, C, D; sub-nodes X, Y under A; one human grant X → B
@@ -32,7 +31,6 @@
 //! here can be checked directly against that section's table.
 
 use std::sync::Arc;
-use std::time::Instant;
 
 use secrecy::SecretBox;
 
@@ -96,6 +94,8 @@ fn one_entry_manifest(node_id: &str, entry_id: &str, name: &str) -> ManifestBody
             expires_at: None,
             rotated_at: None,
             has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
         }],
         counts: Counts {
             entries: 1,
@@ -103,6 +103,7 @@ fn one_entry_manifest(node_id: &str, entry_id: &str, name: &str) -> ManifestBody
         },
         notes_sha256: None,
         generation: 1,
+        merge_sha256: None,
     }
 }
 
@@ -623,6 +624,8 @@ fn i14_locked_vault_still_lists_topology_but_reveal_requires_approval() {
             expires_at: None,
             rotated_at: None,
             has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
         },
     );
     for (target, entry) in [("a", "e_a1"), (GLOBAL_ID, "e_g1")] {
@@ -738,11 +741,63 @@ fn i16_five_cross_node_denials_in_ten_minutes_trip_the_anomaly() {
             "fixture must actually deny b from a's token for this test to mean anything"
         );
     }
-    let tripped = f.state.rate_limiter.record_denial(peer.uid, Instant::now());
-    assert!(
-        tripped,
+    // ADR-156: the fifth goes through the real wiring too, so the trip is surfaced, not thrown away.
+    let request = credmgr_brokerd::protocol::Request {
+        id: "r".to_string(),
+        op: "entry.reveal".to_string(),
+        token: Some(token.id.clone()),
+        params: serde_json::json!({ "node": "b", "entry": "e_b1" }),
+    };
+    let _ = server::handle_request(&f.state, &peer, &request);
+    assert_eq!(
+        f.state.rate_limiter.unseen_alarms(),
+        1,
         "the fifth cross-node denial in the window must trip the anomaly"
     );
+    let status = |token: &str| {
+        let request = credmgr_brokerd::protocol::Request {
+            id: "s".to_string(),
+            op: "vault.status".to_string(),
+            token: Some(token.to_string()),
+            params: serde_json::json!({}),
+        };
+        server::handle_request(&f.state, &peer, &request).0.unwrap()
+    };
+    // The owner's login sees the count; the agent that tripped it never does.
+    let owner = f
+        .state
+        .tokens
+        .issue("global", FULL.to_vec(), Origin::HumanUi, None);
+    f.state.register_session_token(&owner.id, 0);
+    assert_eq!(status(&owner.id)["anomaliesUnseen"], 1);
+    assert!(status(&token.id).get("anomaliesUnseen").is_none());
+    // The agent cannot acknowledge it for the owner.
+    let ack = |token: &str| {
+        let request = credmgr_brokerd::protocol::Request {
+            id: "k".to_string(),
+            op: "vault.anomalies_ack".to_string(),
+            token: Some(token.to_string()),
+            params: serde_json::json!({}),
+        };
+        server::handle_request(&f.state, &peer, &request).0
+    };
+    assert!(ack(&token.id).is_err());
+    assert_eq!(status(&owner.id)["anomaliesUnseen"], 1);
+    // Acknowledged by the owner, it resets.
+    assert_eq!(ack(&owner.id).unwrap()["acknowledged"], 1);
+    assert_eq!(status(&owner.id)["anomaliesUnseen"], 0);
+    // And the trip is on the audit trail.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let log = std::fs::read_to_string(
+        f.state
+            .paths
+            .audit_log(&credmgr_store::audit::year_month_for(now)),
+    )
+    .unwrap();
+    assert!(log.contains("anomaly.cross_node_denials"));
 }
 
 // ---------------------------------------------------------------------------
@@ -873,6 +928,8 @@ fn i24_entry_level_grant_narrows_list_to_exactly_the_granted_entry() {
             expires_at: None,
             rotated_at: None,
             has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
         });
         body.counts.entries = 2;
     }
@@ -915,6 +972,137 @@ fn i24_entry_level_grant_narrows_list_to_exactly_the_granted_entry() {
         vec!["e_a1".to_string()],
         "must be exactly the granted entry, never a's full inventory"
     );
+}
+
+// ---------------------------------------------------------------------------
+// I-24b (ADR-172)
+
+/// An entry-level reveal grant reveals and lists exactly its entry: never a sibling entry's value, never the
+/// node's other names, never the node's notes, never a sibling's metadata or code, and nothing through a
+/// `mutual` mirror. The grant carries `reveal` only, so its listing is the implied one (ADR-172).
+#[test]
+fn i24b_an_entry_reveal_grant_never_reveals_a_sibling_or_lists_the_nodes_other_names() {
+    let f = build_fixture();
+    let root_key = SecretBox::new(Box::new([7u8; 32]));
+    {
+        let mut manifests = f.state.manifests.write().expect("manifests poisoned");
+        let body = manifests.get_mut("a").unwrap();
+        body.entries.push(ManifestEntry {
+            id: "e_a2".to_string(),
+            name: "a_OTHER_SECRET".to_string(),
+            r#ref: 2,
+            entry_type: EntryType::Other,
+            sensitivity: Sensitivity::Medium,
+            field_count: 1,
+            sha256: "1".repeat(64),
+            modified: NOW,
+            expires_at: None,
+            rotated_at: None,
+            has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
+        });
+        body.counts.entries = 2;
+    }
+    // One fresh key for `a`, both of its envelopes sealed to it (`seed_entry` draws a new key per call).
+    let node_pub = f.state.seed_node_key(&root_key, "a");
+    for (entry_id, plaintext) in [
+        ("e_a1", b"a-secret-value".as_slice()),
+        ("e_a2", b"a-other-secret-value".as_slice()),
+    ] {
+        let envelope = credmgr_core::envelope::seal(plaintext, &node_pub, "a", entry_id)
+            .expect("seal of a small fixed payload cannot fail");
+        credmgr_store::atomic::write(&f.state.paths.entry_env("a", entry_id), &envelope)
+            .expect("writing the fixture envelope");
+    }
+    f.state
+        .registry
+        .write()
+        .expect("registry poisoned")
+        .grants
+        .push(Grant {
+            id: "g_b_to_a1_reveal".to_string(),
+            from: "b".to_string(),
+            to: GrantTarget::Entry {
+                node_id: "a".to_string(),
+                entry_id: "e_a1".to_string(),
+            },
+            // Mutual on purpose: an entry grant's mirror must open nothing of `b` to `a`.
+            direction: Direction::Mutual,
+            scope: vec![Capability::Reveal],
+            expires_at: None,
+            reason: "I-24b fixture".to_string(),
+        });
+    f.state.unlock(0).expect("unlock");
+    let b = scope_for(
+        "b",
+        &[
+            Capability::List,
+            Capability::Read,
+            Capability::Reveal,
+            Capability::Notes,
+        ],
+    );
+    let call = |scope: &BrokerScope, op: &str, params: serde_json::Value| {
+        ops::dispatch(&f.state, scope, NOW, op, &params)
+    };
+
+    // The granted entry: its name is listed and its value revealed.
+    let listed = call(&b, "entry.list", serde_json::json!({ "node": "a" }))
+        .expect("list via the entry grant");
+    assert_eq!(listed["ids"], serde_json::json!(["e_a1"]));
+    assert_eq!(listed["names"], serde_json::json!(["a_SECRET"]));
+    assert!(
+        !listed.to_string().contains("a_OTHER_SECRET"),
+        "the node's other names never appear: {listed}"
+    );
+    let shown = call(
+        &b,
+        "entry.reveal",
+        serde_json::json!({ "node": "a", "entry": "e_a1" }),
+    )
+    .expect("the granted entry reveals");
+    assert!(shown.to_string().contains("a-secret-value"));
+
+    // The sibling: no value, no metadata, no code, and no word of it in a refusal.
+    for op in ["entry.reveal", "entry.get", "totp.code"] {
+        let r = call(&b, op, serde_json::json!({ "node": "a", "entry": "e_a2" }));
+        let err = r.expect_err(op);
+        assert!(
+            matches!(err, OpError::NodeAccessDenied { .. }),
+            "{op}: {err:?}"
+        );
+        let text = format!("{err:?}");
+        assert!(
+            !text.contains("a-other-secret-value") && !text.contains("a_OTHER_SECRET"),
+            "{op}: {text}"
+        );
+    }
+    // Reveal is not read: the granted entry's metadata is not readable either.
+    assert!(call(
+        &b,
+        "entry.get",
+        serde_json::json!({ "node": "a", "entry": "e_a1" })
+    )
+    .is_err());
+    // The node itself: no notes, and `search` names only the granted entry.
+    assert!(call(&b, "notes.read", serde_json::json!({ "node": "a" })).is_err());
+    if let Ok(found) = call(&b, "search", serde_json::json!({ "term": "SECRET" })) {
+        assert!(
+            !found.to_string().contains("a_OTHER_SECRET"),
+            "search leaked a sibling: {found}"
+        );
+    }
+    // The mirror: `a` gets nothing of `b`.
+    let a = scope_for("a", FULL);
+    assert!(call(
+        &a,
+        "entry.reveal",
+        serde_json::json!({ "node": "b", "entry": "e_b1" })
+    )
+    .is_err());
+    let r = call(&a, "entry.list", serde_json::json!({ "node": "b" }));
+    assert!(r.is_err() || r.unwrap()["ids"] == serde_json::json!([]));
 }
 
 // ---------------------------------------------------------------------------
@@ -1875,5 +2063,683 @@ fn i29_payload_kind_cannot_be_flipped_or_moved() {
     assert!(
         !shown.contains("doc-secret-9f") && !shown.contains("doc.fields.test"),
         "{shown}"
+    );
+}
+
+// ---- I-10 — sealed node → orphan, the positive path (K-1, ADR-156) -------------------------------------
+
+mod f1_support;
+
+/// I-10, in full: a sealed node's entries move to orphan; their **names remain listable** to the owner;
+/// their **values** are reachable only through native-with-presence — the owner's `orphan.reveal` carrying
+/// a live presence proof for that exact request — and through nothing else: not the ordinary reveal, not
+/// the owner's session without a proof (the UI path that has not proved presence), not an agent, not a
+/// CLI- or UI-origin scope even when it claims `presence_attested`. The proof is single-use.
+///
+/// The positive path was untestable until a transport could set `presence_attested: true`; ADR-098's
+/// presence proofs (ADR-148 §P2-5: a software P-256 key, so this runs on every host) are that transport.
+#[test]
+fn i10_sealed_node_names_stay_listable_and_values_open_only_to_native_with_presence() {
+    use credmgr_core::access::{self, AccessContext, Decision, Rule, Scope, Target};
+    use f1_support::{anyone, call, created_vault, enrol_first_key, login, with_proof};
+    use serde_json::json;
+
+    let (_v, state) = created_vault(None);
+    let owner = login(&state);
+    let key = enrol_first_key(&state, &owner);
+    call(
+        &state,
+        &owner,
+        NOW,
+        "node.create",
+        json!({ "id": "acme", "label": "Acme", "parentId": GLOBAL_ID }),
+    )
+    .expect("node.create");
+    for (name, value) in [
+        ("STRIPE_KEY", "sk_test_i10_one"),
+        ("DB_URL", "postgres://i10"),
+    ] {
+        call(
+            &state,
+            &owner,
+            NOW,
+            "entry.create",
+            json!({ "node": "acme", "name": name, "value": value }),
+        )
+        .expect("entry.create");
+    }
+    call(&state, &owner, NOW, "node.seal", json!({ "node": "acme" })).expect("node.seal");
+
+    // Names remain listable: both entries, by name, with no proof asked.
+    let listed = call(&state, &owner, NOW, "orphan.list", json!({})).expect("orphan.list");
+    let rows = listed["entries"].as_array().expect("entries");
+    let mut names: Vec<&str> = rows.iter().map(|r| r["name"].as_str().unwrap()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["DB_URL", "STRIPE_KEY"]);
+    assert!(
+        rows.iter().all(|r| r.get("value").is_none()),
+        "a listing never carries a value"
+    );
+    let stripe = rows
+        .iter()
+        .find(|r| r["name"] == json!("STRIPE_KEY"))
+        .unwrap()["entry"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // ...but not to an agent, which cannot even list them.
+    assert!(call(&state, &anyone(), NOW, "orphan.list", json!({})).is_err());
+
+    // Values: the ordinary reveal is R0-denied, the owner's session without a proof is refused, an agent
+    // is refused even with a proof-shaped object.
+    assert!(call(
+        &state,
+        &owner,
+        NOW,
+        "entry.reveal",
+        json!({ "node": ORPHAN_ID, "entry": stripe })
+    )
+    .is_err());
+    let ask = json!({ "entry": stripe });
+    let no_proof = call(&state, &owner, NOW, "orphan.reveal", ask.clone());
+    assert!(
+        matches!(no_proof, Err(OpError::PresenceRequired { .. })),
+        "{no_proof:?}"
+    );
+    let proved = with_proof(&state, &owner, &key, NOW, "orphan.reveal", ask.clone());
+    let mut forged = ask.clone();
+    forged["presence"] = proved["presence"].clone();
+    assert!(call(&state, &anyone(), NOW, "orphan.reveal", forged).is_err());
+
+    // Native-with-presence: the value comes back, once.
+    let out = call(&state, &owner, NOW, "orphan.reveal", proved.clone())
+        .expect("orphan.reveal with a live presence proof");
+    assert_eq!(out["value"], json!("sk_test_i10_one"));
+    let replay = call(&state, &owner, NOW, "orphan.reveal", proved);
+    assert!(
+        matches!(replay, Err(OpError::PresenceFailed { .. })),
+        "a proof is spent by its one use: {replay:?}"
+    );
+
+    // R0 itself, for every origin: only Native + presence is allowed, on every capability.
+    let registry = state.registry.read().unwrap().clone();
+    let locked = std::collections::HashSet::new();
+    let ctx = AccessContext {
+        registry: &registry,
+        vault_locked: false,
+        locked_nodes: &locked,
+        now: NOW,
+    };
+    let target = Target::Entry {
+        node_id: ORPHAN_ID.to_string(),
+        entry_id: stripe,
+    };
+    for origin in [Origin::HumanUi, Origin::Cli, Origin::Agent, Origin::Native] {
+        for presence_attested in [false, true] {
+            let subject = Scope {
+                node_id: GLOBAL_ID.to_string(),
+                origin,
+                presence_attested,
+            };
+            for cap in [Capability::List, Capability::Read, Capability::Reveal] {
+                let decision = access::resolve(&ctx, &subject, &target, cap);
+                let allowed = origin == Origin::Native && presence_attested;
+                assert_eq!(
+                    decision,
+                    if allowed {
+                        Decision::Allow(Rule::R0)
+                    } else {
+                        Decision::Deny(Rule::R0)
+                    },
+                    "{origin:?} presence={presence_attested} {cap:?}"
+                );
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// I-30 (ADR-164) — node-scoped agent tokens. A token is issued straight into the
+// store here (the owner's issue path, with its second factor and Touch ID, is
+// `tests/agent_tokens.rs`); every request below goes through the real server
+// wiring (`server::handle_request_at`), the path a real client takes.
+
+fn with_token(
+    f: &Fixture,
+    token: &str,
+    now: i64,
+    op: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, OpError> {
+    let request = credmgr_brokerd::protocol::Request {
+        id: "r".to_string(),
+        op: op.to_string(),
+        token: Some(token.to_string()),
+        params,
+    };
+    let peer = credmgr_brokerd::peer::PeerInfo {
+        uid: 501,
+        pid: 1,
+        cwd: None,
+    };
+    server::handle_request_at(&f.state, &peer, &request, now, std::time::Instant::now()).0
+}
+
+fn audit_lines(f: &Fixture) -> String {
+    let mut all = String::new();
+    if let Ok(dir) = std::fs::read_dir(f.state.paths.audit_dir()) {
+        for e in dir.flatten() {
+            all.push_str(&std::fs::read_to_string(e.path()).unwrap_or_default());
+        }
+    }
+    all
+}
+
+#[test]
+fn i30a_an_agent_token_reaches_its_own_node_and_nothing_else() {
+    let f = build_fixture();
+    f.state.unlock(0).expect("unlock");
+    // `x` is a sub-node of `a`, holds a grant to `b`, and every cwd-scoped agent in it
+    // also reads `a` (R4) and Global (R3). Its token reaches `x` only.
+    let (token, t) = f
+        .state
+        .tokens
+        .issue_agent("x", FULL.to_vec(), "i30", NOW, 3600)
+        .unwrap();
+    let ok = with_token(
+        &f,
+        &token,
+        NOW,
+        "entry.reveal",
+        serde_json::json!({ "node": "x", "entry": "e_x1" }),
+    )
+    .expect("its own node");
+    assert_eq!(ok["value"], "x-secret-value");
+    let who = with_token(&f, &token, NOW, "whoami", serde_json::json!({})).unwrap();
+    assert_eq!(who["node"], "x");
+    assert_eq!(who["reachable"], serde_json::json!(["x"]), "{who}");
+
+    for (target, entry, rule_hint) in [
+        ("a", "e_a1", "parent, R4 for a cwd agent"),
+        (GLOBAL_ID, "e_g1", "global, R3"),
+        ("b", "e_b1", "grant target, R7"),
+        ("y", "e_y1", "sibling"),
+        ("c", "e_c1", "unrelated project"),
+    ] {
+        for (op, params) in [
+            ("entry.list", serde_json::json!({ "node": target })),
+            (
+                "entry.reveal",
+                serde_json::json!({ "node": target, "entry": entry }),
+            ),
+            (
+                "entry.create",
+                serde_json::json!({ "node": target, "name": "PLANTED", "value": "v" }),
+            ),
+            ("search", serde_json::json!({ "term": "SECRET" })),
+        ] {
+            let r = with_token(&f, &token, NOW, op, params);
+            if op == "search" {
+                let names = serde_json::to_string(&r.expect("search answers")).unwrap();
+                assert!(
+                    !names.contains("a_SECRET")
+                        && !names.contains("b_SECRET")
+                        && !names.contains("y_SECRET"),
+                    "search must match in x only: {names}"
+                );
+                continue;
+            }
+            match r {
+                Err(OpError::NodeAccessDenied { rule: "R8", .. }) => {}
+                other => {
+                    panic!("{op} on {target} ({rule_hint}) must be an R8 denial, got {other:?}")
+                }
+            }
+        }
+    }
+    // Nothing reached a's or b's envelopes, and nothing was written outside x.
+    let tail = audit_lines(&f);
+    assert!(!tail.contains("a-secret-value") && !tail.contains("b-secret-value"));
+    assert!(
+        tail.contains(&format!("Agent:{}", t.public_id)),
+        "every request names the token"
+    );
+    assert!(
+        !tail.contains(token.as_str()),
+        "the bearer is never audited"
+    );
+}
+
+#[test]
+fn i30b_an_agent_token_calls_no_owner_op_and_mints_no_token() {
+    let f = build_fixture();
+    f.state.unlock(0).expect("unlock");
+    let (token, t) = f
+        .state
+        .tokens
+        .issue_agent("a", FULL.to_vec(), "i30", NOW, 3600)
+        .unwrap();
+    let owner_ops = [
+        (
+            "agent.token_issue",
+            serde_json::json!({ "node": "a", "label": "child", "capabilities": ["list"] }),
+        ),
+        (
+            "agent.token_issue",
+            serde_json::json!({ "node": "a", "label": "child", "capabilities": ["list"], "expiresIn": 60 }),
+        ),
+        (
+            "agent.token_rotate",
+            serde_json::json!({ "id": t.public_id }),
+        ),
+        ("agent.token_status", serde_json::json!({})),
+        (
+            "agent.token_revoke",
+            serde_json::json!({ "id": t.public_id }),
+        ),
+        (
+            "grant.create",
+            serde_json::json!({ "from": "a", "to": { "kind": "node", "nodeId": "b" }, "scope": ["read"], "reason": "i30 widening" }),
+        ),
+        (
+            "node.policy",
+            serde_json::json!({ "node": "a", "reason": "i30", "policy": { "descendantRead": true } }),
+        ),
+        (
+            "node.create",
+            serde_json::json!({ "id": "planted", "label": "planted", "parentId": "a" }),
+        ),
+        (
+            "node.set_workdirs",
+            serde_json::json!({ "node": "a", "workdirs": ["/tmp"] }),
+        ),
+        (
+            "maintenance.rotate_root",
+            serde_json::json!({ "passphrase": "x" }),
+        ),
+        ("orphan.list", serde_json::json!({})),
+        ("settings.request_list", serde_json::json!({})),
+    ];
+    for (op, params) in owner_ops {
+        match with_token(&f, &token, NOW, op, params) {
+            Err(OpError::CapabilityNotHeld { .. }) | Err(OpError::PresenceRequired { .. }) => {}
+            other => panic!("{op} must be refused to an agent token, got {other:?}"),
+        }
+    }
+    // No token was minted and the presented one is unchanged.
+    assert_eq!(f.state.tokens.agent_tokens(NOW).len(), 1);
+    assert!(with_token(&f, &token, NOW, "whoami", serde_json::json!({})).is_ok());
+    // An agent cannot even ask for the Touch ID challenge an issue would need.
+    let c = with_token(
+        &f,
+        &token,
+        NOW,
+        "presence.challenge",
+        serde_json::json!({ "op": "agent.token_issue", "params": {} }),
+    );
+    assert!(c.is_err(), "{c:?}");
+}
+
+#[test]
+fn i30c_a_revoked_or_expired_agent_token_is_refused_on_its_next_request_and_audited_by_name() {
+    let f = build_fixture();
+    f.state.unlock(0).expect("unlock");
+    let (revoked, r) = f
+        .state
+        .tokens
+        .issue_agent("a", FULL.to_vec(), "revoked", NOW, 3600)
+        .unwrap();
+    let (expiring, e) = f
+        .state
+        .tokens
+        .issue_agent("a", FULL.to_vec(), "expiring", NOW, 600)
+        .unwrap();
+    let list = serde_json::json!({ "node": "a" });
+    assert!(with_token(&f, &revoked, NOW, "entry.list", list.clone()).is_ok());
+    f.state.tokens.revoke_agent(&r.public_id, NOW + 1).unwrap();
+    assert!(matches!(
+        with_token(&f, &revoked, NOW + 1, "entry.list", list.clone()),
+        Err(OpError::SessionExpired)
+    ));
+    // Not even a fallback to a narrower scope: a dead token never becomes a token-less caller.
+    assert!(matches!(
+        with_token(&f, &revoked, NOW + 1, "whoami", serde_json::json!({})),
+        Err(OpError::SessionExpired)
+    ));
+    assert!(with_token(&f, &expiring, NOW + 599, "entry.list", list.clone()).is_ok());
+    assert!(matches!(
+        with_token(&f, &expiring, NOW + 600, "entry.list", list.clone()),
+        Err(OpError::SessionExpired)
+    ));
+    let tail = audit_lines(&f);
+    assert!(
+        tail.contains(&format!("Agent:{}(revoked)", r.public_id)),
+        "{tail}"
+    );
+    assert!(
+        tail.contains(&format!("Agent:{}(expired)", e.public_id)),
+        "{tail}"
+    );
+    assert!(!tail.contains(revoked.as_str()) && !tail.contains(expiring.as_str()));
+}
+
+#[test]
+fn i30d_strict_and_guarded_still_bind_an_agent_token_and_its_capabilities_are_a_ceiling() {
+    let f = build_fixture();
+    f.state.unlock(0).expect("unlock");
+    f.state.insert_manifest_entry(
+        "a",
+        ManifestEntry {
+            id: "e_a_high".to_string(),
+            name: "A_HIGH".to_string(),
+            r#ref: 7,
+            entry_type: EntryType::Other,
+            sensitivity: Sensitivity::High,
+            field_count: 1,
+            sha256: "0".repeat(64),
+            modified: NOW,
+            expires_at: None,
+            rotated_at: None,
+            has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
+        },
+    );
+    let (token, _) = f
+        .state
+        .tokens
+        .issue_agent("a", FULL.to_vec(), "levels", NOW, 3600)
+        .unwrap();
+    // Guarded (the default): a medium value comes back, a high one waits for the owner.
+    assert_eq!(
+        with_token(
+            &f,
+            &token,
+            NOW,
+            "entry.reveal",
+            serde_json::json!({ "node": "a", "entry": "e_a1" })
+        )
+        .unwrap()["value"],
+        "a-secret-value"
+    );
+    assert!(matches!(
+        with_token(
+            &f,
+            &token,
+            NOW,
+            "entry.reveal",
+            serde_json::json!({ "node": "a", "entry": "e_a_high" })
+        ),
+        Err(OpError::ApprovalPending { .. })
+    ));
+    // Sealed (the level the UI calls "Strict"): every reveal waits.
+    f.state
+        .registry
+        .write()
+        .unwrap()
+        .nodes
+        .get_mut("a")
+        .unwrap()
+        .policy
+        .security_level = credmgr_core::registry::SecurityLevel::Sealed;
+    assert!(matches!(
+        with_token(
+            &f,
+            &token,
+            NOW,
+            "entry.reveal",
+            serde_json::json!({ "node": "a", "entry": "e_a1" })
+        ),
+        Err(OpError::ApprovalPending { .. })
+    ));
+    // A token carrying `list` only cannot reveal, whatever the node allows.
+    let (narrow, _) = f
+        .state
+        .tokens
+        .issue_agent("b", vec![Capability::List], "narrow", NOW, 3600)
+        .unwrap();
+    assert!(with_token(
+        &f,
+        &narrow,
+        NOW,
+        "entry.list",
+        serde_json::json!({ "node": "b" })
+    )
+    .is_ok());
+    assert!(matches!(
+        with_token(
+            &f,
+            &narrow,
+            NOW,
+            "entry.reveal",
+            serde_json::json!({ "node": "b", "entry": "e_b1" })
+        ),
+        Err(OpError::CapabilityNotHeld {
+            capability: Capability::Reveal
+        })
+    ));
+    // The owner narrowing the node's agent access narrows every token on it at the next request.
+    f.state
+        .registry
+        .write()
+        .unwrap()
+        .nodes
+        .get_mut("b")
+        .unwrap()
+        .policy
+        .agent_access = credmgr_core::registry::AgentAccess::None;
+    assert!(matches!(
+        with_token(
+            &f,
+            &narrow,
+            NOW,
+            "entry.list",
+            serde_json::json!({ "node": "b" })
+        ),
+        Err(OpError::CapabilityNotHeld { .. })
+    ));
+}
+
+/// I-30e (review P1-1), in-memory seal path: a sealed node's agent tokens end with the seal, and a restore inside the
+/// seven-day window does not bring them back.
+#[test]
+fn i30e_sealing_a_node_ends_its_agent_tokens_and_a_restore_does_not_revive_them() {
+    let f = build_fixture();
+    f.state.unlock(0).expect("unlock");
+    let (token, t) = f
+        .state
+        .tokens
+        .issue_agent("a", FULL.to_vec(), "sealed-away", NOW, 3600)
+        .unwrap();
+    assert!(with_token(
+        &f,
+        &token,
+        NOW,
+        "entry.list",
+        serde_json::json!({ "node": "a" })
+    )
+    .is_ok());
+    let admin = scope_for("a", &[Capability::Admin]);
+    ops::dispatch(
+        &f.state,
+        &admin,
+        NOW,
+        "node.seal",
+        &serde_json::json!({ "node": "a" }),
+    )
+    .expect("seal");
+    // Re-review N-1: nothing presents the token between the seal and the restore, so only the seal can have ended it.
+    assert!(
+        f.state
+            .tokens
+            .agent_tokens(NOW)
+            .iter()
+            .all(|x| x.public_id != t.public_id),
+        "the seal itself revoked the token"
+    );
+    ops::dispatch(
+        &f.state,
+        &admin,
+        NOW + DAY,
+        "node.restore",
+        &serde_json::json!({ "node": "a" }),
+    )
+    .expect("restore on day 1");
+    assert!(matches!(
+        with_token(
+            &f,
+            &token,
+            NOW + DAY,
+            "entry.list",
+            serde_json::json!({ "node": "a" })
+        ),
+        Err(OpError::SessionExpired)
+    ));
+    let tail = audit_lines(&f);
+    assert!(
+        tail.contains(&format!("Agent:{}(node_gone)", t.public_id)),
+        "{tail}"
+    );
+}
+
+/// I-30f (review P2-10): an agent token presented from a folder registered to another node still works on its own
+/// node — the request is not blocked — but the trail records that it was seen there, naming the token by its public id.
+#[test]
+fn i30f_an_agent_token_used_from_another_nodes_folder_proceeds_and_is_logged() {
+    let f = build_fixture();
+    f.state.unlock(0).expect("unlock");
+    {
+        let mut reg = f.state.registry.write().expect("registry poisoned");
+        reg.nodes
+            .get_mut("a")
+            .unwrap()
+            .workdirs
+            .push("/projects/a".to_string());
+        reg.nodes
+            .get_mut("c")
+            .unwrap()
+            .workdirs
+            .push("/projects/c".to_string());
+    }
+    let (token, t) = f
+        .state
+        .tokens
+        .issue_agent("a", FULL.to_vec(), "copied", NOW, 3600)
+        .unwrap();
+    let call = |cwd: &str| {
+        let request = credmgr_brokerd::protocol::Request {
+            id: "r".to_string(),
+            op: "entry.list".to_string(),
+            token: Some(token.to_string()),
+            params: serde_json::json!({ "node": "a" }),
+        };
+        let peer = credmgr_brokerd::peer::PeerInfo {
+            uid: 501,
+            pid: 1,
+            cwd: Some(cwd.to_string()),
+        };
+        server::handle_request_at(&f.state, &peer, &request, NOW, std::time::Instant::now()).0
+    };
+    // From its own folder, or one nobody registered: no anomaly.
+    assert!(call("/projects/a/src").is_ok());
+    assert!(call("/somewhere/else").is_ok());
+    assert!(!audit_lines(&f).contains("anomaly.agent_token_workdir_mismatch"));
+    // From another node's folder: it still reaches only its own node, and the trail says where it was seen.
+    assert!(call("/projects/c").is_ok());
+    let tail = audit_lines(&f);
+    let line = tail
+        .lines()
+        .find(|l| l.contains("anomaly.agent_token_workdir_mismatch"))
+        .unwrap_or_else(|| panic!("no anomaly in {tail}"));
+    assert!(line.contains(&t.public_id), "{line}");
+    assert!(line.contains("another project"), "{line}");
+    // Re-review N-4: filed under the token's node, so it names neither the other node nor its folder.
+    assert!(!line.contains("node c"), "{line}");
+    assert!(!line.contains("/projects/c"), "{line}");
+    assert!(
+        !line.contains(token.as_str()),
+        "the bearer never reaches the trail"
+    );
+}
+
+// ADR-168: a merge never crosses a node boundary. Two nodes hold entries with the same names and the same
+// values; suggestions on one never name the other's entries, and no merge op accepts the other's ids.
+
+#[test]
+fn merge_never_crosses_a_node_boundary() {
+    use serde_json::json;
+    let (_v, state) = f1_support::created_vault(None);
+    let owner = f1_support::login(&state);
+    let now = f1_support::NOW;
+    f1_support::create_node(&state, &owner, "acme");
+    f1_support::create_node(&state, &owner, "beta");
+    let same = "isolation-merge-value-Pq72Lx";
+    let acme_a = f1_support::create_entry(&state, &owner, "acme", "SHARED_KEY", same);
+    let acme_b = f1_support::create_entry(&state, &owner, "acme", "shared-key", same);
+    let beta_a = f1_support::create_entry(&state, &owner, "beta", "SHARED_KEY", same);
+    let beta_b = f1_support::create_entry(&state, &owner, "beta", "SHARED_KEYS", same);
+    let beta_generation = f1_support::generation(&state, &owner, "beta");
+
+    let r = f1_support::call(
+        &state,
+        &owner,
+        now,
+        "merge.suggestions",
+        json!({ "node": "acme" }),
+    )
+    .unwrap();
+    let text = r.to_string();
+    assert!(text.contains(&acme_a) && text.contains(&acme_b), "{r}");
+    assert!(
+        !text.contains(&beta_a) && !text.contains(&beta_b),
+        "acme's suggestions name beta's entries: {r}"
+    );
+    for s in r["suggestions"].as_array().unwrap() {
+        for e in s["entries"].as_array().unwrap() {
+            assert!(
+                e["entry"] == json!(acme_a) || e["entry"] == json!(acme_b),
+                "{s}"
+            );
+        }
+    }
+
+    // No merge op takes another node's id: not found, exactly as a bogus id.
+    let g = f1_support::generation(&state, &owner, "acme");
+    for params in [
+        json!({ "node": "acme", "keep": acme_a, "drop": [beta_a], "generation": g }),
+        json!({ "node": "acme", "keep": beta_a, "drop": [acme_b], "generation": g }),
+    ] {
+        let err = f1_support::call(&state, &owner, now, "merge.apply", params).unwrap_err();
+        assert!(matches!(err, OpError::NotFound(_)), "{err:?}");
+    }
+    let mut ids = [acme_a.clone(), beta_a.clone()];
+    ids.sort();
+    let cross_key = ids.join("+");
+    let err = f1_support::call(
+        &state,
+        &owner,
+        now,
+        "merge.dismiss",
+        json!({ "node": "acme", "key": cross_key }),
+    )
+    .unwrap_err();
+    assert!(matches!(err, OpError::NotFound(_)), "{err:?}");
+    let err = f1_support::call(
+        &state,
+        &owner,
+        now,
+        "merge.auto",
+        json!({ "node": "acme", "key": cross_key, "generation": g }),
+    )
+    .unwrap_err();
+    assert!(matches!(err, OpError::Malformed(_)), "{err:?}");
+
+    // beta is untouched by everything acme was asked.
+    assert_eq!(f1_support::reveal(&state, &owner, "beta", &beta_a), same);
+    assert_eq!(f1_support::reveal(&state, &owner, "beta", &beta_b), same);
+    assert_eq!(
+        f1_support::generation(&state, &owner, "beta"),
+        beta_generation
     );
 }

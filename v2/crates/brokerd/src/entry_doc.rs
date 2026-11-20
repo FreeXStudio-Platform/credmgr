@@ -399,7 +399,7 @@ pub fn seal_doc(
     let plaintext = Zeroizing::new(fields::encode(doc).map_err(edit_error)?);
     let node_pub = state
         .node_public_key(node)
-        .ok_or_else(|| OpError::NotFound(format!("node {node} has no public key registered")))?;
+        .ok_or_else(|| OpError::NotFound(format!("no node {node}")))?;
     let sealed = envelope::seal_as(
         PayloadKind::FieldDocument,
         &plaintext,
@@ -448,7 +448,24 @@ pub fn retain_history(
         generation,
         now,
     )
-    .map_err(|e| OpError::Internal(format!("retaining rotation snapshot: {e}")))
+    .map_err(|e| OpError::Internal(format!("retaining rotation snapshot: {e}")))?;
+    prune_history(state, node, entry_id, root_key.expose_secret(), now);
+    Ok(())
+}
+
+/// K-10 (e), ADR-156: after a slot is retained, drop what no undo can still
+/// need cheaply (`rotation_history::prune`). Best effort: a failure to prune
+/// leaves more history than needed and never fails the change it follows.
+pub fn prune_history(state: &BrokerState, node: &str, entry_id: &str, rk: &[u8; 32], now: i64) {
+    let _ = credmgr_store::rotation_history::prune(
+        &state.paths,
+        rk,
+        node,
+        entry_id,
+        credmgr_store::rotation_history::KEEP_LATEST,
+        credmgr_store::archive::RECOVERY_WINDOW_SECONDS,
+        now,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -521,6 +538,18 @@ fn is_seed(f: &FieldDoc) -> bool {
     fields::effective_type(f) == credmgr_core::inference::FieldType::TotpSeed
 }
 
+/// Issue #40: the ids of the fields that could be a TOTP seed but are not typed as
+/// one (see `credmgr_core::fields::possible_totp_seed`). Metadata only: it names a
+/// field, never says anything about its value beyond that one bit - the bit the
+/// inferred `type` already is.
+pub fn possible_seed_ids(doc: &EntryDoc) -> Vec<String> {
+    doc.fields
+        .iter()
+        .filter(|f| fields::possible_totp_seed(f))
+        .map(|f| f.id.clone())
+        .collect()
+}
+
 /// The `entry.get` answer — metadata, labels, types and masking, **never a
 /// value**. `type`/`sensitivity`/`fieldCount`/`hasTotp` are the document's own
 /// projection (the decrypted truth); the rest is the manifest's.
@@ -533,10 +562,15 @@ pub fn get_json(node: &str, entry: &ManifestEntry, generation: u64, doc: &EntryD
             let mut row = field_meta(f);
             row["typeOverridden"] = json!(f.field_type.is_some());
             row["maskedOverridden"] = json!(f.masked.is_some());
+            // Issue #40: additive, present only when true - "this could be a 2FA seed; its
+            // owner can type it `totp-seed`".
+            if fields::possible_totp_seed(f) {
+                row["possibleSeed"] = json!(true);
+            }
             row
         })
         .collect();
-    json!({
+    let mut body = json!({
         "node": node, "entry": entry.id, "name": entry.name, "ref": entry.r#ref,
         "type": p.entry_type, "sensitivity": p.sensitivity,
         "fieldCount": p.field_count, "hasTotp": p.has_totp,
@@ -545,7 +579,16 @@ pub fn get_json(node: &str, entry: &ManifestEntry, generation: u64, doc: &EntryD
         "typeOverridden": doc.entry_type.is_some(),
         "sensitivityOverridden": doc.sensitivity.is_some(),
         "fields": rows,
-    })
+    });
+    // ADR-121: present only when the entry has aliases.
+    if !entry.aliases.is_empty() {
+        body["aliases"] = json!(entry.aliases);
+    }
+    // ADR-167: present only when the entry has tags.
+    if !entry.tags.is_empty() {
+        body["tags"] = json!(entry.tags);
+    }
+    body
 }
 
 /// Which field `totp.code` / `totp.seed` means: the one `field` names; else the

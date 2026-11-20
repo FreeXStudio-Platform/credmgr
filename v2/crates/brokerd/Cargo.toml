@@ -37,11 +37,16 @@ unsafe_code = "deny"
 # roll-forward that stops after N files — the crash-injection suite's way of
 # cutting a root-key rotation off in the middle.
 test-utils = ["credmgr-store/test-utils"]
+# ADR-162: the Mac App Store flavour of `credmgrd` - the vault, socket and state directory in the app-group
+# container (credmgr-store's `mas`). Nothing else changes: no network entitlement, the same peer gate.
+# Built only by `release-app.sh --mas`.
+mas = ["credmgr-store/mas"]
 
 [dependencies]
-credmgr-core = { path = "../core", version = "2.0.0-beta.1" }
-credmgr-keystore = { path = "../keystore", version = "2.0.0-beta.1" }
-credmgr-store = { version = "2.0.0-beta.1", path = "../store" }
+base64 = "0.22"
+credmgr-core = { path = "../core", version = "2.0.0-rc.2" }
+credmgr-keystore = { path = "../keystore", version = "2.0.0-rc.2" }
+credmgr-store = { version = "2.0.0-rc.2", path = "../store" }
 # UDS + named pipes behind one API (16 §2). This session wires the Unix
 # transport directly over `std::os::unix::net` instead (see peer.rs's module
 # doc) so raw-fd peer-credential syscalls are unambiguous; `interprocess`
@@ -63,4 +68,7 @@ libc = "0.2"
 
 [dev-dependencies]
 credmgr-brokerd = { path = ".", features = ["test-utils"] }
+# ADR-148 §P2-5: the presence tests sign with a software P-256 key (already in the graph via credmgr-core), so
+# they run on every host instead of only where the Secure Enclave test helper is built.
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 tempfile = "=3.15.0"

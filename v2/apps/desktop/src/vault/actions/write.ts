@@ -136,6 +136,188 @@ export function auditOf(answer: unknown): string | null {
   return typeof id === "string" && id !== "" ? id : null;
 }
 
+// ───────────────────────────── aliases, near-duplicate names, .env import (ADR-121, ADR-122) ─────────────────────────────
+
+export type AliasesSet = Awaited<ReturnType<typeof live.entryAlias>>;
+export type NearName = live.NearName;
+export type ImportPlan = Awaited<ReturnType<typeof live.entryImportEnv>>;
+export type EnvRead = live.EnvPreview;
+
+/**
+ * Sets the other names one entry answers to: the whole list (at most 8; `[]` clears it).  Echoes the node's generation as the list last
+ * said it; a stale one is `conflict`.  Metadata only: no value is read or rewritten.  The list of the node and the entry's own detail are
+ * read again, so the new aliases show.  A name that is taken is `entry_exists` (nothing changed).
+ */
+export async function setAliases(m: VaultModel, node: string, entry: string, aliases: string[]): Promise<Written<AliasesSet>> {
+  const r = await live.entryAlias(node, entry, generationOf(m, node, entry), aliases);
+  return thenReread(m, r, fieldsTouched(node, entry));
+}
+
+export type TagsSet = Awaited<ReturnType<typeof live.entryTagSet>>;
+
+/**
+ * Replaces one entry's tags (`entry.tag_set`, ADR-167): the whole set, `[]` clears it.  The broker normalises them and answers what it
+ * stored.  Echoes the node's generation as the list last said it; a stale one is `conflict`.  Metadata only.  The node's list and the
+ * entry's detail are read again, so the chips show what the broker stored.
+ */
+export async function setTags(m: VaultModel, node: string, entry: string, tags: string[]): Promise<Written<TagsSet>> {
+  const r = await live.entryTagSet(node, entry, generationOf(m, node, entry), tags);
+  return thenReread(m, r, fieldsTouched(node, entry));
+}
+
+export type MergeResult = live.MergeResult;
+export type MergeSuggestions = live.MergeSuggestions;
+
+/** Merge suggestions inside one node (`merge.suggestions`, ADR-168).  A read: nothing is refreshed.  Names only, never a value. */
+export async function mergeSuggestions(m: VaultModel, node: string): Promise<MergeSuggestions> {
+  if (m.kind !== "bridge") throw new NotWiredError("merge.suggestions");
+  return live.mergeSuggestions(node);
+}
+
+/**
+ * Keeps `keep` and folds `drop` into it (`merge.apply`, ADR-168): their names become its aliases, their tags join its tags, and they are
+ * removed (each undoable for 7 days).  Echoes the node's generation as the list last said it; a fresh second factor is asked for by the
+ * broker.  The node's list, the graph's counts and the kept entry's detail are read again.
+ */
+export async function mergeApply(m: VaultModel, node: string, keep: string, drop: string[]): Promise<Written<MergeResult>> {
+  const r = await live.mergeApply(node, keep, drop, generationOf(m, node, keep));
+  return thenReread(m, r, { graph: true, nodes: [node], details: [{ node, entry: keep }, ...drop.map((entry) => ({ node, entry }))] });
+}
+
+/** Remembers that a merge suggestion was rejected (`merge.dismiss`, ADR-168); it is not suggested again. */
+export async function mergeDismiss(m: VaultModel, node: string, key: string): Promise<Written<Awaited<ReturnType<typeof live.mergeDismiss>>>> {
+  const r = await live.mergeDismiss(node, key);
+  return thenReread(m, r, { nodes: [node] });
+}
+
+export type ExpirySet = Awaited<ReturnType<typeof live.entrySetExpiry>>;
+
+/**
+ * Sets one entry's expiry (`expiresAt`, unix seconds) or clears it (`null`): `entry.set_expiry`, ADR-156.  Manifest metadata only: the sealed
+ * value is not read or rewritten.  Echoes the node's generation as the list last said it; a stale one is `conflict`.  The node's list and the
+ * entry's own detail are read again, so the chip shows what the broker stored.
+ */
+export async function setExpiry(m: VaultModel, node: string, entry: string, expiresAt: number | null): Promise<Written<ExpirySet>> {
+  const r =
+    expiresAt === null
+      ? await live.entrySetExpiry(node, entry, generationOf(m, node, entry), undefined, true)
+      : await live.entrySetExpiry(node, entry, generationOf(m, node, entry), expiresAt);
+  return thenReread(m, r, fieldsTouched(node, entry));
+}
+
+export type EntryMoved = live.EntryMoved;
+
+/**
+ * Moves one entry to node `to` (`entry.move`, ADR-158): re-sealed to the destination's key in one crash-safe step; its id, reference,
+ * name, aliases and expiry go with it.  Echoes the SOURCE node's generation as the list last said it; a stale one is `conflict`, a name
+ * the destination already uses `entry_exists`.  Grants on the entry are revoked and its Undo history is dropped, so both nodes' lists,
+ * the grant list, the graph's counts and the entry's detail (gone from the source, present in the destination) are read again.
+ */
+export async function moveEntry(m: VaultModel, node: string, entry: string, to: string): Promise<Written<EntryMoved>> {
+  const r = await live.entryMove(node, entry, to, generationOf(m, node, entry));
+  return thenReread(m, r, { graph: true, grants: true, nodes: [node, to], details: [{ node, entry }, { node: to, entry }] });
+}
+
+export type DoctorApplied = live.DoctorApplied;
+export type DoctorMove = live.DoctorMove;
+
+/**
+ * Applies every move of one doctor plan (`vault.doctor_apply`, ADR-169).  `moves` is sent exactly as the scan carried it, generations
+ * included: the plan the person confirmed is the plan the broker checks and the Touch ID proof signs.  The broker stops at the first move
+ * that fails and says what was applied, so every node the plan names, the grant list and the graph are read again either way.
+ */
+export async function applyDoctorPlan(m: VaultModel, moves: DoctorMove[]): Promise<Written<DoctorApplied>> {
+  const plan = moves.map((mv) => ({ node: mv.node, entry: mv.entry, to: mv.to, generation: mv.generation }));
+  const r = await live.vaultDoctorApply(plan);
+  const nodes = [...new Set(plan.flatMap((mv) => [mv.node, mv.to]))];
+  return thenReread(m, r, { graph: true, grants: true, nodes });
+}
+
+// ───────────────────────────── rotate, remove, restore (rc.2 §1 item 1) ─────────────────────────────
+
+export type EntryRotated = Awaited<ReturnType<typeof live.entryRotate>>;
+export type EntryRemoved = Awaited<ReturnType<typeof live.entryRemove>>;
+export type EntryRestored = live.EntryRestored;
+
+/**
+ * Rotates one field's value (`entry.rotate` with `field` and `value`): the broker keeps the previous value as history (Undo puts it back,
+ * with no time limit) and stamps `rotatedAt`.  `value` goes to the bridge and is not kept.  Echoes the node's generation as the list last
+ * said it; a stale one is `conflict`.  A value held from before is dropped at once (it is the OLD value); the node, the graph and the
+ * entry's fields are read again.
+ */
+export async function rotateEntry(m: VaultModel, node: string, entry: string, field: string, value: string): Promise<Written<EntryRotated>> {
+  const r = await live.entryRotate(node, entry, value, generationOf(m, node, entry), undefined, field);
+  m.dropEntrySecrets(node, entry);
+  return thenReread(m, r, fieldsTouched(node, entry));
+}
+
+/**
+ * Removes one entry (`entry.remove`, ADR-048): it leaves every list and search at once and is kept, sealed, for seven days, during which
+ * {@link restoreEntry} brings it back.  Echoes the node's generation; a stale one is `conflict`.  The node's list and the graph's counts are
+ * read again (the entry's own detail is not: it is gone).
+ */
+export async function removeEntry(m: VaultModel, node: string, entry: string): Promise<Written<EntryRemoved>> {
+  const r = await live.entryRemove(node, entry, generationOf(m, node, entry));
+  m.dropEntrySecrets(node, entry);
+  return thenReread(m, r, { graph: true, nodes: [node] });
+}
+
+/**
+ * Brings a removed entry back (`entry.restore`, addressed by node and entry id, so no audit id is needed).  `keepBoth` restores it under a
+ * free name (`<name> old`) when an entry has taken its name since; without it that case is refused with `entry_exists`.  Past the seven
+ * days it is `entry_removal_expired`.  Echoes the node's CURRENT generation; the node's list, the graph and the entry's detail are read again.
+ */
+export async function restoreEntry(m: VaultModel, node: string, entry: string, keepBoth = false): Promise<Written<EntryRestored>> {
+  // From the audit view the node may not have been listed in this login yet: list it first, so the generation echoed is the broker's.
+  if (!(typeof m.generation[node] === "number" && m.generation[node] > 0)) await m.refresh({ nodes: [node] });
+  const g = m.generation[node];
+  const r = await live.entryRestore(node, entry, typeof g === "number" && g > 0 ? g : 0, keepBoth ? "keep-both" : undefined);
+  return thenReread(m, r, { graph: true, nodes: [node], details: [{ node, entry }] });
+}
+
+/**
+ * Which entries of the node have a name or alias resembling `name`, and whether it is already taken (`entry.similar`).  A read: nothing is
+ * refreshed.  `entry` leaves one entry out.
+ */
+export async function similarNames(m: VaultModel, node: string, name: string, entry?: string): Promise<{ taken: boolean; similar: NearName[]; nameHidden: boolean }> {
+  if (m.kind !== "bridge") throw new NotWiredError("entry.similar");
+  const r = await live.entrySimilar(node, name, entry);
+  return { taken: r.taken === true, similar: Array.isArray(r.similar) ? r.similar : [], nameHidden: r.nameHidden === true };
+}
+
+/**
+ * Reads `.env` text into pairs with the SAME Rust parser the command line uses, locally: no broker call, no login, no audit record.  The page
+ * keeps no parser of its own.  A line the grammar refuses is `invalid_env`, named by number and never quoted.
+ */
+export async function readEnv(m: VaultModel, text: string): Promise<EnvRead> {
+  if (m.kind !== "bridge") throw new NotWiredError("env.preview");
+  return live.envPreview(text);
+}
+
+/**
+ * The import's preview (`entry.import_env` with `dryRun`): for every pair, what it would become (new, exists, duplicate, empty, invalid) and which
+ * existing names it resembles.  Writes nothing; the answer carries no value.
+ */
+export async function planImport(m: VaultModel, node: string, pairs: live.EnvPair[]): Promise<ImportPlan> {
+  if (m.kind !== "bridge") throw new NotWiredError("entry.import_env");
+  return live.entryImportEnv(node, pairs, true);
+}
+
+/**
+ * The import itself: each `new` pair becomes its own entry with its own audit record.  `onConflict: "refuse"` writes nothing if any name
+ * conflicts; `"skip"` leaves the conflicting ones out.  `complete: false` means a write failed part-way; `created` lists what was saved.
+ */
+export async function runImport(m: VaultModel, node: string, pairs: live.EnvPair[], onConflict: "refuse" | "skip"): Promise<Written<ImportPlan>> {
+  const r = await live.entryImportEnv(node, pairs, undefined, onConflict);
+  const spec: RefreshSpec = {};
+  if ((r.created ?? []).some((c) => !c.pending)) {
+    spec.graph = true;
+    spec.nodes = [node];
+  }
+  if ((r.created ?? []).some((c) => c.pending)) spec.pending = true;
+  return spec.graph || spec.pending ? thenReread(m, r, spec) : r;
+}
+
 /** What a name the broker accepted but wants the person told about is called on the screen (ADR-084). */
 export const MIXED_SCRIPT_TEXT = "This name mixes Latin with Greek or Cyrillic letters.";
 
@@ -147,6 +329,23 @@ export function nameWarningText(answer: unknown, batch = false): string {
   const w = (answer as { warnings?: unknown } | null)?.warnings;
   if (!Array.isArray(w) || !w.includes("mixed_script_name")) return "";
   return batch ? "A name in this batch mixes Latin with Greek or Cyrillic letters." : MIXED_SCRIPT_TEXT;
+}
+
+/**
+ * ADR-111 (issue #40): the ids of the fields a write's answer says could be a 2FA seed but are not typed as one.  Metadata only.  `[]` when
+ * the broker said nothing (an older broker, or nothing to say).
+ */
+export function possibleSeedIds(answer: unknown): string[] {
+  const ids = (answer as { possibleSeedFields?: unknown } | null)?.possibleSeedFields;
+  return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
+}
+
+/**
+ * The one-click answer to that hint: pin the field's type to `totp-seed` through the same `field.update` as the Edit dialog (`type` is the
+ * only key sent).  A seed is then never revealed, and the field gives codes.  Retains history: Undo reverses it.
+ */
+export function typeFieldAsSeed(m: VaultModel, node: string, entry: string, field: string) {
+  return updateField(m, node, entry, field, { type: "totp-seed" });
 }
 
 /** What the window remembers of the last field change so Undo can be offered: ids and a word, never a value or a label. */
@@ -376,7 +575,7 @@ function describePolicyField(field: string, chosen: live.NodePolicyPatch): { lab
 function policyReason(code: string | null): string {
   switch (code) {
     case "presence_required":
-      return "Choices like these need presence (Touch ID), which this beta cannot attest yet.";
+      return "Choices like these need presence (Touch ID). Set it up in Settings, Security, then try again.";
     case "capability_not_held":
     case "node_access_denied":
       return "This login is not allowed to change the node's settings.";

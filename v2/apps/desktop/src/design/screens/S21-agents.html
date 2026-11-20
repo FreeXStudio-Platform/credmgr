@@ -1,0 +1,65 @@
+      <sc-if value="{{setAgents}}" hint-placeholder-val="{{false}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">agents</span>
+        <div data-screen-label="S21 Agents" style="display:flex;flex-direction:column;gap:16px;max-width:560px">
+          <div class="t-caption">Connect a coding assistant so it can ask this vault for a credential by name, inside the node you give it. CredMgr never edits a file until you press Write in the change it shows you, keeps a copy of the original, and writes only its own entry.</div>
+          <sc-if value="{{sbReqShow}}" hint-placeholder-val="{{false}}">
+            <div data-screen-label="S21b Requests from agents" role="group" aria-labelledby="sb-req-title" style="display:flex;flex-direction:column;gap:12px;border:1px solid var(--hair);border-radius:2px;padding:12px">
+              <div><div id="sb-req-title" style="font-size:var(--fs-md)">Requests from agents</div><div class="t-caption">An agent asked to make a setting less strict. Nothing changes until you approve it here; approving asks you to confirm it is you.</div></div>
+              <sc-for list="{{sbReqRows}}" as="r" hint-placeholder-count="1">
+                <div data-setting-request="{{r.request}}" style="display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--hair);padding-top:10px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span style="font-family:var(--f-mono);overflow-wrap:anywhere">{{r.id}}</span><span class="k-chip" data-state="warn" style="flex:none;white-space:nowrap">{{r.left}}</span></div>
+                  <div class="t-caption" style="font-family:var(--f-mono);overflow-wrap:anywhere">{{r.change}}</div>
+                  <sc-if value="{{r.hasNode}}" hint-placeholder-val="{{false}}"><div class="t-caption" style="overflow-wrap:anywhere">project: {{r.node}}</div></sc-if>
+                  <div class="t-caption" style="overflow-wrap:anywhere">reason: {{r.reason}}</div>
+                  <sc-if value="{{r.hasToken}}" hint-placeholder-val="{{false}}"><div class="t-caption" style="overflow-wrap:anywhere">asked by: {{r.token}}</div></sc-if>
+                  <sc-if value="{{r.hasCwd}}" hint-placeholder-val="{{true}}"><div class="t-caption" style="overflow-wrap:anywhere">asked from: {{r.cwd}}</div></sc-if>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+                    <button class="k-btn" data-variant="primary" onClick="{{r.approve}}" disabled="{{r.disabled}}" aria-label="{{r.approveAria}}">{{r.approveLabel}}</button>
+                    <button class="k-btn" onClick="{{r.deny}}" disabled="{{r.disabled}}" aria-label="{{r.denyAria}}">Deny</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{agentsLoading}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status">Looking for assistants on this Mac…</div></sc-if>
+          <sc-if value="{{agentsNoShell}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status">This needs the CredMgr app. Use credmgr agent detect in a terminal.</div></sc-if>
+          <sc-if value="{{agentsNoBinary}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status" data-agent-nobinary="1">The credmgr command line tool was not found on this Mac, so a snippet names it by its plain name. Install it first for a path that always resolves.</div></sc-if>
+          <sc-for list="{{agentRows}}" as="a" hint-placeholder-count="5">
+            <div data-agent-row="{{a.id}}" style="display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--hair);padding-bottom:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                <div><div style="font-size:var(--fs-md)">{{a.label}}</div><div class="t-caption" style="overflow-wrap:anywhere">{{a.path}}</div></div>
+                <span class="k-chip" data-state="{{a.chipState}}" style="flex:none;white-space:nowrap;{{a.chipStyle}}">{{a.chipLabel}}</span>
+              </div>
+              <div class="t-caption">{{a.note}}</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="k-btn" onClick="{{a.copy}}" aria-label="{{a.copyAria}}">{{a.copyLabel}}</button>
+                <sc-if value="{{a.canConnect}}" hint-placeholder-val="{{true}}"><button class="k-btn" data-variant="primary" onClick="{{a.connect}}" aria-label="review connecting {{a.label}}">Connect…</button></sc-if>
+                <sc-if value="{{a.canDisconnect}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{a.disconnect}}" aria-label="review disconnecting {{a.label}}">Disconnect…</button></sc-if>
+              </div>
+            </div>
+          </sc-for>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Any other assistant</div><div class="t-caption">the common JSON for an MCP server entry</div></div><button class="k-btn" onClick="{{agentCopyGeneric}}">{{agentGenericLabel}}</button></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px"><div><div style="font-size:var(--fs-md)">The vault prompt</div><div class="t-caption">rules for an assistant that has no MCP: your node names and the level of the selected node, never a value. Paste it into its instructions, or save it as CREDMGR.md with credmgr agent init.</div></div><div style="display:flex;gap:8px;flex:none"><button class="k-btn" onClick="{{agentCopyPrompt}}">{{agentPromptLabel}}</button><button class="k-btn" onClick="{{agentCopyMd}}">{{agentMdLabel}}</button></div></div>
+          <div data-screen-label="S21c Agent tokens" role="group" aria-labelledby="at-title" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--hair);padding-top:16px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
+              <div><div id="at-title" style="font-size:var(--fs-md)">Agent tokens</div><div class="t-caption">A token gives one agent one node, only what you tick, for a limited time (one day unless you choose otherwise, seven at most). It is shown once. Restarting the broker ends every token. An agent can never make, widen or renew one.</div></div>
+              <button class="k-btn" data-variant="primary" data-at-open="1" onClick="{{openAgentToken}}" style="flex:none">Issue token…</button>
+            </div>
+            <sc-if value="{{atLoading}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status">Reading agent tokens…</div></sc-if>
+            <sc-if value="{{atErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status" data-at-error="1">{{atErr}}</div></sc-if>
+            <sc-if value="{{atEmpty}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status">No agent token is live.</div></sc-if>
+            <sc-for list="{{atRows}}" as="t" hint-placeholder-count="2">
+              <div data-at-row="{{t.id}}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid var(--hair);padding-bottom:10px">
+                <div style="min-width:0">
+                  <div style="font-size:var(--fs-base);overflow-wrap:anywhere">{{t.label}} <span class="t-caption" style="font-family:var(--f-mono)">{{t.id}}</span></div>
+                  <div class="t-caption" style="overflow-wrap:anywhere">node {{t.node}} · {{t.caps}}</div>
+                  <sc-if value="{{t.narrowed}}" hint-placeholder-val="{{false}}"><div class="t-caption" style="overflow-wrap:anywhere">{{t.narrowedText}}</div></sc-if>
+                  <div class="t-caption" style="overflow-wrap:anywhere">{{t.expires}} · {{t.used}}</div>
+                </div>
+                <button class="k-btn" onClick="{{t.revoke}}" disabled="{{t.revokeDisabled}}" aria-label="{{t.revokeAria}}" style="flex:none">{{t.revokeLabel}}</button>
+              </div>
+            </sc-for>
+            <sc-if value="{{atCount}}" hint-placeholder-val="{{false}}"><div class="t-caption">{{atCount}}</div></sc-if>
+          </div>
+        </div>
+      </sc-if>

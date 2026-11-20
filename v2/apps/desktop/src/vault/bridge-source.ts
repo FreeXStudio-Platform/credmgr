@@ -7,14 +7,17 @@
  */
 import type * as live from "../lib/bridge";
 import { errorCode } from "./errors";
-import type { AuthLite, EntriesPart, GraphPart, LockResult, ModelSource } from "./source";
+import type { AuthLite, EntriesPart, GraphPart, LockResult, ModelSource, RecoverOutcome } from "./source";
 import { isUnreadableCode, type DEntry, type DEntryDetail, type DGrant, type DLink, type DNode, type DOrphan, type DPending, type DSealed, type DSensitivity, type UnreadableCode } from "./types";
 
 /** The slice of src/lib/bridge.ts this source uses.  Wiring packages that read more extend the Pick. */
 export type BridgeFns = Pick<
   typeof live,
-  "vaultStatus" | "vaultUnlock" | "vaultGateVerify" | "vaultLock" | "graphSnapshot" | "entryList" | "entryGet" | "entryReveal" | "grantList" | "vaultPendingList" | "notesRead"
+  "vaultStatus" | "vaultUnlock" | "vaultUnlockWithTouchId" | "vaultRecover" | "orphanReveal" | "vaultGateVerify" | "vaultLock" | "graphSnapshot" | "entryList" | "entryGet" | "entryReveal" | "grantList" | "vaultPendingList" | "notesRead"
 >;
+
+/** The node the broker keeps sealed entries under. */
+const ORPHAN_NODE = "orphan";
 
 const SENSITIVITIES: readonly string[] = ["low", "medium", "high", "critical"];
 
@@ -43,6 +46,7 @@ export function mapNode(n: live.GraphNode): DNode {
     counts: { entries: n.counts.entries, totp: n.counts.totp },
     gate: { locked: n.gate.locked, twofa: n.gate.twofa },
     ...(n.nameHidden === true ? { nameHidden: true } : {}),
+    ...(n.securityLevel === "open" || n.securityLevel === "guarded" || n.securityLevel === "sealed" ? { securityLevel: n.securityLevel } : {}),
     health: null,
     notes: null,
   };
@@ -59,6 +63,8 @@ export function mapEntryRow(row: live.EntryListRow): DEntry {
     totp: row.hasTotp === true || row.type === "totp", // ADR-080: hasTotp is the broker's word (a login entry may carry a TOTP field)
     meta: parts.join(" · "),
     fieldCount: typeof row.fieldCount === "number" && row.fieldCount > 0 ? row.fieldCount : 1,
+    ...(Array.isArray(row.aliases) && row.aliases.length ? { aliases: row.aliases.filter((a): a is string => typeof a === "string") } : {}),
+    ...(Array.isArray(row.tags) && row.tags.length ? { tags: row.tags.filter((t): t is string => typeof t === "string") } : {}),
     // The list carries no labels (they are encrypted with the values), so there is nothing to show of the fields here: they are read
     // on demand with `entry.get` into the model's entry detail.  Nothing is invented in their place.
     fields: [],
@@ -81,7 +87,9 @@ export function mapEntryMeta(m: live.EntryMeta): DEntryDetail {
     modified: m.modified,
     rotatedAt: m.rotatedAt,
     expiresAt: m.expiresAt,
-    fields: m.fields.map((f) => ({ id: f.id, label: f.label, type: f.type, masked: f.masked, typeOverridden: f.typeOverridden, maskedOverridden: f.maskedOverridden })),
+    fields: m.fields.map((f) => ({ id: f.id, label: f.label, type: f.type, masked: f.masked, typeOverridden: f.typeOverridden, maskedOverridden: f.maskedOverridden, ...(f.possibleSeed === true ? { possibleSeed: true } : {}) })),
+    ...(Array.isArray(m.aliases) && m.aliases.length ? { aliases: m.aliases.filter((a): a is string => typeof a === "string") } : {}),
+    ...(Array.isArray(m.tags) && m.tags.length ? { tags: m.tags.filter((t): t is string => typeof t === "string") } : {}),
   };
 }
 
@@ -126,12 +134,14 @@ export function mapPending(node: string, p: live.PendingItem): DPending {
   };
 }
 
-const auth = (a: live.AuthState): AuthLite => ({ locked: a.locked, authenticated: a.authenticated, initialized: a.initialized !== false, pendingApprovals: a.pendingApprovals ?? 0 });
+const auth = (a: live.AuthState): AuthLite => ({ locked: a.locked, authenticated: a.authenticated, initialized: a.initialized !== false, pendingApprovals: a.pendingApprovals ?? 0, touchIdUnlock: a.touchIdUnlock === true, anomaliesUnseen: a.anomaliesUnseen ?? 0, recoveryUnlock: a.recoveryUnlock === true });
 
 export class BridgeSource implements ModelSource {
   readonly kind = "bridge" as const;
   private orphanId: string | null = null;
   private orphanUnreadable: UnreadableCode | null = null;
+  /** ADR-120: the items in Orphaned as the snapshot named them, or `null` when the broker did not say (then the node's own list is read). */
+  private orphanedNames: DOrphan[] | null = null;
 
   constructor(private readonly fns: BridgeFns) {}
 
@@ -143,8 +153,21 @@ export class BridgeSource implements ModelSource {
     return auth(await this.fns.vaultUnlock(passphrase));
   }
 
+  async unlockWithTouchId(): Promise<AuthLite> {
+    return auth(await this.fns.vaultUnlockWithTouchId());
+  }
+
   async gateVerify(code: string): Promise<AuthLite> {
     return auth(await this.fns.vaultGateVerify(code));
+  }
+
+  async recoverWithCode(recoveryCode: string, newPassphrase: string, secondFactor?: string): Promise<RecoverOutcome> {
+    const r = await this.fns.vaultRecover(recoveryCode, newPassphrase, secondFactor || undefined);
+    // `locked: true` is a recovery whose last file moves wait for the next unlock: committed, but no login.
+    const out: RecoverOutcome = { recoveryCode: r.recoveryCode, completionPending: r.completionPending === true || r.locked === true };
+    // ADR-165 review P1-4: a recovery that could not seal the new passphrase file removed the machine lock, and the screen must say so.
+    if (typeof r.machineLockRemoved === "string" && r.machineLockRemoved.length > 0) out.machineLockRemoved = r.machineLockRemoved.slice(0, 300);
+    return out;
   }
 
   async lock(): Promise<LockResult> {
@@ -168,6 +191,7 @@ export class BridgeSource implements ModelSource {
     if (snap.meta?.vaultLocked === true) throw VAULT_LOCKED;
     const orphan = snap.nodes.find((n) => n.kind === "orphan") ?? null;
     this.orphanId = orphan ? orphan.id : null;
+    this.orphanedNames = Array.isArray(snap.meta?.orphaned) ? snap.meta.orphaned.map((o) => ({ id: o.id, name: o.name })) : null;
     const nodes = snap.nodes.filter((n) => n.kind !== "orphan").map(mapNode);
     const known = new Set(nodes.map((n) => n.id));
     const links: DLink[] = snap.links.filter((l) => known.has(l.source) && known.has(l.target)).map((l) => ({ source: l.source, target: l.target, kind: "structural" as const }));
@@ -195,6 +219,9 @@ export class BridgeSource implements ModelSource {
 
   async orphans(): Promise<DOrphan[]> {
     this.orphanUnreadable = null;
+    // ADR-120: the snapshot's own list wins. The orphaned node is refused to every list (R0) and absent from the snapshot, so the node's
+    // own list can never be the source of what the person sealed.
+    if (this.orphanedNames) return this.orphanedNames;
     if (!this.orphanId) return [];
     const part = await this.entries(this.orphanId);
     this.orphanUnreadable = part.unreadable ?? null;
@@ -235,7 +262,11 @@ export class BridgeSource implements ModelSource {
    * answer for it is refused, because there is no one value to hand back and nothing here may guess which one was meant.
    */
   async reveal(node: string, entry: string, field?: number | string): Promise<string> {
-    const r = typeof field === "string" ? await this.fns.entryReveal(node, entry, [field]) : await this.fns.entryReveal(node, entry);
+    // ADR-098: a sealed (orphaned) entry is opened by its own operation: a fresh second factor and a Touch ID check, every time.
+    const sealed = node === ORPHAN_NODE;
+    const r = sealed
+      ? await this.fns.orphanReveal(entry, typeof field === "string" ? [field] : undefined)
+      : typeof field === "string" ? await this.fns.entryReveal(node, entry, [field]) : await this.fns.entryReveal(node, entry);
     if (!Array.isArray(r.fields) || r.fields.length !== 1) {
       throw { source: "bridge", code: "field_required", message: "the entry holds several fields: name the one to reveal" } as const;
     }
@@ -244,7 +275,7 @@ export class BridgeSource implements ModelSource {
 
   /** Several fields in ONE read: the broker answers exactly the ids asked for (or `not_found` for the whole call), in stored order. */
   async revealFields(node: string, entry: string, fields: string[]): Promise<Array<{ id: string; value: string }>> {
-    const r = await this.fns.entryReveal(node, entry, fields);
+    const r = node === ORPHAN_NODE ? await this.fns.orphanReveal(entry, fields) : await this.fns.entryReveal(node, entry, fields);
     if (!Array.isArray(r.fields) || r.fields.length !== fields.length) {
       throw { source: "bridge", code: "malformed_response", message: "the broker answered a different set of fields than was asked for" } as const;
     }

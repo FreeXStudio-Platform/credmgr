@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- ADR-162: CredMgr.app's main executable, Mac App Store edition. A TEMPLATE: scripts/release-app.sh (mas mode)
+     replaces the @...@ tokens from packaging/mas/identity.conf. The sandbox and the one app group the vault,
+     the socket and the state directory live in. The two identity keys carry no capability: they name the
+     team and the app so the Mac App Store provisioning profile matches the signature (codesign does not copy
+     them from the profile the way Xcode does). No network.client or network.server (ADR-001), no file-access
+     entitlement, no keychain-access-groups (the Secure Enclave key is non-permanent, ADR-098), no JIT.
+     Add nothing here without an ADR; tests/mas_config.rs and the mas mode of release-app.sh refuse any other key. -->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>@MAS_APP_GROUP@</string>
+    </array>
+    <key>com.apple.application-identifier</key>
+    <string>@MAS_TEAM_ID@.@MAS_BUNDLE_ID@</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>@MAS_TEAM_ID@</string>
+</dict>
+</plist>

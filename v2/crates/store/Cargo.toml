@@ -21,9 +21,15 @@ workspace = true
 # `cargo test --workspace` runs this crate's feature-gated tests too; never in
 # a release build.
 test-utils = []
+# ADR-162: the Mac App Store flavour. Moves the default vault, socket and state directory into the
+# app-group container named by `packaging/mas/identity.conf` (`paths.rs`). Switched on only by
+# `release-app.sh --mas` (through credmgr-brokerd's and credmgr-cli's own `mas`), never by default.
+mas = []
 
 [dependencies]
-credmgr-core = { path = "../core", version = "2.0.0-beta.1" }
+credmgr-core = { path = "../core", version = "2.0.0-rc.2" }
+# ADR-148 (P3): the restore's staging directory name. Already in the graph through credmgr-core.
+rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

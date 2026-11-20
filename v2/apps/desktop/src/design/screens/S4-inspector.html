@@ -11,12 +11,38 @@
           <sc-if value="{{inspTf}}" hint-placeholder-val="{{false}}"><span class="k-chip" title="Agents and other callers pass the second factor on every node of this vault until the time runs out. It ends early when the vault locks or any node policy changes.">{{inspTfLabel}}</span></sc-if>
           <sc-if value="{{inspNameHidden}}" hint-placeholder-val="{{false}}"><span class="k-chip" title="privateNames: agents and other callers get an opaque row with nameHidden true instead of this node's label, entry names and notes. The node id is not hidden.">name hidden</span></sc-if>
         </div>
+        <sc-if value="{{lvlShow}}" hint-placeholder-val="{{true}}">
+        <div data-screen-label="S4a Security level" style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="t-mono-label" id="lvl-label">agents here</span>
+            <div role="group" aria-labelledby="lvl-label" style="display:flex">
+              <sc-for list="{{lvlOpts}}" as="o" hint-placeholder-count="3"><button class="k-btn" onClick="{{o.set}}" disabled="{{o.disabled}}" aria-pressed="{{o.on}}" title="{{o.title}}" style="padding:2px 8px;font-size:var(--fs-xs);background:{{o.bg}};color:{{o.fg}}">{{o.label}}</button></sc-for>
+            </div>
+          </div>
+          <div class="t-caption" data-lvl-caption="1">{{lvlCaption}}</div>
+        </div>
+        </sc-if>
         <div style="display:flex;gap:8px;margin-top:12px">
           <button class="k-btn" onClick="{{openAddEntry}}" style="flex:1;text-align:left">+ New entry</button>
           <button class="k-btn" onClick="{{openAddNote}}" style="flex:1;text-align:left">+ New note</button>
         </div>
+        <div style="margin-top:8px"><button class="k-btn" onClick="{{openImportEnv}}" style="text-align:left" title="entry.import_env: a .env file becomes entries, after you have seen every name">Import .env…</button></div>
       </div>
       <div data-screen-label="S4 Inspector">
+        <sc-if value="{{nodeFindShow}}" hint-placeholder-val="{{false}}"><div role="search" style="padding:8px 16px 0;display:flex;flex-direction:column;gap:6px">
+          <input class="cm-nodefind" aria-label="find in this node" value="{{nodeFindQ}}" onChange="{{onNodeFind}}" autocomplete="off" spellcheck="false" placeholder="find in this node (names and other names)" title="entry.search: names and aliases on this node; never values" style="font-family:var(--f-mono);font-size:var(--fs-sm);padding:4px 8px">
+          <sc-if value="{{nodeFindRowsShow}}" hint-placeholder-val="{{false}}"><div data-nodefind-results="true" style="display:flex;flex-direction:column">
+            <sc-for list="{{nodeFindRows}}" as="h" hint-placeholder-count="3"><button class="k-btn" onClick="{{h.open}}" style="display:flex;justify-content:space-between;gap:8px;text-align:left;border:none;border-bottom:1px solid var(--hair);padding:4px 0;font-family:var(--f-mono);font-size:var(--fs-sm)"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">⌗ {{h.name}}</span><sc-if value="{{h.whyShow}}" hint-placeholder-val="{{false}}"><span class="t-caption" style="flex:none">{{h.why}}</span></sc-if></button></sc-for>
+          </div></sc-if>
+          <sc-if value="{{nodeFindNone}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status">No name or other name on this node contains that.</div></sc-if>
+          <sc-if value="{{nodeFindErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="status">{{nodeFindErr}}</div></sc-if>
+        </div></sc-if>
+        <sc-if value="{{removedBarShow}}" hint-placeholder-val="{{false}}"><div class="k-note" role="status" aria-live="polite" data-removed-bar="true" style="margin:8px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <span style="flex:1;min-width:0;overflow-wrap:anywhere">{{removedBarText}}</span>
+          <button class="k-btn" onClick="{{removedUndo}}" disabled="{{removedUndoDisabled}}" title="entry.restore: brings the entry back as it was" style="padding:2px 8px;font-size:var(--fs-xs)">{{removedUndoLabel}}</button>
+          <sc-if value="{{removedCopyShow}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{removedCopy}}" title="entry.restore with keep-both: restores it under a free name, next to the entry that took its name" style="padding:2px 8px;font-size:var(--fs-xs)">Restore as a copy</button></sc-if>
+          <button class="k-btn" onClick="{{removedDismiss}}" aria-label="dismiss" style="border:none;padding:2px 6px">✕</button>
+        </div></sc-if>
         <sc-for list="{{inspEntries}}" as="e" hint-placeholder-count="6">
           <button class="k-entry" onClick="{{e.open}}" style="border-left:{{e.sens}};border-top:0;border-right:0;border-bottom:0;background:none;font:inherit;text-align:left;width:100%;color:inherit;cursor:pointer">
             <span class="k-entry-name">⌗ {{e.name}}</span>
@@ -49,7 +75,7 @@
           <sc-if value="{{orphanUnreadable}}" hint-placeholder-val="{{false}}"><div class="k-empty" role="status" data-node-unreadable="{{orphanUnreadableCode}}">{{orphanUnreadableText}}</div></sc-if>
           <sc-if value="{{orphanEmpty}}" hint-placeholder-val="{{false}}"><div class="k-empty">Nothing is orphaned</div></sc-if>
         </div>
-        <div style="font-size:var(--fs-sm);line-height:var(--lh-base)">Values are sealed and human-only; no agent can read this node. Opening an item needs presence (Touch ID), which this beta cannot attest yet, so the broker refuses and nothing is shown.</div>
+        <div style="font-size:var(--fs-sm);line-height:var(--lh-base)">Values are sealed and human-only; no agent can read this node. Opening an item needs Touch ID (set it up in Settings → Security) and, when a second factor is on, a fresh code.</div>
       </div>
     </sc-if>
     <sc-if value="{{inspEntry}}" hint-placeholder-val="{{false}}">
@@ -61,8 +87,26 @@
             <span class="k-type">{{entryType}}</span>
           </div>
           <div class="t-caption" style="margin-top:4px">{{entryMeta}}</div>
+          <sc-if value="{{aliasShow}}" hint-placeholder-val="{{false}}"><div class="t-caption" data-aliases="true" style="margin-top:4px;overflow-wrap:anywhere">also called {{aliasText}}</div></sc-if>
+          <sc-if value="{{tagsShow}}" hint-placeholder-val="{{false}}"><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px" data-tags="true">
+            <sc-for list="{{tagChips}}" as="t" hint-placeholder-count="2"><span class="k-chip" data-tag="{{t.tag}}" style="display:inline-flex;gap:4px;align-items:center">{{t.tag}}<button class="k-btn" onClick="{{t.remove}}" aria-label="{{t.label}}" title="entry.tag_set: take this tag off" style="border:none;padding:0 2px;font-size:var(--fs-xs)">✕</button></span></sc-for>
+            <input value="{{tagDraft}}" onChange="{{onTagDraft}}" onKeyDown="{{onTagKey}}" maxLength="40" autoComplete="off" aria-label="add a tag, then press Enter" title="entry.tag_set: a label for this entry (lower-cased; letters, digits, spaces and - _ . : /)" placeholder="+ tag" style="font-family:var(--f-mono);font-size:var(--fs-xs);width:90px">
+          </div></sc-if>
+          <sc-if value="{{tagErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert" style="margin-top:4px">{{tagErr}}</div></sc-if>
+          <sc-if value="{{expiryBtnShow}}" hint-placeholder-val="{{false}}"><div style="display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin-top:8px" data-expiry="{{expiryChipTone}}">
+            <sc-if value="{{expiryChipShow}}" hint-placeholder-val="{{false}}"><span class="k-chip" data-expiry-chip="{{expiryChipTone}}" title="entry.set_expiry: a date stored with the entry, in UTC. Nothing is deleted or locked when it passes; credmgr expiring lists what is due." style="color:{{expiryChipColor}};border-color:{{expiryChipBorder}}">{{expiryChipText}}</span></sc-if>
+            <button class="k-btn cm-expiry-btn" onClick="{{expiryOpen}}" title="entry.set_expiry: set, change or remove the date this credential should be replaced by" style="padding:2px 6px;font-size:var(--fs-xs)">{{expiryBtnLabel}}</button>
+            <sc-if value="{{moveBtnShow}}" hint-placeholder-val="{{false}}"><button class="k-btn cm-move-btn" onClick="{{moveOpen}}" title="entry.move: move this entry to another project, sealed again with that project’s key" style="padding:2px 6px;font-size:var(--fs-xs)">Move to project…</button></sc-if>
+            <sc-if value="{{rotateBtnShow}}" hint-placeholder-val="{{false}}"><button class="k-btn cm-rotate-btn" onClick="{{rotateOpen}}" title="entry.rotate: give one field a new value; the old one is kept as history and Undo puts it back" style="padding:2px 6px;font-size:var(--fs-xs)">Rotate…</button></sc-if>
+            <sc-if value="{{removeBtnShow}}" hint-placeholder-val="{{false}}"><button class="k-btn cm-remove-btn" onClick="{{removeOpen}}" title="entry.remove: the entry leaves every list at once and is kept for seven days; Undo brings it back" style="padding:2px 6px;font-size:var(--fs-xs)">Remove…</button></sc-if>
+          </div></sc-if>
         </div>
         <sc-if value="{{entryUnlocked}}" hint-placeholder-val="{{true}}">
+        <sc-if value="{{entryTabsShow}}" hint-placeholder-val="{{true}}"><div class="k-section" role="tablist" aria-label="entry detail" style="display:flex;gap:4px;padding-top:0;padding-bottom:0;border-bottom:1px solid var(--hair)">
+          <button class="k-btn cm-tab-fields" role="tab" aria-selected="{{entryTabFieldsSel}}" onClick="{{entryTabToFields}}" style="border:none;border-radius:0;padding:6px 10px;border-bottom:2px solid {{entryTabFieldsLine}}">Fields</button>
+          <button class="k-btn cm-tab-history" role="tab" aria-selected="{{entryTabHistorySel}}" onClick="{{entryTabToHistory}}" title="entry.history: who did what to this entry and when. Never a value." style="border:none;border-radius:0;padding:6px 10px;border-bottom:2px solid {{entryTabHistoryLine}}">History</button>
+        </div></sc-if>
+        <sc-if value="{{entryTabFields}}" hint-placeholder-val="{{true}}">
         <sc-if value="{{fieldsLoading}}" hint-placeholder-val="{{false}}"><div class="k-section"><div class="k-empty" role="status" aria-busy="true" data-fields-state="loading">Reading the fields…</div></div></sc-if>
         <sc-if value="{{fieldsFailed}}" hint-placeholder-val="{{false}}"><div class="k-section"><div class="k-empty" role="status" data-fields-state="failed" style="display:flex;flex-direction:column;gap:12px;align-items:center"><span>{{fieldsFailedText}}</span><button class="k-btn" onClick="{{retryFields}}">Try again</button></div></div></sc-if>
         <sc-if value="{{fieldsShow}}" hint-placeholder-val="{{true}}">
@@ -75,11 +119,12 @@
               </div>
               <div style="min-width:0;display:flex;flex-direction:column;gap:6px">
                 <div class="k-field-value" data-masked="{{f.masked}}" style="overflow-wrap:anywhere;white-space:pre-wrap">{{f.display}}</div>
-                <sc-if value="{{f.counting}}" hint-placeholder-val="{{false}}"><div style="height:1px;background:var(--faint)"><div style="height:1px;background:var(--sig);width:{{f.pct}}"></div></div><div class="t-kbd" role="status" aria-live="polite" style="color:var(--sig)">re-masks in {{f.secs}}s</div></sc-if>
+                <sc-if value="{{f.seedHint}}" hint-placeholder-val="{{false}}"><div class="k-note" role="status" data-seed-hint="true" style="margin:0"><span class="t-mono-label">2fa seed?</span>{{f.seedHintText}} <button class="k-btn" onClick="{{f.seedMark}}" data-seed-mark="true" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="field.update: sets this field's type to totp-seed; it then gives codes and is never shown">This is a 2FA seed</button></div></sc-if>
+                <sc-if value="{{f.counting}}" hint-placeholder-val="{{false}}"><div style="height:1px;background:var(--faint)"><div style="height:1px;background:var(--sig);width:{{f.pct}}"></div></div><div class="t-kbd" aria-hidden="true" style="color:var(--sig)">re-masks in {{f.secs}}s</div></sc-if>
                 <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-start">
-                  <sc-if value="{{f.maskable}}" hint-placeholder-val="{{true}}"><button class="k-btn" onClick="{{f.reveal}}" aria-live="polite" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="{{f.revealTitle}}">{{f.revealLabel}}</button></sc-if>
+                  <sc-if value="{{f.maskable}}" hint-placeholder-val="{{true}}"><button class="k-btn" onClick="{{f.reveal}}" aria-live="polite" aria-label="{{f.revealAria}}" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="{{f.revealTitle}}">{{f.revealLabel}}</button></sc-if>
                   <sc-if value="{{f.canCopy}}" hint-placeholder-val="{{true}}"><button class="k-btn" onClick="{{f.copy}}" aria-live="polite" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="concealed clipboard · cleared after 30 s · the value never reaches this window">{{f.copyLabel}}</button></sc-if>
-                  <sc-if value="{{f.isTotp}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{f.showSeed}}" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="the seed needs presence (Touch ID), which this beta cannot attest yet">show seed</button></sc-if>
+                  <sc-if value="{{f.isTotp}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{f.showSeed}}" style="padding:2px 6px;font-size:var(--fs-xs);white-space:nowrap" title="{{f.seedTitle}}">{{f.seedLabel}}</button></sc-if>
                   <sc-if value="{{f.canMenu}}" hint-placeholder-val="{{true}}">
                   <div style="position:relative;margin-left:auto">
                     <button class="k-btn cm-fieldmenu-btn" onClick="{{f.toggleMenu}}" aria-label="field menu" aria-haspopup="menu" aria-expanded="{{f.menuOpen}}" style="min-width:24px;border:none;padding:0 8px;font-size:var(--fs-md);line-height:1.4;color:var(--ash)">⋮</button>
@@ -98,11 +143,37 @@
           </sc-for>
           <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-top:12px">
             <sc-if value="{{fieldsEditable}}" hint-placeholder-val="{{true}}"><button class="k-btn cm-addfield-btn" onClick="{{addFieldOpen}}">+ Add field</button></sc-if>
+            <sc-if value="{{fieldsEditable}}" hint-placeholder-val="{{true}}"><button class="k-btn cm-alias-btn" onClick="{{aliasOpen}}" title="entry.alias: other names this entry answers to">Aliases…</button></sc-if>
             <sc-if value="{{undoShow}}" hint-placeholder-val="{{false}}"><button class="k-btn cm-undo-btn" onClick="{{undoField}}" title="entry.undo: one step, the most recent change on this node, for 7 days, and only while nothing else has changed the node" style="border:none;color:var(--ash);text-decoration:underline">Undo {{undoText}}</button></sc-if>
             <sc-if value="{{undoMsgShow}}" hint-placeholder-val="{{false}}"><span class="t-caption" role="status" aria-live="polite">{{undoMsg}}</span></sc-if>
           </div>
         </div>
         <div class="k-section"><div class="t-caption">every reveal and copy writes an audit record</div></div>
+        </sc-if>
+        </sc-if>
+        <sc-if value="{{entryTabHistory}}" hint-placeholder-val="{{false}}">
+        <div class="k-section" data-history="true" role="tabpanel" aria-label="history">
+          <sc-if value="{{histLoading}}" hint-placeholder-val="{{false}}"><div class="k-empty" role="status" aria-busy="true" data-history-state="loading">Reading the history…</div></sc-if>
+          <sc-if value="{{histFailed}}" hint-placeholder-val="{{false}}"><div class="k-empty" role="status" data-history-state="failed" style="display:flex;flex-direction:column;gap:12px;align-items:center"><span>{{histFailedText}}</span><button class="k-btn" onClick="{{histRetry}}">Try again</button></div></sc-if>
+          <sc-if value="{{histShow}}" hint-placeholder-val="{{true}}">
+            <sc-if value="{{histTimesShow}}" hint-placeholder-val="{{true}}"><div class="t-caption" data-history-times="true" style="margin-bottom:8px;overflow-wrap:anywhere">{{histTimes}}</div></sc-if>
+            <sc-if value="{{histGoneShow}}" hint-placeholder-val="{{false}}"><div class="t-caption" style="margin-bottom:8px">This entry no longer exists. Its trail is kept.</div></sc-if>
+            <sc-if value="{{histEmpty}}" hint-placeholder-val="{{false}}"><div class="k-empty" data-history-state="empty">No records for this entry yet.</div></sc-if>
+            <div style="display:flex;flex-direction:column" data-history-rows="true">
+              <sc-for list="{{histRows}}" as="h" hint-placeholder-count="5">
+                <div data-history-row="{{h.raw}}" style="display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:2px 12px;padding:6px 0;border-bottom:1px solid var(--hair);font-size:var(--fs-sm)">
+                  <span class="t-kbd" style="color:var(--mute);white-space:nowrap">{{h.when}}</span>
+                  <span style="overflow-wrap:anywhere">{{h.what}} <span style="color:var(--mute)">· {{h.who}}</span></span>
+                  <sc-if value="{{h.outcomeShow}}" hint-placeholder-val="{{false}}"><span class="k-chip is-danger" data-history-outcome="{{h.outcome}}">{{h.outcome}}</span></sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-top:12px">
+              <span class="t-caption">{{histNote}}</span>
+              <button class="k-btn" onClick="{{histRefresh}}" style="padding:2px 6px;font-size:var(--fs-xs)">Refresh</button>
+            </div>
+          </sc-if>
+        </div>
         </sc-if>
         </sc-if>
         <sc-if value="{{entryLockedShow}}" hint-placeholder-val="{{false}}">

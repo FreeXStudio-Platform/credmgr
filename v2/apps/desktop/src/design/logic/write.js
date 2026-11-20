@@ -7,7 +7,7 @@
    open: it is cleared on save, on any way of closing the dialog, and on lock (see scheduleEntryFormWipe).  No value is ever
    put in a notice, a log or storage. */
 
-import { errorCode, isSessionEnded, write } from "../../vault/index";
+import { decodeQrImageFile, errorCode, isSessionEnded, QR_IMPORT_TEXT, QrImportError, write } from "../../vault/index";
 import { fieldName } from "./inspector.js";
 import { FIELD_TYPES } from "./fields.js";
 
@@ -50,7 +50,7 @@ export const writeMethods = {
    * whose one field is free text: "+ New note" opens the form with that field labelled `note` and the entry type pinned to `note`.
    */
   openAddDlg(nid,note){
-    this.setState(st=>({dialog:'addEntry',addNode:nid,addName:'',addMode:'single',bulkText:'',splitSegs:false,typeOverrides:{},singleFields:[{label:note?'note':'',value:''}],entryTypeOverride:note?'note':null,preview:null,previewBusy:false,addBusy:false,fieldErrors:omitErrors(st.fieldErrors,'entry.'),searchOpen:false,ctx:null}));
+    this.setState(st=>({dialog:'addEntry',addNode:nid,addName:'',addMode:'single',bulkText:'',splitSegs:false,typeOverrides:{},singleFields:[{label:note?'note':'',value:''}],entryTypeOverride:note?'note':null,preview:null,previewBusy:false,addBusy:false,qrRead:false,fieldErrors:omitErrors(st.fieldErrors,'entry.'),searchOpen:false,ctx:null}));
   },
   /**
    * Change the form, then preview what it holds again.  Save stays off until the preview that matches the form has arrived, so a
@@ -137,25 +137,28 @@ export const writeMethods = {
     this._savingEntry=true;
     this.setState(st=>({addBusy:true,fieldErrors:omitErrors(st.fieldErrors,'entry.')}));
     try{
-      let created=0, held=0, partial=null, readback=null, warned='';
+      let created=0, held=0, partial=null, readback=null, warned='', seedEntry=null, seedCount=0; // ADR-111: an entry holding a field that could be a 2FA seed
       const inputs=plan.items.map(it=>({name:it.name,fields:it.fields,entryType:pin}));
       if(total===1){
         const r=await write.createEntry(this.model,nid,inputs[0]);
         if(r.pending)held=1; else created=1;
         readback=r.readbackError||null;
         warned=write.nameWarningText(r);
+        if(!r.pending&&write.possibleSeedIds(r).length){ seedEntry=r.entry; seedCount=1; }
       } else {
         const r=await write.createEntries(this.model,nid,inputs);
         created=r.created.filter(c=>!c.pending).length; held=r.created.filter(c=>c.pending).length;
         if(!r.complete&&r.failed)partial={name:r.failed.name};
         readback=r.readbackError||null;
         warned=write.nameWarningText(r,true);
+        seedCount=r.created.filter(c=>!c.pending&&write.possibleSeedIds(c).length).length;
       }
       const done=again&&!partial;
       this._pvSeq=(this._pvSeq||0)+1; clearTimeout(this._pvT);
-      this.setState({addName:'',singleFields:[{label:keepNote?'note':'',value:''}],bulkText:'',entryTypeOverride:keepNote?'note':null,typeOverrides:{},preview:null,previewBusy:false,dialog:done?'addEntry':null,addBusy:false});
+      this.setState({addName:'',singleFields:[{label:keepNote?'note':'',value:''}],bulkText:'',entryTypeOverride:keepNote?'note':null,typeOverrides:{},preview:null,previewBusy:false,dialog:done?'addEntry':null,addBusy:false,qrRead:false});
       if(nid!==this.state.selected)this.select(nid); else { this.buildEntryNodes(nid); this.renderGraph(); }
       if(done)setTimeout(()=>{ const el=document.querySelector('.cm-modal-panel input[aria-label="entry name"]'); if(el)el.focus(); },30); // "add another": back to the name field
+      if(seedEntry&&!done)this.openEntryDetail(nid,{id:seedEntry}); // the warning and its one-click answer are in the entry's own view
       const many=(n)=>n+(n===1?' entry':' entries');
       let note;
       if(partial)note={kind:'warn',text:`Saved ${many(created+held)} of ${total} in ${nid}; stopped at “${partial.name}”. The rest were not written.`};
@@ -164,6 +167,8 @@ export const writeMethods = {
       else note={kind:'success',text:`Saved ${many(created)} to ${nid}.`};
       // A name the broker accepted but wants noticed (ADR-084): said in the same notice, never blocking.
       if(warned)note={...note,kind:note.kind==='error'?'error':'warn',text:note.text+' '+warned};
+      // A field that could be a 2FA seed (ADR-111, issue #40): said in the same notice, never blocking.  A notice never names a label; the entry's own view does.
+      if(seedCount&&!partial)note={...note,kind:note.kind==='error'?'error':'warn',text:note.text+(seedCount===1?(seedEntry&&!done?' A field in it could be a 2FA seed: it is open so you can mark it.':' A field in it could be a 2FA seed: open the entry to mark it.'):` ${seedCount} of them have a field that could be a 2FA seed: open them to mark it.`)};
       if(note.flash)this.pendingFlash(note.text);
       // The broker wrote it; only the re-read failed. The form is already gone (a retry would meet entry_exists), and the notice says so.
       if(readback)this.savedButNotRefreshed(readback,note.text);
@@ -177,10 +182,50 @@ export const writeMethods = {
       this.setState({addBusy:false});
     }
   },
+  /**
+   * ADR-160: an authenticator QR code from an image.  The image is decoded in the page (src/vault/qr-import.ts, jsQR, no network) and the
+   * otpauth:// URI it holds is put in the first empty value box (or a new field), exactly as if it had been pasted there: the shell's
+   * preview types it a 2FA seed and Save sends what it sends for a pasted URI.  Nothing is saved until Save.  The image, its pixels and the
+   * URI never reach a notice, the console or storage; an error says only why (QrImportError's code), never what the image held.
+   */
+  async importQrImage(file){
+    if(!file||this._qrBusy||this.state.dialog!=='addEntry')return;
+    this._qrBusy=true;
+    this.setState(st=>({qrBusy:true,fieldErrors:omitErrors(st.fieldErrors,'entry.qr')}));
+    try{
+      const uri=await decodeQrImageFile(file,this._qrImageApi);
+      if(this.state.dialog!=='addEntry')return; // closed while decoding: the seed is dropped, not put into a form nobody sees
+      this.editEntryForm(st=>{
+        const fields=[...(st.singleFields||[])];
+        const at=fields.findIndex(f=>f.value==='');
+        if(at>=0)fields[at]={...fields[at],value:uri}; else fields.push({label:'',value:uri});
+        return {addMode:'single',singleFields:fields,typeOverrides:{}};
+      });
+      this.setState({qrRead:true});
+    }catch(e){
+      const text=e instanceof QrImportError?e.message:QR_IMPORT_TEXT.unreadable;
+      this.setState(st=>({fieldErrors:{...st.fieldErrors,'entry.qr':text},qrRead:false}));
+    }finally{
+      this._qrBusy=false;
+      this.setState({qrBusy:false});
+    }
+  },
+  /** The file input's change: read the one chosen file, then empty the input so the same file can be chosen again. */
+  onQrFileChosen(ev){
+    const input=ev&&ev.target, file=input&&input.files&&input.files[0];
+    if(input)input.value='';
+    return this.importQrImage(file);
+  },
+  /** A drop on the QR zone: the first file only.  preventDefault keeps the webview from opening the image itself. */
+  onQrDrop(ev){
+    if(ev&&ev.preventDefault)ev.preventDefault();
+    const files=ev&&ev.dataTransfer&&ev.dataTransfer.files;
+    return this.importQrImage(files&&files[0]);
+  },
   entryFormDirty(){ const s=this.state; return !!(s.addName||s.bulkText||s.preview||(s.singleFields||[]).some(f=>f.value||f.label&&f.label!=='note')); },
   wipeEntryForm(){
     this._pvSeq=(this._pvSeq||0)+1; this._pvPending=false; clearTimeout(this._pvT); // an answer still on its way must not put what was typed back
-    this.setState(st=>({addName:'',singleFields:[{label:'',value:''}],bulkText:'',splitSegs:false,entryTypeOverride:null,typeOverrides:{},preview:null,previewBusy:false,addBusy:false,fieldErrors:omitErrors(st.fieldErrors,'entry.')}));
+    this.setState(st=>({addName:'',singleFields:[{label:'',value:''}],bulkText:'',splitSegs:false,entryTypeOverride:null,typeOverrides:{},preview:null,previewBusy:false,addBusy:false,qrRead:false,fieldErrors:omitErrors(st.fieldErrors,'entry.')}));
   },
   /** What was typed is a secret. It must not outlive its dialog: any close (Cancel, Escape, the scrim, a lock) leaves the form empty. */
   scheduleEntryFormWipe(){
@@ -392,9 +437,9 @@ export const writeMethods = {
     const sealLines=sealN?[
       {text:`${sealN.counts.entries} entries (${sealN.counts.totp} 2FA) move to ORPHANED`},
       {text:'their names stay visible; their values become unreadable to every agent and every automated path'},
-      {text:'while sealed they can only be opened with presence (Touch ID), which this beta cannot attest yet; restoring the node is the way back'},
+      {text:'while sealed they can only be opened one at a time with Touch ID (set it up in Settings → Security); restoring the node within 7 days is the easy way back'},
       ...(si.grants.length?[{text:`${si.grants.length} grant${si.grants.length===1?'':'s'} touching this node ${si.grants.length===1?'is':'are'} revoked`}]:[]),
-      {text:'you can restore the node for 7 days (Settings → Nodes, until you lock the vault); after that its key is destroyed'}
+      {text:'you can restore the node for 7 days (Settings → Nodes), also after a lock or a restart; after that its key is destroyed'}
     ]:[];
 
     // add node
@@ -409,10 +454,10 @@ export const writeMethods = {
       addNodeLockedNote:lockedNode,
       addNodeLockedText:`${s.addNode} is locked: the entry will be held in the review tray until you unlock the node and accept it. Nothing is written to the node yet.`,
       addNode:s.addNode,
-      onAddNode:(ev)=>this.setState({addNode:ev.target.value}),
+      onAddNode:(ev)=>this.setState({addNode:ev.target.value},()=>this.scheduleSimilar()),
       addNodeOpts:nodeOpts,
       addName:s.addName,
-      onAddName:(ev)=>this.setState(st=>({addName:ev.target.value,fieldErrors:omitErrors(st.fieldErrors,'entry.')})),
+      onAddName:(ev)=>this.setState(st=>({addName:ev.target.value,fieldErrors:omitErrors(st.fieldErrors,'entry.')}),()=>this.scheduleSimilar()),
       addNameOff:split,
       addNameErrShow:!!nameErr,
       addNameErr:nameErr,
@@ -427,6 +472,14 @@ export const writeMethods = {
         onValue:(ev)=>this.editEntryForm(st=>{const a=[...st.singleFields];a[i]={...a[i],value:ev.target.value};return{singleFields:a,typeOverrides:{}};}),
         remove:()=>this.editEntryForm(st=>({singleFields:st.singleFields.filter((_,j)=>j!==i),typeOverrides:{}}))})),
       addFormField:()=>this.setState(st=>({singleFields:[...(st.singleFields||[]),{label:'',value:''}],typeOverrides:{}})),
+      // ADR-160: a 2FA seed from a QR-code image
+      onQrFile:(ev)=>this.onQrFileChosen(ev),
+      onQrDrop:(ev)=>this.onQrDrop(ev),
+      onQrDragOver:(ev)=>{ if(ev&&ev.preventDefault)ev.preventDefault(); },
+      qrBusy:!!s.qrBusy,
+      qrErrShow:!!fe['entry.qr'],
+      qrErr:fe['entry.qr']||'',
+      qrReadShow:!!s.qrRead&&!fe['entry.qr'],
       bulkText:s.bulkText,
       onBulk:(ev)=>this.editEntryForm({bulkText:ev.target.value,typeOverrides:{}}),
       splitSegs:!!s.splitSegs,

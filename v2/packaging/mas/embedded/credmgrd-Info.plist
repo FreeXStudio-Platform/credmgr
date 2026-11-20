@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- ADR-162: the Info.plist linked into Contents/MacOS/credmgrd (the broker (an SMAppService agent)), Mac App Store edition, as a
+     __TEXT,__info_plist section (scripts/release-app.sh, mas mode). A sandboxed tool that runs on its own, not
+     as an inherit child, needs a bundle identifier for its sandbox; a single-file tool has nowhere else to keep
+     one. A TEMPLATE: @MAS_BUNDLE_ID@ and @VERSION@ are filled from packaging/mas/identity.conf and the
+     workspace version. The signing identifier given to codesign is the same string. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>@MAS_BUNDLE_ID@.brokerd</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>credmgrd</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+</dict>
+</plist>

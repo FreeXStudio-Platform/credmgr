@@ -11,6 +11,7 @@
       <span class="t-mono-label">name</span>
       <input aria-label="entry name" value="{{addName}}" onChange="{{onAddName}}" maxLength="200" disabled="{{addNameOff}}" style="font-family:var(--f-mono)" placeholder="vps-root">
       <sc-if value="{{addNameErrShow}}" hint-placeholder-val="{{false}}"><span></span><div class="t-caption is-danger" role="alert">{{addNameErr}}</div></sc-if>
+      <sc-if value="{{addSimilarShow}}" hint-placeholder-val="{{false}}"><span></span><div class="t-caption" role="status" data-name-hint="true">{{addSimilarText}}</div></sc-if>
       <sc-if value="{{addNameBulkNote}}" hint-placeholder-val="{{false}}"><span></span><div class="t-caption">not used while splitting — each segment is named from its first label, or “untitled n”</div></sc-if>
     </div>
     <div style="display:flex;gap:12px;align-items:center">
@@ -27,6 +28,13 @@
           </div>
         </sc-for>
         <div><button class="k-btn" onClick="{{addFormField}}">+ Add field</button></div>
+        <div data-qr-drop="true" onDragOver="{{onQrDragOver}}" onDrop="{{onQrDrop}}" style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:8px 12px;border:1px dashed var(--faint);border-radius:var(--r-sm)">
+          <span class="t-mono-label">2FA QR</span>
+          <span class="t-caption">Drop a PNG or JPEG of an authenticator QR code here, or choose one. It is read on this computer and never saved; the code goes into a field below.</span>
+          <input type="file" accept="image/png,image/jpeg" aria-label="choose a QR code image (PNG or JPEG)" onChange="{{onQrFile}}" disabled="{{qrBusy}}" style="font-family:var(--f-mono);font-size:var(--fs-sm);max-width:100%">
+        </div>
+        <sc-if value="{{qrErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert" data-qr-error="true">{{qrErr}}</div></sc-if>
+        <sc-if value="{{qrReadShow}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status" data-qr-read="true">Read an authenticator code from the image. Name the entry and save; nothing is stored until then.</div></sc-if>
       </div>
     </sc-if>
     <sc-if value="{{addBulk}}" hint-placeholder-val="{{false}}">

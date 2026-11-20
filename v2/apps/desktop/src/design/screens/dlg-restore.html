@@ -1,0 +1,32 @@
+<sc-if value="{{dlgRestore}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:90;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S12b Restore" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-restore-title" style="width:540px;max-width:calc(100vw - 32px);max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div id="dlg-restore-title" class="t-h3" style="font-family:var(--f-mono)">Restore from a backup</div>
+      <div class="t-caption">rebuilds a vault from an archive made by Back up</div>
+    </div>
+    <sc-if value="{{rsFormShow}}" hint-placeholder-val="{{true}}">
+      <div style="display:grid;grid-template-columns:96px 1fr;gap:12px;align-items:start">
+        <span class="t-mono-label" style="padding-top:8px">archive</span>
+        <input aria-label="backup archive file" value="{{rsArchive}}" onChange="{{onRsArchive}}" autocomplete="off" spellcheck="false" style="font-family:var(--f-mono)" placeholder="the archive file's full path">
+        <span class="t-mono-label" style="padding-top:8px">into</span>
+        <input aria-label="folder to restore into" value="{{rsTarget}}" onChange="{{onRsTarget}}" autocomplete="off" spellcheck="false" style="font-family:var(--f-mono)" placeholder="an empty or new folder (left empty: the vault's own folder)">
+        <span class="t-mono-label" style="padding-top:8px">passphrase</span>
+        <input type="password" aria-label="backup passphrase" value="{{rsPass}}" onChange="{{onRsPass}}" autocomplete="off" style="font-family:var(--f-mono)" placeholder="the passphrase the backup was made with">
+      </div>
+      <div class="t-body-sm">The archive is checked whole before anything is written, and it is written into the folder all at once or not at all. A restore never merges into, or overwrites, a vault, and it never runs beside a running broker. The passphrase is the backup's, not the vault's; it is not kept.</div>
+      <sc-if value="{{rsLiveShow}}" hint-placeholder-val="{{false}}"><div class="k-note" role="note" data-restore-live="true" style="margin:0">This window is connected to a running broker, so a restore from here is refused. Quit CredMgr first: the screen it shows when no broker answers offers this restore, or use credmgr restore in a terminal.</div></sc-if>
+    </sc-if>
+    <sc-if value="{{rsDoneShow}}" hint-placeholder-val="{{false}}">
+      <div class="k-note" role="status" data-restore-done="true" style="margin:0;display:flex;flex-direction:column;gap:6px">
+        <sc-for list="{{rsDoneLines}}" as="l" hint-placeholder-count="3"><div style="font-family:var(--f-mono);font-size:var(--fs-xs);overflow-wrap:anywhere">{{l.text}}</div></sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{rsErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert" style="overflow-wrap:anywhere">{{rsErr}}</div></sc-if>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="k-btn" onClick="{{cancelRestoreDlg}}">{{rsCloseLabel}}</button>
+      <sc-if value="{{rsFormShow}}" hint-placeholder-val="{{true}}"><button class="k-btn" data-variant="primary" onClick="{{saveRestoreForm}}" disabled="{{rsSaveDisabled}}">{{rsSaveLabel}}</button></sc-if>
+    </div>
+  </div>
+</div>
+</sc-if>

@@ -55,7 +55,12 @@ fn depth1(id: &str, label: &str, workdir: &Path) -> Node {
         depth: 1,
         parent_id: Some(GLOBAL_ID.to_string()),
         workdirs: vec![workdir.to_string_lossy().into_owned()],
-        policy: NodePolicy::default(),
+        // ADR-140: these tests read `high` entries as an agent and are about the CLI/MCP surface; the security-level
+        // behaviour has its own suite (`crates/brokerd/tests/security_levels.rs`).
+        policy: NodePolicy {
+            security_level: credmgr_core::registry::SecurityLevel::Open,
+            ..NodePolicy::default()
+        },
     }
 }
 
@@ -125,6 +130,8 @@ fn start_fixture_broker() -> Fixture {
         expires_at: None,
         rotated_at: None,
         has_totp: false,
+        aliases: Vec::new(),
+        tags: Vec::new(),
     });
     state.set_manifest("acme", acme_manifest);
     let sealed = envelope::seal(b"acme-secret-value", &acme_pub, "acme", acme_entry_id).unwrap();
@@ -150,6 +157,8 @@ fn start_fixture_broker() -> Fixture {
         expires_at: None,
         rotated_at: None,
         has_totp: false,
+        aliases: Vec::new(),
+        tags: Vec::new(),
     });
     state.set_manifest("linux", linux_manifest);
     let sealed_linux =

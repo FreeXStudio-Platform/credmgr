@@ -10,7 +10,7 @@
  */
 import { FIXTURE_ENROL_CODE, FIXTURE_GATE_CODE, FIXTURE_PASSPHRASE, FIXTURE_ROOT_RECOVERY_CODE } from "../fixtures/broker/index";
 import { expect, test, type App } from "./harness";
-import { fillBulk, fillSingle, notice, openAddEntry, openSettingsNodes, stateJson } from "./wp-c-util";
+import { fillBulk, fillSingle, focusSettled, notice, openAddEntry, openSettingsNodes, stateJson } from "./wp-c-util";
 import { everything, openSettings } from "./wp-d-helpers";
 
 const rail = (app: App, label: string) => app.page.locator(".cm-rail .k-tree-row", { hasText: label });
@@ -174,7 +174,7 @@ test.describe("the other writes that re-read: rename, lock, unlock, revoke a gra
     await expect(app.screen("S1 Main")).toBeVisible();
     await (await ctxMenu(app, "beacon")).getByRole("button", { name: "Rename" }).click();
     await broker.script("graph_snapshot", { error: { code: "internal" } });
-    const input = page.locator(".cm-rail input");
+    const input = page.locator(".cm-rail li input");
     await input.fill("Beacon East");
     await input.press("Enter");
     await expect(notice(app)).toContainText("Renamed. The screen could not be refreshed (internal); reload to see it.");
@@ -267,11 +267,7 @@ async function unlockWithGate(app: App) {
 }
 
 test.describe("second factor in Settings → Security", () => {
-  test("a vault with none: Set up… shows the QR and the key, a wrong code is refused, the right one shows the recovery codes once, and the gate is in force", async ({ app, browserName }) => {
-    // QUARANTINED on WebKit (OPEN_WORK_REGISTER.md QT-1, 2026-10-26): the same `fill` on the authenticator-code box races the design's delayed
-    // focus move into the dialog, so the wrong code is sometimes typed nowhere and the "not accepted" alert never appears. Failed in an independent
-    // full pass and 1 of 3 alone on a quiet machine. Every assertion stays; Chromium still runs the test.
-    test.fixme(browserName === "webkit", "QT-1: WebKit focus race on the authenticator-code box");
+  test("a vault with none: Set up… shows the QR and the key, a wrong code is refused, the right one shows the recovery codes once, and the gate is in force", async ({ app }) => {
     const { page } = app;
     const broker = (await app.open({ broker: { locked: false } }))!;
     await expect(app.screen("S1 Main")).toBeVisible();
@@ -292,6 +288,7 @@ test.describe("second factor in Settings → Security", () => {
     await expect(confirm).toBeDisabled(); // until six digits are typed
 
     // a wrong code: refused next to the field, nothing enrolled, the input is empty again, the QR is still there
+    await focusSettled(dlg.getByLabel("authenticator code")); // QT-1: the design's own focus move onto this box has landed
     await dlg.getByLabel("authenticator code").fill("000000");
     await expect(dlg.getByRole("alert")).toContainText("That code was not accepted.");
     expect((await broker.calls("vault_gate_enroll_confirm")).map((c) => c.args)).toEqual([{ code: "000000" }]);
@@ -345,17 +342,14 @@ test.describe("second factor in Settings → Security", () => {
     expect(await broker.calls("vault_gate_enroll_confirm")).toEqual([]);
   });
 
-  test("Lock (⌘L) with the dialog open drops the key and the codes with everything else", async ({ app, browserName }) => {
-    // QUARANTINED on WebKit (OPEN_WORK_REGISTER.md QT-1, 2026-10-26): `fill` on the authenticator-code box races the design's delayed focus move into
-    // the dialog (the same race tests/e2e/wp-c-util.ts dialogFocusSettled describes), so the code is sometimes typed nowhere and the recovery codes
-    // never appear. 3 of 10 runs under load, the same on the base commit. Every assertion stays; Chromium still runs the test.
-    test.fixme(browserName === "webkit", "QT-1: WebKit focus race on the authenticator-code box");
+  test("Lock (⌘L) with the dialog open drops the key and the codes with everything else", async ({ app }) => {
     const { page } = app;
     await app.open({ broker: { locked: false } });
     await expect(app.screen("S1 Main")).toBeVisible();
     await openSettings(app, "Security");
     await page.getByRole("button", { name: "Set up…" }).click();
     const dlg = gateDialog(app);
+    await focusSettled(dlg.getByLabel("authenticator code")); // QT-1: the design's own focus move onto this box has landed
     await dlg.getByLabel("authenticator code").fill(FIXTURE_ENROL_CODE);
     await expect(dlg.locator('[data-gate-codes="true"]')).toContainText(RC1);
     await page.keyboard.press("Meta+L");
@@ -438,10 +432,7 @@ test.describe("second factor in Settings → Security", () => {
     expect((await broker.state()).gateEnrolled).toBe(true);
   });
 
-  test("a lock while the code is being confirmed: the codes are dropped unseen and the notice says so", async ({ app, browserName }) => {
-    // QT-1 (2026-10-30): the same WebKit focus race as the other authenticator-code tests: the code is sometimes typed before the dialog's
-    // focus move, so the confirm is never sent. Failed in two independent full passes, passed alone. Every assertion stays; Chromium still runs it.
-    test.fixme(browserName === "webkit", "QT-1: WebKit focus race on the authenticator-code box");
+  test("a lock while the code is being confirmed: the codes are dropped unseen and the notice says so", async ({ app }) => {
     const { page } = app;
     const broker = (await app.open({ broker: { locked: false } }))!;
     await expect(app.screen("S1 Main")).toBeVisible();
@@ -451,6 +442,7 @@ test.describe("second factor in Settings → Security", () => {
     await expect(dlg.locator('[data-totp-secret="true"]')).toBeVisible();
     // the broker has already accepted the code (it answers, slowly, with the recovery codes) when the lock comes
     await broker.script("vault_gate_enroll_confirm", { delayMs: 900, result: { recoveryCodes: [RC1] } });
+    await focusSettled(dlg.getByLabel("authenticator code")); // QT-1: the design's own focus move onto this box has landed
     await dlg.getByLabel("authenticator code").fill(FIXTURE_ENROL_CODE);
     await expect.poll(async () => (await broker.calls("vault_gate_enroll_confirm")).length).toBe(1);
     await page.keyboard.press("Meta+L");
@@ -556,7 +548,9 @@ test.describe("a node whose entries cannot be listed", () => {
       const { page } = app;
       const broker = (await app.open({ broker: { locked: true } }))!;
       await expect(app.screen("S16 Lock screen")).toBeVisible();
-      await broker.script("entry_list", { error: { code } }); // the first node the app reads is refused
+      const pass = { delayMs: 0 }; // answered by the real handler
+      // the first node the app reads is refused (five nodes are listed at the load), and so is the read when that node is selected (#23)
+      await broker.script("entry_list", { error: { code } }, pass, pass, pass, pass, { error: { code } });
       await page.locator('input[type="password"]').fill(FIXTURE_PASSPHRASE);
       await page.getByRole("button", { name: "Unlock", exact: true }).click();
       await expect(app.screen("S1 Main")).toBeVisible();
@@ -598,7 +592,8 @@ test.describe("a node whose entries cannot be listed", () => {
   test("the mark clears when the node can be read again (a write re-reads it), and Unlock node is offered for a locked one", async ({ app }) => {
     const { page } = app;
     const broker = (await app.open({ broker: { locked: true } }))!;
-    await broker.script("entry_list", { error: { code: "node_locked" } });
+    const pass = { delayMs: 0 };
+    await broker.script("entry_list", { error: { code: "node_locked" } }, pass, pass, pass, pass, { error: { code: "node_locked" } }); // the load (five nodes), then the read when the node is selected (#23)
     await page.locator('input[type="password"]').fill(FIXTURE_PASSPHRASE);
     await page.getByRole("button", { name: "Unlock", exact: true }).click();
     await expect(app.screen("S1 Main")).toBeVisible();
@@ -618,6 +613,7 @@ test.describe("a node whose entries cannot be listed", () => {
   test("the orphaned node that cannot be listed is not 'Nothing is orphaned'", async ({ app }) => {
     const { page } = app;
     const broker = (await app.open({ broker: { locked: true } }))!;
+    await broker.set({ orphanedMetaAbsent: true }); // a broker that predates ADR-120 names the items in no other way than the node's own list
     // global, atlas, staging, beacon, cobalt are listed first (five calls); the orphaned node's list is the sixth
     const pass = { delayMs: 0 }; // answered by the real handler
     await broker.script("entry_list", pass, pass, pass, pass, pass, { error: { code: "node_access_denied" } });

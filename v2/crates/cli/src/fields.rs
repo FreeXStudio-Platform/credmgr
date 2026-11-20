@@ -299,12 +299,18 @@ fn cmd_ls(mut args: Vec<String>) -> Result<(), String> {
     );
     for (i, f) in fields.iter().enumerate() {
         println!(
-            "{i}\t{}\t{}\t{}{}",
+            "{i}\t{}\t{}\t{}{}{}",
             f["id"].as_str().unwrap_or("?"),
             shown(f["label"].as_str().unwrap_or("")),
             f["type"].as_str().unwrap_or("?"),
             if f["masked"].as_bool() == Some(true) {
                 "\tmasked"
+            } else {
+                ""
+            },
+            // Issue #40: untyped, but shaped like a 2FA seed.
+            if f["possibleSeed"].as_bool() == Some(true) {
+                "\tcould be a 2FA seed: credmgr field set --type totp-seed"
             } else {
                 ""
             },
@@ -346,6 +352,7 @@ fn cmd_add(mut args: Vec<String>) -> Result<(), String> {
         params["position"] = json!(position);
     }
     let value = call("field.add", params)?;
+    crate::offer_seed_typing(&node, &name, &value);
     let added = value["added"].as_array().map_or(0, Vec::len);
     println!(
         "added {added} field{} to '{name}' — it now has {}",

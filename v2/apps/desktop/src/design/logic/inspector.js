@@ -8,13 +8,14 @@
                          from nothing else; a bridge entry's list row carries no labels, so no field is invented for it
      entry.reveal        ONE field's value (fieldIds: [id]), held in the model's private store for the reveal window; and, in one
                          read, the fields that are not masked, so they show without a click (ADR-078: a reveal, audited)
-     totp.code           a TOTP-seed field's current code instead of a reveal; totp.seed is asked for and refused (presence)
+     totp.code           a TOTP-seed field's current code instead of a reveal
+     totp.seed           "show seed": presence-gated (ADR-098, Touch ID proof attached by the shell); an answer is held and shown like a reveal, a refusal is routed
      entry.reveal (Rust) the Copy button: the shell reveals the ONE field and writes the concealed clipboard; the value never reaches here
    What changes the fields (the menu, the dialogs, add / edit / remove / reorder) is in fields.js.
    A locked NODE is read from the snapshot (gate.locked): its entries keep their names, and the detail shows the per-node
    locked panel instead of reveal and copy.  A locked VAULT never reaches this file: it is the Lock screen. */
 
-import { copyEntry, errorCode, fieldKeyOf, loadEntryDetail, loadNotes, readTotp, readTotpSeed, revealUnmasked } from "../../vault/index";
+import { copyEntry, errorCode, fieldKeyOf, loadEntryDetail, loadNotes, readTotp, readTotpSeed, revealUnmasked, seedSlot } from "../../vault/index";
 
 const MASK = "••••••••••••";
 const TOTP_STEP_MS = 30000;
@@ -48,24 +49,46 @@ export const inspectorMethods = {
     });
     this._unmaskedFor=null;
     this.model.wipeSecrets(); // a revealed value does not follow the user to another node
-    if(id!=='__orphan') this.rereadNote(id);
+    if(id!=='__orphan'){ this.rereadNote(id); this.rereadEntries(id); }
     this.buildEntryNodes(id); setTimeout(()=>this.renderGraph(),0);
+  },
+  /**
+   * Read a node's entry list again.  Selecting a node is the explicit "show me this node": an entry written from outside the app (the command
+   * line, an agent) has to appear without a lock and unlock or a write of our own.  Never while another read of the same node is running.
+   */
+  rereadEntries(id){
+    const n=this.node(id);
+    if(!n||n.gate.locked||this.model.status!=='unlocked')return;
+    this.model.refresh({nodes:[id]}).then(()=>{ if(this.state.selected===id){ this.buildEntryNodes(id); this.renderGraph(); } },(e)=>this.routeReadError(e,{op:'entry.list',node:id,retry:()=>this.rereadEntries(id)}));
   },
   /** Read a node's note again (selecting a node is the explicit "show me this node"; the note may have changed since). */
   rereadNote(id){
     const n=this.node(id);
     if(!n||n.gate.locked||this.model.status!=='unlocked')return;
     (this._notesAsked||(this._notesAsked=new Set())).add(id);
-    loadNotes(this.model,id).catch(e=>this.routeReadError(e,{op:'notes.read',node:id,retry:()=>this.rereadNote(id)}));
+    this.readNoteQuietly(id);
   },
   /** The first time a node's inspector is drawn and its note has never been read: read it (once per unlocked session). */
   wantNotes(n){
-    if(this.model.status!=='unlocked'){ this._notesAsked=null; return; }
+    if(this.model.status!=='unlocked'){ this._notesAsked=null; this._notesHeld=null; return; }
     if(n.gate.locked||n.notes!==null)return;
     const asked=this._notesAsked||(this._notesAsked=new Set());
     if(asked.has(n.id))return;
     asked.add(n.id);
-    setTimeout(()=>{ loadNotes(this.model,n.id).catch(e=>this.routeReadError(e,{op:'notes.read',node:n.id,retry:()=>this.rereadNote(n.id)})); },0); // never start a request from inside a render
+    setTimeout(()=>{ this.readNoteQuietly(n.id); },0); // never start a request from inside a render
+  },
+  /**
+   * The inspector's own, automatic note read.  With "Confirm before showing secrets" on and no live confirmation, the broker refuses it
+   * (`confirmation_required`, ADR-156 §5); the confirm dialog is not opened for it (confirm.js), so the refusal arrives here as a
+   * cancelled confirmation.  That is not an error: the note is simply held back until the person has confirmed for something else and
+   * selects the node again (`_notesHeld`, shown by noteText).  Any other failure is routed as before.
+   */
+  readNoteQuietly(id){
+    const held=this._notesHeld||(this._notesHeld=new Set());
+    return loadNotes(this.model,id).then(()=>{ if(held.delete(id)&&this._mounted)this.forceUpdate(); },(e)=>{
+      if(errorCode(e)==='confirmation_required'){ held.add(id); if(this._mounted)this.forceUpdate(); return; }
+      this.routeReadError(e,{op:'notes.read',node:id,retry:()=>this.rereadNote(id)});
+    });
   },
   /** Every rejection of a read-path call goes here.  A locked node is the locked panel (derived from the node's gate), not a notice. */
   routeReadError(e,ctx){
@@ -150,7 +173,8 @@ export const inspectorMethods = {
   /** Show or hide one field.  The value is fetched into the model's secret store for the reveal window and nowhere else. */
   async toggleReveal(node,en,f,i){
     const fk=fieldKeyOf(f,i), key=en.id+':'+fk, totp=f.type==='totp-seed';
-    if(this.state.reveals[key]){ this.model.hide(node,en.id,fk); this.setState(st=>{const rv={...st.reveals};delete rv[key];return{reveals:rv};}); return; }
+    const sk=key+'#seed'; // a seed shown by "show seed" sits beside the code: hide takes both away
+    if(this.state.reveals[key]||this.state.reveals[sk]){ this.model.hide(node,en.id,fk); this.model.hide(node,en.id,seedSlot(fk)); this.setState(st=>{const rv={...st.reveals};delete rv[key];delete rv[sk];return{reveals:rv};}); return; }
     this._busy=this._busy||{};
     if(this._busy[key])return; // a second click while the first is in flight must not ask the broker twice
     this._busy[key]=true;
@@ -175,7 +199,7 @@ export const inspectorMethods = {
    * A secret is never written with navigator.clipboard.
    */
   async copyField(node,en,f,i){
-    if(f.type==='totp-seed')return; // a code is shown, never copied; the seed is not available
+    if(f.type==='totp-seed')return; // a code is shown, never copied; a seed shown by "show seed" is never copied either
     const key=en.id+':'+fieldKeyOf(f,i);
     let r;
     try{ r=await copyEntry(this.model,node,en.id,f.id); }
@@ -183,21 +207,40 @@ export const inspectorMethods = {
     if(!r.copied){ this.notify('info','Copy is not available in this build.'); return; }
     this.setState(st=>({copied:{...st.copied,[key]:Date.now()+1500}}));
   },
-  /** "show seed": asked for, and refused (presence).  If the broker ever answered, the answer is dropped unread. */
+  /**
+   * "show seed": `totp.seed` is presence-gated (ADR-098): the shell asks for Touch ID and attaches the proof.  If the broker answers, the seed is
+   * held in the model's private store for the reveal window and shown in the field's row like a revealed value (re-masked by the same timer,
+   * wiped on lock, node change and window hide; never copied, logged or persisted).  A refusal (presence_required: no Touch ID set up or the
+   * prompt was cancelled) goes to routeReadError, whose words say how to set Touch ID up.
+   */
   async showTotpSeed(node,en,f){
-    try{ await readTotpSeed(this.model,node,en.id,f?f.id:undefined); this.notify('info','The seed is not shown in this build.'); }
-    catch(e){ this.routeReadError(e,{op:'totp.seed',node,entry:en.id}); }
+    const fk=f&&f.id?f.id:0, key=en.id+':'+fk+'#seed';
+    // Q4 (design drop 2026-11-08): while the seed is showing the same button reads "hide seed" and takes away the seed only; a code shown
+    // beside it stays until its own timer or the reveal's "hide" (which still takes both).  Nothing is asked of the broker to hide.
+    const shownUntil=this.state.reveals[key];
+    if(shownUntil&&shownUntil>Date.now()&&this.model.plain(node,en.id,seedSlot(fk))!==undefined){ this.model.hide(node,en.id,seedSlot(fk)); this.setState(st=>{const rv={...st.reveals};delete rv[key];return{reveals:rv};}); return; }
+    this._busy=this._busy||{};
+    if(this._busy[key])return;
+    this._busy[key]=true;
+    const ms=(this.state.revealWindowSecs||20)*1000;
+    let r;
+    try{ r=await readTotpSeed(this.model,node,en.id,ms,f?f.id:undefined); }
+    catch(e){ this.routeReadError(e,{op:'totp.seed',node,entry:en.id}); return; }
+    finally{ this._busy[key]=false; }
+    if(!r.held)return; // hidden, moved on, window hidden or locked while the prompt was up: dropped on arrival
+    if(this.model.status!=='unlocked'||this.state.openEntry!==en.id){ this.model.hide(node,en.id,seedSlot(fk)); return; }
+    this.setState(st=>({reveals:{...st.reveals,[key]:r.expiresAt}}));
   },
-  /** "open" on a sealed item: ask the broker.  It refuses without presence (R0); if it ever answered, the item opens like an entry. */
+  /** "open" on a sealed item: the broker's `orphan.reveal` (ADR-098).  It costs a fresh second factor and a Touch ID check every time; without Touch ID it refuses (R0) and the router says how to set it up. */
   async openOrphanItem(o){
-    const node=this.model.orphanNodeId; if(!node)return;
+    const node=this.model.orphanNodeId||'orphan'; // the broker leaves the orphaned node out of the snapshot (R0), but its id is fixed
     const ms=(this.state.revealWindowSecs||20)*1000;
     let held;
     this._openingOrphan=o.id;
     try{ held=await this.model.reveal(node,o.id,0,ms); }
     catch(e){
-      // R0: the orphaned node is native + presence only, and presence cannot be attested in this build, so the broker's denial IS the
-      // presence refusal.  It goes through the router like every other error, as the standard presence notice.
+      // R0: the orphaned node is the owner with a live Touch ID proof only; a refusal without one goes through the router as the
+      // standard presence notice (the shell asks for the fingerprint itself when this Mac has Touch ID set up).
       const r0=errorCode(e)==='node_access_denied'&&e.detail&&e.detail.rule==='R0';
       this.routeReadError(r0?{...e,code:'presence_required'}:e,{op:'entry.reveal',node,entry:o.id}); return;
     }
@@ -247,23 +290,31 @@ export const inspectorMethods = {
     if(unmaskedMissing.length)this.wantUnmasked(nodeId,openE,unmaskedMissing);
     const unmaskedBusy=!!(detailKey&&this._unmaskedPending&&this._unmaskedPending[detailKey]);
     const entryFields=fieldsSrc.map((f,i)=>{ const fk=fieldKeyOf(f,i), key=openE.id+':'+fk; const until=s.reveals[key]; const revealed=!!(until&&until>now);
-      const totp=f.type==='totp-seed'; // a seed is never shown or copied: its code is
+      const totp=f.type==='totp-seed'; // its code is shown on reveal; the seed only through "show seed" (presence-gated)
       const keepMasked=f.masked||totp;
-      const masked=keepMasked&&!revealed;
-      const text=masked?undefined:this.model.plain(nodeId,openE.id,fk); // from the model's private store (revealed, or fetched as unmasked); never from the view
-      const secs=revealed?Math.ceil((until-now)/1000):0;
-      const span=totp?Math.min(revealMs,TOTP_STEP_MS):revealMs;
-      const shown=text===undefined?(masked?MASK:(unmaskedBusy?'…':'—')):(totp?groupCode(text):(text===''?'(empty)':text));
+      const seedUntil=totp?s.reveals[key+'#seed']:0, seedText=seedUntil&&seedUntil>now?this.model.plain(nodeId,openE.id,seedSlot(fk)):undefined, seedLive=seedText!==undefined;
+      const masked=keepMasked&&!revealed&&!seedLive;
+      const text=seedLive?seedText:masked?undefined:this.model.plain(nodeId,openE.id,fk); // from the model's private store (revealed, or fetched as unmasked); never from the view
+      const shownUntil=seedLive?seedUntil:until, counting=revealed||seedLive;
+      const secs=counting?Math.ceil((shownUntil-now)/1000):0;
+      const span=seedLive?revealMs:totp?Math.min(revealMs,TOTP_STEP_MS):revealMs;
+      const shown=text===undefined?(masked?MASK:(unmaskedBusy?'…':'—')):(seedLive?text:totp?groupCode(text):(text===''?'(empty)':text));
       const menuOpen=!isOrphan&&s.fieldMenu===key;
       const last=fieldsSrc.length===1;
       return { id:f.id||String(i), label:fieldName(f,i), type:f.type, masked:masked?'true':'false', maskable:keepMasked, groupLabel:fieldName(f,i)+' ('+f.type+')',
         sensClass:'sens-'+(isOrphan?(openE.sensitivity||this.fieldSensTier(f.type)):this.fieldSensTier(f.type)),
-        display:shown, counting:revealed, pct:revealed?Math.min(100,(until-now)/span*100)+'%':'0%', secs:String(secs),
-        revealLabel:revealed?'hide':(totp?'show code':'reveal'),
+        display:shown, counting, pct:counting?Math.min(100,(shownUntil-now)/span*100)+'%':'0%', secs:String(secs),
+        revealLabel:counting?'hide':(totp?'show code':'reveal'),
+        // a11y: the button's polite announcement carries the re-mask time once; the per-second countdown itself is hidden from AT
+        revealAria:counting?'hide, re-masks in '+Math.round(span/1000)+' seconds':(totp?'show code':'reveal'),
         revealTitle:totp?'the current code, valid until the next 30 s step':'visible '+(s.revealWindowSecs||20)+' s, then re-masks',
         reveal:()=>this.toggleReveal(nodeId,openE,f,i),
         canCopy:!totp&&!isOrphan, copyLabel:(s.copied[key]&&s.copied[key]>now)?'copied':'copy', copy:()=>this.copyField(nodeId,openE,f,i),
         isTotp:totp, showSeed:()=>this.showTotpSeed(nodeId,openE,f),
+        seedLabel:seedLive?'hide seed':'show seed', seedTitle:seedLive?'hide the seed only; a code shown beside it stays':'showing a seed needs Touch ID',
+        seedHint:!isOrphan&&!totp&&f.possibleSeed===true, // ADR-111: the broker says this could be a 2FA seed that is typed as something else
+        seedHintText:'“'+fieldName(f,i)+'” could be a 2FA seed. Until it is typed as one, anyone who may reveal this entry can read it.',
+        seedMark:()=>this.markSeed(nodeId,openE,f),
         canMenu:!isOrphan, menuOpen, menuLabel:'actions for '+fieldName(f,i), toggleMenu:()=>this.toggleFieldMenu(key),
         menuItems:isOrphan?[]:[
           {label:'Edit…',title:'',color:'var(--bone)',disabled:false,go:()=>this.openFieldDlg('edit',nodeId,openE,f,i)},
@@ -272,7 +323,7 @@ export const inspectorMethods = {
           {label:'Remove…',title:last?'an entry keeps at least one field':'',color:'var(--danger-fg)',disabled:last,go:()=>this.openFieldDlg('remove',nodeId,openE,f,i)},
         ] };
     });
-    const noteText=!sel?'':sel.gate.locked?'locked — unlock the node to read its note':sel.notes===null?'—':(sel.notes===''?'No note.':sel.notes);
+    const noteText=!sel?'':sel.gate.locked?'locked — unlock the node to read its note':sel.notes===null?(this._notesHeld&&this._notesHeld.has(sel.id)?'Hidden until you confirm it is you. Confirm for any reveal, then select this node again.':'—'):(sel.notes===''?'No note.':sel.notes);
     return {
       entryUnlocked:!nodeLocked,
       entryLockedShow:nodeLocked,
@@ -316,6 +367,10 @@ export const inspectorMethods = {
       fieldsShow:inEntry&&(isOrphan||!!detail),
       fieldsEditable:!isOrphan&&!!detail,
       addFieldOpen:()=>{ if(openE&&detail)this.openFieldDlg('add',nodeId,openE,null,fieldsSrc.length); },
+      aliasOpen:()=>{ if(openE&&detail)this.openAliasDlg(nodeId,openE,detail); },
+      aliasShow:!!(detail&&detail.aliases&&detail.aliases.length&&!isOrphan),
+      aliasText:detail&&detail.aliases?detail.aliases.join(' · '):'',
+      openImportEnv:()=>{ if(sel)this.openImportDlg(sel.id); },
       openAddEntry:()=>this.openAddDlg(sel?sel.id:'global'),
       openAddNote:()=>this.openAddDlg(sel?sel.id:'global',true),
       inspOpenClass:s.inspOpen?'is-open':'',

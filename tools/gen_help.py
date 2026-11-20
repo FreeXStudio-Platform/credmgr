@@ -210,7 +210,7 @@ def cli_top_level() -> list[str]:
     text = _read(CLI_MAIN_RS)
     start = text.index("fn run(")
     end = text.index("\nfn ", start + 5)
-    names = re.findall(r'^\s{8}"([a-z]+)"\s*=>', text[start:end], re.M)
+    names = re.findall(r'^\s{8}"([a-z][a-z-]*)"\s*=>', text[start:end], re.M)
     return [n for n in names if n != "help"]
 
 
@@ -366,8 +366,10 @@ ERROR_ADVICE = {
     "rate_limited": ("Authentication failed", "Too many wrong attempts. retryAfterSeconds says how long to wait. Do not retry in a loop."),
     "vault_locked": ("Lock state", "The whole vault is locked. Only entry creation (held for review) is allowed. Do other work or ask the operator to unlock; do not retry in a loop."),
     "node_locked": ("Lock state", "The vault is unlocked but this one node is locked. Ask the operator to unlock the node; the remedy field says how."),
+    "confirmation_required": ("Authentication in progress", "The vault asks the owner's own login to confirm it is still them (Touch ID or the vault passphrase) before a secret is shown or before that rule is weakened. An agent is never asked this; if you see it, you are holding the owner's login, which you should not. Stop and tell the operator."),
     "session_expired": ("Session ended", "The token presented is not a live login. Do not retry with it. An agent using MCP should not hold a token; tell the operator."),
-    "presence_required": ("Transport not capable", "This needs a live presence check that no client of this build can give. Nothing can be done here; tell the operator it is a human, native-app action."),
+    "presence_required": ("Needs a person", "This needs a Touch ID check from the vault's owner. An agent cannot give one; tell the operator it is a human action (the app or the CLI asks for the fingerprint itself)."),
+    "presence_failed": ("Needs a person", "The Touch ID check was missing, expired, already used or did not verify, or Touch ID is not set up. An agent cannot fix it; tell the operator to set up or retry Touch ID."),
     "conflict": ("Concurrency", "Someone changed the entry first. Read it again (credmgr_get_metadata for the new generation), re-apply the change and retry once."),
     "not_found": ("Data state", "No such node, entry, field or request. Check ids with credmgr_list and credmgr_get_metadata."),
     "entry_exists": ("Data state", "That name is already used on the node, or is a look-alike of one that is. Choose another name or update the existing entry."),
@@ -378,6 +380,7 @@ ERROR_ADVICE = {
     "vault_inside_git_working_tree": ("Vault bootstrap", "The vault folder is inside a git working tree and is refused. Not an agent concern."),
     "vault_init_not_pending": ("Vault bootstrap", "No vault creation is in progress. Not an agent concern."),
     "recovery_code_mismatch": ("Vault bootstrap", "The retyped recovery code did not match. Not an agent concern."),
+    "machine_lock_refused": ("Lock state", "The vault's passphrase file is sealed to a Mac whose device key is not here (or it is damaged); 'reason' says which. Unlocking is a human step: tell the operator to open the vault with the recovery code. Not an agent concern; do not retry."),
     "malformed_request": ("Caller error", "Fix the request. The message names the problem (an index or field id, never a value). Check the tool's input schema."),
     "internal": ("Broker fault", "A local failure outside the documented errors. Do not retry in a loop; tell the operator."),
 }
@@ -395,6 +398,7 @@ FORBIDDEN_PLAIN = [
     "Run vault-wide maintenance: verify, doctor, backup.",
     "Rotate the root key.",
     "Enrol, replace or recover the vault's second factor.",
+    "Turn the machine lock on or off, or read its state.",
 ]
 
 HOW_TO_READ = [
@@ -405,6 +409,10 @@ HOW_TO_READ = [
     ("Read a secret value", "credmgr_get", "Pass fieldIds to read only some fields. The answer has 'fields' and, when exactly one field is returned, 'value'. A stored authenticator seed comes back with its value removed; use credmgr_totp_code. May answer approval_pending or two_factor_required: wait for the human."),
     ("Get the current authenticator code for a stored seed", "credmgr_totp_code", "Six digits valid for about thirty seconds. Pass 'field' when the entry holds several fields."),
     ("See what changed recently", "credmgr_recent_changes", "A redacted feed of id, action, time and actor. The ids are what credmgr_undo takes."),
+    ("Read CredMgr's knowledge base", "credmgr_kb", "Markdown: every feature and setting, how to connect, where data lives, the switchboard's rules. Read it once."),
+    ("List every setting and the rule for you", "credmgr_settings_list", "Pass 'node' to include a project's settings (only projects you reach). 'you' says whether a change applies at once or waits for the owner."),
+    ("See one setting and its recent changes", "credmgr_settings_get", "Each recorded change carries the value it replaced and its id, for credmgr_settings_revert."),
+    ("Check a request you made", "credmgr_settings_request", "pending, approved (with the change id), denied or expired. Only the owner decides."),
 ]
 HOW_TO_WRITE = [
     ("Create a new entry", "credmgr_create", "Send either 'value' (with an optional 'label') or a 'fields' array of {label, value}. Send structure: the broker does not parse 'label: value' text. On a locked vault the entry is held in a review tray for the human; tell the operator it is waiting."),
@@ -415,6 +423,8 @@ HOW_TO_WRITE = [
     ("Remove one field", "credmgr_field_remove", "The last field cannot be removed; remove the entry instead."),
     ("Remove an entry", "credmgr_remove", "Soft delete into a seven-day recovery window."),
     ("Undo a rotation, field change or removal", "credmgr_undo", "Address it by the audit record id from credmgr_recent_changes. Itself an audited action."),
+    ("Change a setting", "credmgr_settings_set", "Give a 'reason'. A cosmetic or stricter change applies at once; a weaker one answers state 'pending' with a request id: tell the user it waits for their approval in CredMgr. Never retry it in a loop."),
+    ("Undo a setting change", "credmgr_settings_revert", "Address it by its change id. Same rules as credmgr_settings_set."),
 ]
 
 
@@ -717,7 +727,7 @@ def build_manifest(features: list[dict], ops_meta: dict, facts: Facts) -> dict:
         },
         "version": facts.version,
         "status": f"{facts.version} pre-release",
-        "release_state": "No release has been published. Unsigned, not notarised, Software keystore tier (the passphrase is the key; no Secure Enclave, no Touch ID).",
+        "release_state": "2.0.0-beta.1 is published as an unsigned GitHub pre-release (2026-11-01); this tree is 2.0.0-rc.2, built locally and unsigned, not published. Unsigned and not notarised until a Developer ID is applied. On a Mac with a Secure Enclave, Touch ID and device unlock are available; the passphrase stays the root of trust everywhere else.",
         "licence": {
             "name": "FreexStudio Source-Available Licence",
             "pointer": "v2/LICENSE",

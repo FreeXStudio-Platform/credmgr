@@ -401,3 +401,285 @@ fn revoke_actually_removes_the_grant_and_a_second_revoke_is_not_found() {
     .unwrap_err();
     assert!(matches!(second, OpError::NotFound(_)));
 }
+
+// ---------------------------------------------------------------------------
+// ADR-172: entry-level grants, created through `grant.create` on a real vault and used by the node they name.
+
+mod f1_support;
+
+/// A real vault (`f1_support`): projects `a` and `b`, two entries in `a` (one a TOTP seed) and a presence key.
+fn real_vault() -> (
+    f1_support::Vault,
+    Arc<BrokerState>,
+    BrokerScope,
+    f1_support::Signer,
+    [String; 3],
+) {
+    let (v, state) = f1_support::created_vault(None);
+    let owner = f1_support::login(&state);
+    f1_support::create_node(&state, &owner, "a");
+    f1_support::create_node(&state, &owner, "b");
+    let granted = f1_support::create_entry(
+        &state,
+        &owner,
+        "a",
+        "TEST_GRANTED",
+        "TEST_value-granted-7Qx",
+    );
+    let sibling = f1_support::create_entry(
+        &state,
+        &owner,
+        "a",
+        "TEST_SIBLING",
+        "TEST_value-sibling-9Wz",
+    );
+    let seed: String = "TEST".repeat(6); // 24 base32 characters: 120 bits, plainly not a real seed
+    let totp = f1_support::call(
+        &state,
+        &owner,
+        NOW,
+        "entry.create",
+        json!({ "node": "a", "name": "TEST_CODE", "fields": [{ "label": "seed", "value": seed, "type": "totp-seed" }] }),
+    )
+    .expect("entry.create")["entry"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let key = f1_support::enrol_first_key(&state, &owner);
+    (v, state, owner, key, [granted, sibling, totp])
+}
+
+fn create_grant(
+    state: &BrokerState,
+    owner: &BrokerScope,
+    key: &f1_support::Signer,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, OpError> {
+    let proved = f1_support::with_proof(state, owner, key, NOW, "grant.create", params);
+    ops::dispatch(state, owner, NOW, "grant.create", &proved)
+}
+
+fn entry_grant(entry: &str, scope: &[&str]) -> serde_json::Value {
+    json!({
+        "from": "b",
+        "to": { "kind": "entry", "nodeId": "a", "entryId": entry },
+        "scope": scope,
+        "reason": "b's job reads one of a's entries",
+        "expiresAt": NOW + 3600,
+    })
+}
+
+/// Node `b` as a caller (a human CLI scope bound to `b`), holding every capability an entry grant could use.
+fn as_b() -> BrokerScope {
+    scope_for(
+        "b",
+        &[
+            Capability::List,
+            Capability::Read,
+            Capability::Reveal,
+            Capability::Notes,
+        ],
+    )
+}
+
+#[test]
+fn create_refuses_an_entry_grant_with_notes_mutual_list_or_an_unknown_entry() {
+    let (_v, state, owner, key, [granted, _, _]) = real_vault();
+    for (params, why) in [
+        (entry_grant(&granted, &["reveal", "notes"]), "notes"),
+        (
+            entry_grant(&granted, &["list"]),
+            "list is implied, never requested",
+        ),
+        (
+            {
+                let mut p = entry_grant(&granted, &["reveal"]);
+                p["direction"] = json!("mutual");
+                p
+            },
+            "mutual",
+        ),
+    ] {
+        let r = ops::dispatch(&state, &owner, NOW, "grant.create", &params);
+        assert!(matches!(r, Err(OpError::Malformed(_))), "{why}: {r:?}");
+    }
+    let r = ops::dispatch(
+        &state,
+        &owner,
+        NOW,
+        "grant.create",
+        &entry_grant("e_not_there", &["reveal"]),
+    );
+    assert!(matches!(r, Err(OpError::NotFound(_))), "{r:?}");
+    // Every refusal came before the proof: a correct request still needs one.
+    let r = ops::dispatch(
+        &state,
+        &owner,
+        NOW,
+        "grant.create",
+        &entry_grant(&granted, &["reveal"]),
+    );
+    assert!(matches!(r, Err(OpError::PresenceRequired { .. })), "{r:?}");
+    assert!(
+        state.registry.read().unwrap().grants.is_empty(),
+        "nothing was stored"
+    );
+    // And an agent never creates one, whatever it holds.
+    let mut agent = scope_for("a", &[Capability::Admin, Capability::Reveal]);
+    agent.origin = Origin::Agent;
+    let proved = f1_support::with_proof(
+        &state,
+        &owner,
+        &key,
+        NOW,
+        "grant.create",
+        entry_grant(&granted, &["reveal"]),
+    );
+    let r = ops::dispatch(&state, &agent, NOW, "grant.create", &proved);
+    assert!(r.is_err(), "{r:?}");
+    assert!(state.registry.read().unwrap().grants.is_empty());
+}
+
+#[test]
+fn an_entry_reveal_grant_lists_and_reveals_exactly_its_entry() {
+    let (_v, state, owner, key, [granted, sibling, totp]) = real_vault();
+    let b = as_b();
+    // Before the grant: nothing of `a` for `b`.
+    assert!(ops::dispatch(
+        &state,
+        &b,
+        NOW,
+        "entry.reveal",
+        &json!({ "node": "a", "entry": granted })
+    )
+    .is_err());
+
+    let g = create_grant(&state, &owner, &key, entry_grant(&granted, &["reveal"]))
+        .expect("grant.create");
+    assert_eq!(g["to"]["kind"], "entry");
+    assert_eq!(g["scope"], json!(["reveal"]));
+
+    // The list is exactly the one entry.
+    let list =
+        ops::dispatch(&state, &b, NOW, "entry.list", &json!({ "node": "a" })).expect("entry.list");
+    assert_eq!(list["ids"], json!([granted]));
+    assert_eq!(list["names"], json!(["TEST_GRANTED"]));
+    // Its value; never the sibling's.
+    let shown = ops::dispatch(
+        &state,
+        &b,
+        NOW,
+        "entry.reveal",
+        &json!({ "node": "a", "entry": granted }),
+    )
+    .expect("the granted entry reveals");
+    assert!(shown.to_string().contains("TEST_value-granted-7Qx"));
+    let r = ops::dispatch(
+        &state,
+        &b,
+        NOW,
+        "entry.reveal",
+        &json!({ "node": "a", "entry": sibling }),
+    );
+    assert!(matches!(r, Err(OpError::NodeAccessDenied { .. })), "{r:?}");
+    // Reveal is not read: the metadata read is refused.
+    let r = ops::dispatch(
+        &state,
+        &b,
+        NOW,
+        "entry.get",
+        &json!({ "node": "a", "entry": granted }),
+    );
+    assert!(matches!(r, Err(OpError::NodeAccessDenied { .. })), "{r:?}");
+    // A code follows reveal: not for an entry the grant does not name.
+    let r = ops::dispatch(
+        &state,
+        &b,
+        NOW,
+        "totp.code",
+        &json!({ "node": "a", "entry": totp }),
+    );
+    assert!(matches!(r, Err(OpError::NodeAccessDenied { .. })), "{r:?}");
+    // The node's notes are not the entry's.
+    let r = ops::dispatch(&state, &b, NOW, "notes.read", &json!({ "node": "a" }));
+    assert!(r.is_err(), "{r:?}");
+
+    // Expired: nothing, not even the name.
+    let later = NOW + 3601;
+    let r = ops::dispatch(
+        &state,
+        &b,
+        later,
+        "entry.reveal",
+        &json!({ "node": "a", "entry": granted }),
+    );
+    assert!(r.is_err(), "{r:?}");
+    let r = ops::dispatch(&state, &b, later, "entry.list", &json!({ "node": "a" }));
+    assert!(r.is_err() || r.unwrap()["ids"] == json!([]));
+
+    // Revoked: nothing, on the next request.
+    ops::dispatch(
+        &state,
+        &owner,
+        NOW,
+        "grant.revoke",
+        &json!({ "id": g["id"] }),
+    )
+    .expect("revoke");
+    let r = ops::dispatch(
+        &state,
+        &b,
+        NOW,
+        "entry.reveal",
+        &json!({ "node": "a", "entry": granted }),
+    );
+    assert!(r.is_err(), "{r:?}");
+}
+
+#[test]
+fn an_entry_grant_reads_and_codes_its_own_entry_only() {
+    let (_v, state, owner, key, [granted, _, totp]) = real_vault();
+    let b = as_b();
+    create_grant(
+        &state,
+        &owner,
+        &key,
+        entry_grant(&totp, &["read", "reveal"]),
+    )
+    .expect("grant.create");
+    let code = ops::dispatch(
+        &state,
+        &b,
+        NOW,
+        "totp.code",
+        &json!({ "node": "a", "entry": totp }),
+    )
+    .expect("the granted entry's code");
+    assert!(
+        code["code"].as_str().is_some_and(|c| c.len() == 6),
+        "{code}"
+    );
+    let meta = ops::dispatch(
+        &state,
+        &b,
+        NOW,
+        "entry.get",
+        &json!({ "node": "a", "entry": totp }),
+    )
+    .expect("the granted entry's metadata");
+    assert_eq!(meta["name"], "TEST_CODE");
+    // The other entry stays out of reach at every capability.
+    for op in ["entry.get", "entry.reveal", "totp.code"] {
+        let r = ops::dispatch(
+            &state,
+            &b,
+            NOW,
+            op,
+            &json!({ "node": "a", "entry": granted }),
+        );
+        assert!(r.is_err(), "{op}: {r:?}");
+    }
+    let list =
+        ops::dispatch(&state, &b, NOW, "entry.list", &json!({ "node": "a" })).expect("entry.list");
+    assert_eq!(list["ids"], json!([totp]));
+}

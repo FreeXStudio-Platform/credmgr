@@ -10,7 +10,7 @@ surface: repo
 last_reviewed: 2026-10-03
 ---
 
-<!-- artifact-hardened: Approved With Known Risks @ 09721b5 on 2026-11-01 via three-pass-v1. Evidence: GitHub-hosted CI on pull request #41 (FreeXStudio-Platform/credmgr): all 17 checks green at ee08394, including security.yml (cargo audit, cargo deny, semgrep, isolation suite, endpoint matrix 55/55 operations, desktop bridge) and CodeQL for Rust, JavaScript/TypeScript, Python and Actions with no open alert on the PR; build.yml run 41243452910, all 7 jobs green (macOS 15, Ubuntu 22.04, Windows; Rust 1.78.0 and stable); desktop unit tests 706 passed at 930c502; Playwright 672 and 681 passed in the two lanes that were combined at 930c502 (not re-run together); strict public export PASS, 860 files, literal blocklist not loaded; by-hand click-through of the rebuilt app on a throwaway vault (unlock, lock, auto-lock, graph, tree, search, reveal, copy, add entry, settings, integrity, doctor, audit, backup, capture switch, searchable help); final adversarial audit v2/docs/release-verification/AUDIT_2026-10-31.md (the P0 and both P1 fixed); known risks K-1 to K-20 in v2/docs/PHASE8_AUDIT_REPORT.md sections 4 and 7, each with bound, owner and resolution. Known risks that bear on this document: K-14 the idle lock and a real sleep or screen lock were not exercised by hand on this build; K-19 a seed in an unrecognised shape is not protected until its owner types it; K-20 the licence text has not been reviewed by counsel. K-12 (CI had not run) is closed. Not signed or notarised; Windows and Linux built in CI but not run. Not a claim about anything after 09721b5. -->
+<!-- artifact-hardened: NEEDS RE-HARDENING — K-10 (c) and K-23 were updated 2026-11-20 (search.content supersedes K-10 (c); K-23 re-read), then K-10 (b) and K-23 (e) closed by the rc.2 leftovers lane L2 (feat/rc2-leftovers-l2, 2026-11-20: ADR-172, ADR-148 amendment); the last pass was Approved With Known Risks @ d37fe9f on 2026-11-09 (its evidence is in git: `git show d37fe9f:v2/docs/PHASE8_AUDIT_REPORT.md`). Re-harden before rc.2 is published. -->
 # Phase 8 — final adversarial audit of the CredMgr V2 backend (Phases 0–7)
 
 `2026-08-16` · Opus, max effort · one session · `v2/PHASE8_AUDIT_PROMPT.md`
@@ -185,7 +185,7 @@ These looked like defects, or were named as suspects by the audit prompt, and ar
 > is the table in §6. Owners are one of: operator, backend session, front-end team, design team. Milestones
 > are GitHub's `2.0.0-rc.1` and `2.0.0`; issue numbers are the repository's (`gh issue list`, read 2026-10-31).
 
-### K-1 · I-10 is not implemented — 24 of 25 ▸ **accepted, not blocking**
+### K-1 · I-10 is not implemented — 24 of 25 ▸ **CLOSED 2026-11-09 (ADR-156): the positive path is tested, 28 of 28**
 
 - **What:** *"Sealed node → orphan: every transport except native-with-presence is denied;
   **names remain listable**; values unreachable via CLI, MCP and the HTTP-less UI path."*
@@ -216,6 +216,21 @@ These looked like defects, or were named as suspects by the audit prompt, and ar
 > sealed data. *Owner:* backend session, with the operator at the Touch ID sensor. *Resolution:* issue #18
 > (milestone `2.0.0-rc.1`); I-10 is implemented in the same change that first makes presence reachable, which
 > needs Apple Developer ID signing first (K-4, issue #28).
+
+> **Update 2026-11-07.** Presence is now reachable: ADR-098 (2026-11-06) makes a Secure Enclave signature the proof, and `ops.rs` builds the
+> native subject with `presence_attested: true` only after `require_presence` has verified it for that op (for example `orphan.reveal`). The gated
+> operations execute with a proof on a Mac that has an enrolled key and still refuse in words with none; ADR-098 item 6 separates signing from
+> the capability, so nothing here waits for Developer ID. **I-10 itself is still not implemented**: the header of `crates/brokerd/tests/isolation.rs`
+> still says so (read 2026-11-07), so the count stays 24 of 25 until the positive path is written as a test. *Owner:* backend session. *Resolution:* the
+> I-10 test, `2.0.0-rc.1`. The operator's by-hand Touch ID checks are `RELEASE_VERIFICATION.md` §14 and §15 (passed, 2026-11-07 and 2026-11-08, including `credmgr unlock --touch-id` and the seed reveal behind a Touch ID proof); issue #18's finger checks are done.
+
+> **Update 2026-11-09 — closed (ADR-156).** The positive half is written:
+> `crates/brokerd/tests/isolation.rs::i10_sealed_node_names_stay_listable_and_values_open_only_to_native_with_presence`
+> seals a node with two entries and checks that `orphan.list` still names both with no value, that an agent and a
+> call without a proof or with a forged one are refused, that a valid presence proof opens the value and its replay is
+> refused, and that `access::resolve` allows an orphan read for native-with-presence only, over every origin. The
+> header of `isolation.rs` lists I-10 as built; `13_TEST_PLAN.md` counts 28 of 28. The by-hand Touch ID checks stay
+> `RELEASE_VERIFICATION.md` §14 and §15. I-20, I-21 and I-23's positive halves are tracked in `13_TEST_PLAN.md`, not here.
 
 ### K-2 · Ancestor-restore is now narrower than before ▸ **accepted, deliberate**
 
@@ -325,6 +340,8 @@ backend session.
 > for the hardware half. *Resolution:* Secure Enclave keystore tier, issue #19 (milestone `2.0.0-rc.1`), which
 > needs signing and the presence work (issue #18) first; the signing half is K-4. Until then the disclosure in
 > `04 §2.4`, `README.md`, `RELEASE.md` and `SECURITY.md` is the mitigation.
+
+> **Update 2026-11-07 (2.0.0-rc.1, then called beta.2).** ADR-098 built a Secure Enclave tier on the Mac: `device.enrol` seals the resident root key to an Enclave key into `keys/root.wrap.se`, so Touch ID is a **second door that opens on that Mac only**, and presence proofs are real (K-1). It does **not** replace the first: `root.wrap.pass` still opens a copy of the vault folder on any computer given the passphrase, so the bound above stands (ADR-144 describes the machine lock that would change that; it is not built and moved to `2.1`, ADR-147). Signing and notarisation remain K-4; Windows Hello, TPM and Linux wraps are `2.1` (K-16). Issue #19's Secure Enclave tier is therefore built for macOS; the Developer ID half is the operator's.
 
 ### K-6 · An exported login reaches every project ▸ **accepted, bounded, owner-decided** · *added 2026-09-24*
 
@@ -465,7 +482,7 @@ backend session.
 > arrives with the Secure Enclave tier, issue #19 (milestone `2.0.0-rc.1`); until then the operator keeps
 > the vault and state directories' backups from being restorable by anyone else.
 
-### K-9 · A truncated audit tail is re-signed by the next request ▸ **accepted, disclosed** · *added 2026-10-02*
+### K-9 · A truncated audit tail is re-signed by the next request ▸ **CLOSED 2026-11-09 (ADR-156): verify before signing** · *added 2026-10-02*
 
 - **What:** the audit log's tip sidecar is what catches removal of the *final* lines (`04 §6`). But
   `credmgr_store::audit::append` reads the log as it stands, appends, and signs the tip over the
@@ -498,7 +515,15 @@ backend session.
 > (no issue yet; file one). Until then the operator runs `credmgr verify` after any period of doubt and
 > before using the vault again.
 
-### K-10 · Hardening items the field model left open ▸ **accepted, disclosed; item (d) closed 2026-10-31** · *added 2026-10-03*
+> **Update 2026-11-09 — closed (ADR-156).** `audit::append` still writes every record but signs a new tip only when
+> the current tip verifies under the root key and names the log as it stands, or lags it by exactly the one line a crash
+> between the two writes leaves. A truncated or emptied month, a missing tip or one signed under another key stays
+> visible to `credmgr verify` after later requests (`store/src/audit.rs`: `a_truncated_tail_is_not_signed_over_by_the_next_append`,
+> `a_tip_one_line_behind_after_a_crash_is_signed_forward`, `a_tip_signed_under_another_key_is_not_signed_over`). The
+> `rotate_root.rs` test named above flipped and the rotation's `notResigned` caveat is gone. *Residual, accepted:* the
+> one-line crash allowance means a same-user attacker can still append one correctly chained line; it cannot remove one.
+
+### K-10 · Hardening items the field model left open ▸ **accepted, disclosed; (d) closed 2026-10-31, (a) and (e) closed 2026-11-09, (b) closed 2026-11-20; (c) superseded by `search.content` (ADR-132)** · *added 2026-10-03*
 
 - **What:** five items ADR-078 records under "Open, recorded". (a) The broker reads one request line with no
   size cap (`server.rs`); a batch may be up to 64 MiB, so a process running as the owner can drive the broker's
@@ -511,6 +536,8 @@ backend session.
   is leaked, a value just cannot be found by searching. (d) matters only to someone who can already read the
   broker's memory, who holds the root key anyway (K-5); the marginal exposure is values that outlive an unlock
   in freed memory. (e) costs disk space only, and history is sealed like everything else.
+- **Update 2026-11-20.** (c) is superseded: `search.content` (ADR-132) finds an entry by what a value contains and answers only
+  ids and names, owner-gated and rate-limited; the plain `search` still matches names. (b) is the one item that stands.
 - **Owner:** the next backend session. **Resolution path:** (a) cap the line, and the batch, in `server.rs`
   and answer a typed refusal; (b) decide whether an entry-level `reveal` grant exists, then make `entry.reveal`
   and `entry.list` agree; (c) a decision — searching values would put plaintext in an index the broker does
@@ -531,6 +558,26 @@ backend session.
 > retention rule by ADR in milestone `2.0.0`. No issue exists yet for (a), (b) or (e); file them with those
 > milestones.
 
+> **Update 2026-11-09 (ADR-156).** **(a) is closed:** `server.rs` reads one request line under `REQUEST_LINE_MAX`
+> (128 MiB, twice the 64 MiB batch limit) and closes a connection that overruns it; the line buffer and every string the
+> parsed request held are zeroised before reuse (`server.rs::a_request_line_over_the_limit_is_cut_off_and_one_at_the_limit_is_read`).
+> **(e) is closed:** a retained generation is pruned only when it is outside the entry's 20 most recent and older than the
+> seven-day field-undo window; pruning is best effort and never fails the change it follows
+> (`store/src/rotation_history.rs::prune_keeps_the_latest_and_the_recent_and_drops_only_what_is_both_old_and_beyond_them`).
+> **(b) and (c) stand** as written: ADR-156's `entry.search` searches names and aliases on one node, still never values.
+
+> **Update 2026-11-20 (ADR-172) — (b) is closed.** An entry-level grant is `read` and/or `reveal` of the one entry it names,
+> one-way, and it lists that entry and no other: `resolve()` (`credmgr_core::access`) gives an entry grant holding `read` or
+> `reveal` an implied `list` of exactly its entry (never the node, never a sibling), and ignores the mirror of a `mutual` entry
+> grant. `entry.reveal`, `entry.get` and `totp.code` consult the entry-level decision when the node-level one denies for a reason
+> other than a lock (`resolve_for_entry`). `grant.create` stays the owner's (presence proof, `Admin` on the exposed node); for
+> an entry target it refuses `notes`, `list`, `mutual` and an entry the node does not hold. Evidence:
+> `core/tests/entry_grants.rs`, the extended `core/tests/isolation_i17.rs`, `brokerd/tests/grant_ops.rs` (created with a proof,
+> then used, expired and revoked) and `brokerd/tests/isolation.rs::i24b_an_entry_reveal_grant_never_reveals_a_sibling_or_lists_the_nodes_other_names`.
+> **Bound / Owner / Resolution.** (b) closed; (c) superseded by `search.content` (above). Open questions in ADR-172: whether `grant.create` also asks
+> for a fresh vault code, whether an entry grant must expire, and whether a locked vault offers an entry-grant holder the approval
+> prompt (today an ordinary denial, which is narrower).
+
 ### K-11 · The second-factor gate is vault-wide: a 300-second window for every caller ▸ **accepted, disclosed** · *added 2026-10-31*
 
 - **What:** a node marked `requireTwoFactor` asks for the second factor on reveal (ADR-085), but there is one
@@ -544,6 +591,9 @@ backend session.
   wording in the built app (`RELEASE_VERIFICATION.md` §13).
 - **Owner:** backend session (the operator decided the deferral, ADR-093). **Resolution:** a per-node gate
   secret and elevation, designed by ADR, in milestone `2.0.0` — issue #16.
+- **Update 2026-11-07.** Built by ADR-135 (issue #16): `node.gate_enroll_begin|confirm|verify|remove`. A node given its own gate asks for that gate's code, the owner included, and
+  the vault's code never opens it. The risk stands, narrower, for every node **without** its own gate (still the vault-wide 300-second window for every caller), and a node's
+  code still opens that node for every caller class. The Settings screen that enrols a node gate is not part of what ships (ADR-135, "what this does not do").
 
 ### K-12 · GitHub CI has not run on this release ▸ **CLOSED 2026-11-01: the repository moved into the FreexStudio organisation and CI ran (pull request #41); see `RELEASE.md`** · *added 2026-10-31*
 
@@ -580,7 +630,7 @@ backend session.
   rescans `b94443c` and close issue #14 when all thirteen are closed, before publication (issue #14,
   milestone `2.0.0-beta.1`).
 
-### K-14 · The 5-minute idle lock and a real sleep or screen lock were not exercised by hand ▸ **accepted until the operator runs them** · *added 2026-10-31*
+### K-14 · The 5-minute idle lock and a real sleep or screen lock were not exercised by hand ▸ **CLOSED 2026-11-08: both run by hand on the rc.1 build (`RELEASE_VERIFICATION.md` §15)** · *added 2026-10-31*
 
 - **What:** nobody has left the built app unlocked for five minutes, or put the Mac to sleep or locked its
   screen, and watched the vault lock (`RELEASE_VERIFICATION.md` §12.1 and §13: "not done", because the harness
@@ -607,7 +657,7 @@ backend session.
   **Resolution:** issue #6 (milestone `2.0.0-beta.1`): de-register the runner or restrict it to
   same-repository pull requests **before** any public flip; gated on the publish decision (issue #5).
 
-### K-16 · Windows and Linux are unsupported in this beta ▸ **accepted, disclosed** · *added 2026-10-31*
+### K-16 · Windows and Linux are unsupported in this beta ▸ **accepted, disclosed; moved to `2.1` by ADR-147 (2026-11-07)** · *added 2026-10-31*
 
 - **What:** the packaged product is macOS only. The broker's transport is a Unix socket, so Windows has no
   working transport; no Windows or Linux keystore exists (the Software tier is the only one); the CI
@@ -620,7 +670,7 @@ backend session.
   **Resolution:** issue #29 (Windows and Linux keystores, named-pipe transport; milestone `2.0.0`); until
   then the release notes say "macOS only".
 
-### K-17 · A private-names node answers `entry_exists` to a guessed name ▸ **accepted, disclosed** · *added 2026-10-31 by the final audit*
+### K-17 · A private-names node answers `entry_exists` to a guessed name ▸ **fixed and merged (ADR-110, issue #35, PR #45)** · *added 2026-10-31 by the final audit*
 
 - **What:** on a node with `privateNames`, listing and search hide names, but an agent with the default `create` capability
   learns whether a guessed name exists (`entry.create` answers `entry_exists`, case- and look-alike-insensitively); a miss
@@ -628,7 +678,7 @@ backend session.
 - **Bound:** names only, never values; the agent must already hold `create` on the node; a miss is visible to the owner as a new entry.
 - **Owner:** backend session. **Resolution:** issue #35, milestone `2.0.0-rc.1` (one answer for existing and fresh names, or owner-only create on a private-names node).
 
-### K-18 · `credmgr backup` is a partial archive and nothing restores it ▸ **accepted, disclosed** · *added 2026-10-31 by the final audit*
+### K-18 · `credmgr backup` is a partial archive and nothing restores it ▸ **fixed and merged (ADR-112, issue #36, PR #45): a complete archive and `credmgr restore`** · *added 2026-10-31 by the final audit*
 
 - **What:** the archive holds entries, manifests, registry, root wraps and keys, but not notes, sealed-node archives, undo archives, rotation
   history or the state directory's generation counter, and no shipped command reads it (`maintenance.doctor --rebuild-registry` needs presence).
@@ -639,13 +689,56 @@ backend session.
 
 ### K-20 · The licence text has not been reviewed by counsel ▸ **accepted, disclosed** · *added 2026-11-01*
 
-`LICENSE` (the FreexStudio Source-Available Licence 1.0, `ADR-096`) was drafted in a working session, not by a lawyer, and it states no governing law or venue. **Bound:** it affects only what others may do with the source; it changes no code, the repository is private and has never been published, and no third party holds the software under any other licence. **Owner:** the operator. **Resolution:** counsel reviews `LICENSE`, `TRADEMARKS.md` and the contribution terms, and a governing law is added, before the repository is made public.
+`LICENSE` (the FreexStudio Source-Available Licence 1.0, `ADR-096`) was drafted in a working session, not by a lawyer, and it states no governing law or venue. **Bound:** it affects only what others may do with the source; it changes no code, and no third party holds the software under any other licence. The public repository has carried this text since 2026-11-01. **Owner:** the operator. **Resolution:** counsel reviews `LICENSE`, `TRADEMARKS.md` and the contribution terms, and a governing law is added, before `2.0.0`.
 
-### K-19 · A seed in an unrecognised shape is not protected until its owner types it ▸ **accepted, disclosed** · *added 2026-10-31 by the re-verification*
+### K-19 · A seed in an unrecognised shape is not protected until its owner types it ▸ **fixed: broker and CLI (ADR-111) and the window's warning (issue #40, commit a1f995a); closes at merge** · *added 2026-10-31 by the re-verification*
 
 - **What:** a stored seed is withheld from reveals, and used by `totp.code`, only when it is a seed by one class: an `otpauth://` URI, upper-case base32 at the lengths services issue, groups of four in any case, or a field its owner typed `totp-seed`. A plain lower-case run, or a padded one, cannot be told from a word, so it is treated as text: an agent that can reveal the entry reads it, and `totp.code` refuses it until its owner types the field.
 - **Bound:** the owner's own seeds only, in a shape services print rarely (plain lower case, or `=`-padded); an agent already needs `reveal` on that entry; an agent cannot retype a seed away from the class; the owner can type the field in the app's field menu today.
 - **Owner:** backend session with the front-end team. **Resolution:** issue #40, milestone `2.0.0-rc.1` (warn when a field could be a seed and is not typed as one; offer the type in Add entry).
+
+### K-21 · Touch ID unlock and an agent outside its project folder ▸ **accepted, disclosed** · *added 2026-11-07 (ADR-148 P1-5)*
+
+- **What:** `vault.unlock {method: "device"}` is refused before any prompt to an agent token and to a token-less call from inside a registered project folder. The broker cannot tell a person's terminal from an agent that left its project folder before running `credmgr unlock --touch-id`: both are the same binary, the same uid and the same socket. The Touch ID dialog names the requesting process, its ancestors up to `launchd` and its folder, but those names come from the process table, which the requester controls (a program can copy itself to a file named `zsh`, `cd` to the home folder, or double-fork).
+- **Bound:** a person still has to touch the sensor for that request; five dismissed or timed-out prompts in a row pause unlocking (the same back-off as a wrong passphrase); the passphrase unlock is unchanged; `SECURITY.md` tells the user to cancel any request they did not start.
+- **Owner:** backend session, and the user at the dialog. **Resolution:** none planned beyond the dialog for `2.0.0`; a trusted-UI path (the app asking, not the CLI) is the direction if it is revisited.
+
+### K-22 · One-time migration window for `presenceKeys` and `deviceWraps` ▸ **accepted, stated** · *added 2026-11-07 (ADR-148)*
+
+- **What:** a registry written before ADR-148 has neither list. Its presence keys are read from `keys/presence.enroll` and its wrap from `keys/root.wrap.se` once (the wrap only if its tag verifies under the root key), and both are carried into the signed registry by its next write. A file deleted or replaced before that first write is not detected.
+- **Bound:** needs same-user write access to the vault folder in that window; a tampered enrolment file is still an integrity error; after the first registry write the lists are signed.
+- **Owner:** backend session. **Resolution:** stated, not closed (ADR-148 P2-4 and addendum item 10).
+
+### K-23 · ADR-148 deferred items ▸ **accepted, tracked; (a), (b) and (d) closed 2026-11-09, (e) closed 2026-11-20** · *added 2026-11-07*
+
+- **What:** (a) the desktop shell still honours `CREDMGR_PRESENCE_HELPER` (the CLI and broker release builds ignore it and require the production helper); (b) not every copy of an export passphrase is zeroised (the request JSON holds one); (c) the ephemeral ECDH for the Touch ID wrap runs in the helper, not in Rust; (d) `credmgr restore` is not refused while the broker runs; (e) dropping the rollback counter from archives was tried and reverted, pending a restore-scoped accept marker.
+- **Bound:** (a)-(c) need same-user control of the app's environment or memory; (d) restore writes only into an empty directory; (e) changes nothing today.
+- **Owner:** backend session. **Resolution:** ADR-148 "P3 — deferred", each item when its precondition (named there) is met.
+
+- **Update 2026-11-09 (ADR-156).** (a) closed: the desktop shell honours `CREDMGR_PRESENCE_HELPER` only in debug builds, as
+  the CLI and broker do. (b) closed: the broker zeroises the request line and every string the parsed request held, the export
+  passphrase included. (d) closed: `credmgr restore` refuses while a broker answers on the vault's socket, before it reads the
+  passphrase (`cli/tests/restore.rs::a_restore_is_refused_while_a_broker_answers_and_reads_no_passphrase`). (c) and (e) stand.
+- **Update 2026-11-20.** Re-read against the code: (a), (b), (d) closed as above; (c) (the Touch ID wrap's ephemeral ECDH runs in the helper) and (e) (no rollback-counter drop from archives; it needs a restore-scoped accept marker) still stand, unchanged. The ADR-148 P3 item "`destroy.rs` leftover journal vs a reused node id" is not one of the five; it was investigated and is not reproducible (ADR-148 P3 list).
+- **Update 2026-11-20 (ADR-148 amendment) — (e) closed.** Archives no longer carry the rollback counter. `maintenance.backup`
+  writes a restore ticket signed under the root key for the archived registry and its generation; `credmgr restore` turns it into
+  a one-shot marker in a state directory that has no counter; the first unlock accepts it only for that vault's key and exactly
+  that registry and generation, writes the counter and deletes the marker. A missing counter without a matching marker is refused
+  as before. Tests: `store/src/restore_marker.rs`, `store/src/backup.rs::a_ticketed_archive_leaves_the_counter_behind_and_restores_a_marker_only_where_none_is`,
+  `brokerd/tests/backup_restore.rs` (the marker opens and is consumed; no marker, another vault's, forged and replayed markers are
+  refused). K-8's bound is unchanged (the matched old pair is now an archive and its ticket). (c) stands.
+
+### K-24 · "Confirm before showing secrets" leaves some reads and every non-read ungated ▸ **accepted, disclosed; narrowed 2026-11-09 (ADR-156)** · *added 2026-11-08 (ADR-150)*
+
+- **What:** the setting (off by default; broker op `session.confirm`, the 76th; error `confirmation_required`, the 27th) gates only `entry.reveal` (and so the shell's copy, and a value an approval staged), `totp.code` and an approving `vault.approval_decide` (session form) for a non-agent caller, plus a weakening of the setting and, under "only high and critical", an owner edit that lowers an entry out of that band. Not gated: `search.content` (ADR-132; ids and names, rate-limited), `notes.read` (context, not credentials), every change that is not a read (edits, removals, grants, agent tokens, project folders), and agent reads (they answer to the node's security level, ADR-140). `totp.seed`, `orphan.reveal` and `node.export` are not asked again because each already needs a Touch ID proof for the exact request. The scope "only high and critical" trusts the sensitivity labels, and a person who can confirm can relabel. A confirmation is per login session and in memory only. Checked by hand in the built app on 2026-11-08 (`RELEASE_VERIFICATION.md`, the ADR-150 addendum to §15: off by default, the confirm dialog, the trust window, turning it off inside 60 seconds); the refusal after 60 seconds is covered by `crates/brokerd/tests/reveal_confirm.rs`, not by hand, and the §2 rows stay "not pressed" per control.
+- **Review:** an independent adversarial review of ADR-150 (2026-11-08) found a P0 (lock a node, reveal, approve your own request: the value came back unconfirmed) and a P1 (a successful confirm reset the per-uid backoff); both fixed with refusal tests (`14_DECISIONS.md`, ADR-150 amendment), with the P3 items.
+- **Bound:** the threat is a person at an already-unlocked Mac; none of the ungated reads returns a stored credential value; malware running as the user and anyone who knows the passphrase are out of scope by design (`SECURITY.md`); every lock ends a confirmation; a wrong passphrase counts in the unlock backoff; the setting is in the signed registry and loosening it needs a fresh confirmation; automated coverage in `crates/core/src/reveal_confirm.rs`, `crates/brokerd/tests/reveal_confirm.rs`, `crates/cli/tests/reveal_confirm_cli.rs` and the desktop unit, Playwright and real-daemon specs.
+- **Owner:** operator (the by-hand pass), backend session (the scope). **Resolution:** the by-hand pass is recorded (`RELEASE_VERIFICATION.md` §15 addendum, 2026-11-08); the scope stands as ADR-150 decided it, and widening it needs a superseding ADR.
+
+- **Update 2026-11-09 (ADR-156, the superseding ADR named above).** With the setting on, a person's `search.content` is now gated
+  as a critical value and `notes.read` as a high one, before any value is read or a rate slot spent
+  (`reveal_confirm.rs::a_content_search_and_a_note_read_ask_like_a_value_does`). Agents are not asked, as for a reveal. What stands:
+  non-reads stay ungated, agent reads are not asked, and a person who can confirm can still lower a label.
 
 > **Considered and not listed as risks (2026-10-31).** (1) *The supporter-extras sealed pack.* The pack
 > opens only cosmetics (`PRIVACY.md`: the key "opens nothing but cosmetics and is not a credential"), so a
@@ -803,10 +896,14 @@ login that idled out was silently demoted to its holder's cwd scope instead of r
 > e) and K-11 … K-19**; K-3 is closed. The table is the place the stamp cites; each row's long form, with
 > evidence, is the K-n section in §4. A row with no issue number has none yet: *Resolution* names the
 > milestone and the trigger, and the issue is to be filed.
+>
+> **Update 2026-11-09 (ADR-156).** Closed: **K-1** (I-10 tested, 28 of 28), **K-9** (verify before signing the
+> tip), **K-10 (a) and (e)**, **K-23 (a), (b) and (d)**. Narrowed: **K-24** (`search.content` and `notes.read` now ask). Every
+> other row stands as its Status cell says.
 
 | ID | Risk (one line) | Bound (what it does not affect) | Owner | Resolution (trigger / milestone / issue) | Status |
 |---|---|---|---|---|---|
-| K-1 | I-10 positive path unimplemented: 24 of 25 isolation tests | Denial half proven; presence-gated ops refuse in words, nothing sealed is exposed | backend session (+ operator at the sensor) | Same change that makes presence reachable; #18, `2.0.0-rc.1`; needs signing (#28) | Standing |
+| K-1 | I-10 positive path unimplemented: 24 of 25 isolation tests | Denial half proven; presence-gated ops refuse in words, nothing sealed is exposed | backend session (+ operator at the sensor) | I-10 test `isolation.rs::i10_…`, 28 of 28 (ADR-156) | Closed 2026-11-09 (ADR-156) |
 | K-2 | Ancestor-restore narrower than before (ADR-053) | Self-restore unaffected; narrowing is toward less access | backend session | Trigger: operator asks for it, then an ADR superseding ADR-053; no date, no issue | Standing |
 | K-3 | Named non-gate items unbuilt | — | — | Built 2026-08-17 to 2026-09-13 (ADR-054, 055, 056) | **Closed** |
 | K-4 | Binaries unsigned, not notarised | Encryption and access unchanged; integrity vs the published `SHA256SUMS` still checkable | operator | #28, `2.0.0`; release notes say "unsigned" until then | Standing |
@@ -814,18 +911,23 @@ login that idled out was silently demoted to its holder's cwd scope instead of r
 | K-6 | An exported login reaches every non-Orphaned project | Never Orphaned; dies at lock and on its own 15 min idle clock; not exposed to the webview | operator | Operator decides before `2.0.0` (cwd-bound token vs bridge-only); no issue yet; README warning meanwhile | Standing |
 | K-7 | Remainder: no offline recovery of orphaned entries (OF-1); (b) closed by ADR-094 except for processes sharing one scope; hot-key map rebuilt at unlock | Fails closed; residue only matters to someone who can already read broker memory; daemon restore works within 7 days | operator (OF-1), backend session (rest) | OF-1 decided at `2.0.0` planning; the rest `2.0.0-rc.1`; no issues yet | Closed in part |
 | K-8 | Rollback protection is a user-writable counter file | Needs passphrase + same-user write access to a matched old pair; downgrades the gate, reveals nothing | operator (backups), backend session (hardware counter) | Hardware counter with #19, `2.0.0-rc.1` | Standing |
-| K-9 | A truncated audit tail is re-signed by the next request | Needs same-user file write; hides the last few decisions only; reveals no secret | backend session | ADR + verify-before-append, `2.0.0-rc.1`; no issue yet; `credmgr verify` meanwhile | Standing |
-| K-10 | Hardening leftovers: (a) request-line size, (b) entry-level reveal grant, (c) search names only, (e) rotation history grows. (d) closed | (a) same-user DoS, discloses nothing; (b) fails closed; (c) functional; (e) disk only | backend session | (a), (b) `2.0.0-rc.1`; (c) #32, `2.0.0`; (e) `2.0.0`; no issues yet for (a), (b), (e) | Closed in part |
-| K-11 | Second-factor gate is vault-wide: 300 s, every caller (ADR-093) | Window not extendable; ends on lock or policy change; owner's login never asked; only marked nodes ask | backend session | Per-node secret by ADR, #16, `2.0.0` | Standing, new |
-| K-12 | GitHub CI has not run on this release (billing, #33) | Missing evidence, not a failure: local gates at `709840c` and the built-app sweep (§13) stand; nothing is published | operator | Closed 2026-11-01: repository moved to the FreexStudio organisation, `security.yml` and `build.yml` ran (PR #41) and read job conclusions; before publication | Open, new |
-| K-13 | Dependabot: `glib` in the Linux desktop tree; 13 npm alerts patched in `b94443c` but not yet seen closed | Linux desktop only, none shipped; npm manifests are tooling and legacy V1 | backend session | `glib`: #15, `2.0.0`; npm: confirm closed after rescan, #14, before publication | Standing, new |
-| K-14 | 5-minute idle lock and real sleep/screen lock not exercised by hand | Broker's own 15 min idle lock still applies; no change to any access decision | operator | #9, `2.0.0-beta.1`: run both, record in `RELEASE_VERIFICATION.md` §13 | Open, new |
-| K-15 | Shared self-hosted runner on a shared host | Repository is private (no forks); runner is evidence, not a required context | operator | #6, `2.0.0-beta.1`: de-register or restrict before any public flip (#5) | Open, new |
-| K-16 | Windows and Linux unsupported | Removes a platform; macOS unchanged | backend session (+ front-end team) | #29, `2.0.0`; release notes say "macOS only" | Standing, new |
-| K-17 | A private-names node answers `entry_exists` to a guessed name | Names only; needs `create`; a miss leaves a visible entry | backend session | #35, `2.0.0-rc.1` | **New** |
-| K-18 | `credmgr backup` is partial and nothing restores it | Vault untouched; copying vault and state directories is a complete backup | backend session | #36, `2.0.0-rc.1` | **New** |
-| K-19 | A seed in an unrecognised shape is not protected until its owner types it | The owner's own seeds only; an agent cannot retype a seed away | backend session (+ front-end team) | #40, `2.0.0-rc.1` | **New** |
-| K-20 | The source-available licence text (`LICENSE`, ADR-096) has not been reviewed by counsel, and governing law is not stated | The licence text only; no code path depends on it, and nothing is published | operator | Counsel review before the repository is made public | **New** |
+| K-9 | A truncated audit tail is re-signed by the next request | Needs same-user file write; hides the last few decisions only; reveals no secret | backend session | Verify-before-append in `audit::append` (ADR-156); one-line crash allowance accepted | Closed 2026-11-09 (ADR-156) |
+| K-10 | Hardening leftovers: (a) request-line size, (b) entry-level reveal grant, (c) search names only, (e) rotation history grows. (d) closed | (a) same-user DoS, discloses nothing; (b) fails closed; (c) functional; (e) disk only | backend session | (a), (e) closed by ADR-156; (b) closed by ADR-172; (c) superseded by `search.content` (ADR-132) | Closed in part: (a), (b), (d), (e) closed; (c) superseded 2026-11-20 (value search exists; plain `search` still matches names) |
+| K-11 | Second-factor gate is vault-wide: 300 s, every caller (ADR-093) | Window not extendable; ends on lock or policy change; owner's login never asked; only marked nodes ask | backend session | Per-node secret built by ADR-135 (`node.gate_*`, #16); the vault-wide window stands for nodes without their own gate | Standing, narrowed 2026-11-07 |
+| K-12 | GitHub CI has not run on this release (billing, #33) | Missing evidence, not a failure: local gates at `709840c` and the built-app sweep (§13) stand; nothing is published | operator | Closed 2026-11-01: repository moved to the FreexStudio organisation, `security.yml` and `build.yml` ran (PR #41) and read job conclusions; before publication | **Closed 2026-11-01** (the cell was stale; the text above says so) |
+| K-13 | Dependabot: `glib` in the Linux desktop tree; 13 npm alerts patched in `b94443c` but not yet seen closed | Linux desktop only, none shipped; npm manifests are tooling and legacy V1 | backend session | `glib`: #15, `2.0.0`; npm: confirm closed after rescan, #14, before `2.0.0` | Standing, new |
+| K-14 | 5-minute idle lock and real sleep/screen lock not exercised by hand | Broker's own 15 min idle lock still applies; no change to any access decision | operator | #9: run by hand on 2026-11-08 (idle lock 5 min, real screen lock), recorded in `RELEASE_VERIFICATION.md` §15 | **Closed 2026-11-08** |
+| K-15 | Shared self-hosted runner on a shared host | Repository is private (no forks); runner is evidence, not a required context | operator | #6, still the operator's, listed for `2.0.0-rc.1`: de-register or restrict the shared runner | Open |
+| K-16 | Windows and Linux unsupported | Removes a platform; macOS unchanged | backend session (+ front-end team) | #29, **`2.1` (ADR-147, 2026-11-07)**; release notes say "macOS only" | Standing |
+| K-17 | A private-names node answers `entry_exists` to a guessed name | Names only; needs `create`; a miss leaves a visible entry | backend session | #35, `2.0.0-rc.1` | **Fixed and merged to `main` (ADR-110, PR #45)** |
+| K-18 | `credmgr backup` is partial and nothing restores it | Vault untouched; copying vault and state directories is a complete backup | backend session | #36, `2.0.0-rc.1` | **Fixed and merged to `main` (ADR-112, PR #45)** |
+| K-19 | A seed in an unrecognised shape is not protected until its owner types it | The owner's own seeds only; an agent cannot retype a seed away | backend session (+ front-end team) | #40, `2.0.0-rc.1` | **Fixed: broker and CLI hint (ADR-111) and the window's warning (#40, a1f995a); closes at merge** |
+| K-20 | The source-available licence text (`LICENSE`, ADR-096) has not been reviewed by counsel, and governing law is not stated | The licence text only; no code path depends on it; the public repository carries it since 2026-11-01 | operator | Counsel review and a governing law, before `2.0.0` | **Open** |
+| K-21 | Touch ID unlock: an agent outside its project folder is not recognised, and the dialog's "who asked" is a hint read from a process table the requester controls (ADR-148 P1-5) | Refused to agent tokens and to calls from inside a registered project folder; the dialog names the process chain and folder; back-off after five dismissed or timed-out prompts; the passphrase unlock is unchanged | backend session (+ the user at the dialog) | None planned beyond the dialog; revisit with a trusted-UI path | Standing, new |
+| K-22 | One-time migration window: a registry written before ADR-148 takes `presenceKeys` / `deviceWraps` from the files on disk once | Needs same-user write to the vault folder before the first registry write after upgrade; a tampered file is still an integrity error | backend session | Stated, not closed (ADR-148 P2-4, addendum item 10) | Standing, new |
+| K-23 | ADR-148 deferred items: the desktop app honours `CREDMGR_PRESENCE_HELPER`; export passphrase copies not all zeroised; the ephemeral ECDH runs in the helper; restore not refused while the broker runs; the rollback-counter archive change reverted | Same-user environment or memory access; the CLI and broker release builds ignore the variable | backend session | (a), (b), (d) closed by ADR-156; (e) closed by the ADR-148 amendment; (c) per ADR-148 "P3 — deferred" | Standing, narrowed 2026-11-20: (c) remains |
+| K-24 | "Confirm before showing secrets" (ADR-150) gates `entry.reveal`, `totp.code` and approving a request only; `search.content`, `notes.read`, non-reads and agent reads are not gated; labels can be lowered by a person who can confirm | Threat is a person at an unlocked Mac; no ungated read returns a stored value; per login, memory only, ended by every lock; loosening needs a fresh confirmation | operator (by-hand pass), backend session (scope) | `search.content` and `notes.read` gated by ADR-156; the rest per ADR-150 | Standing, narrowed 2026-11-09 |
+| K-25 | F01: an agent whose node lets it reveal an entry receives the value into its model's context (`credmgr_get` → `entry.reveal`); CredMgr cannot take back a value it has handed out (found 2026-10-30, recorded 2026-11-08, ADR-153) | Guarded (the default) holds high and critical reveals for the owner's approval and Strict holds every reveal; an agent cannot lower sensitivity (ADR-148); an agent reads only its own node; values are never in the audit | backend (Phase 1 of `docs/26`) | `use` capability, `cmref:` references and `credmgr run` so agents use a value without receiving it (2.1) | Standing, new |
 
 **What this status does *not* claim:** that the backend is feature-complete (it is gate-complete
 — K-3); that the desktop app has been checked on a real vault by a person (as of 2026-10-03 every screen

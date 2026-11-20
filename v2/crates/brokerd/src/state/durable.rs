@@ -57,8 +57,9 @@ use credmgr_core::recovery::{
 };
 use credmgr_core::registry::{is_path_safe_node_id, ORPHAN_ID};
 use credmgr_core::totp::Totp;
+use credmgr_keystore::machine_lock::MachineLockError;
 use credmgr_keystore::software::SoftwareKeystore;
-use credmgr_keystore::{KeystoreError, KeystoreId, PlatformKeystore, WrappedKey};
+use credmgr_keystore::{KeystoreId, PlatformKeystore, WrappedKey};
 use credmgr_store::error::StoreError;
 use credmgr_store::generation::{FileGenerationCounter, GenerationCounter, VAULT_GENERATION};
 use credmgr_store::manifest::{ManifestBody, ManifestDoc};
@@ -111,6 +112,16 @@ pub(super) fn corrupt(path: std::path::PathBuf, what: &str) -> StoreError {
     }
 }
 
+/// Why the passphrase did not yield the root key.
+#[derive(Debug)]
+pub(super) enum PassRootError {
+    /// The passphrase does not open the wrap (or there is no wrap).
+    Wrong,
+    /// ADR-165: the wrap is bound to a device key this Mac does not hold, or is damaged. The passphrase was
+    /// never tried.
+    MachineLock(MachineLockError),
+}
+
 /// Why a live unlock refused (ADR-063).
 #[derive(Debug)]
 pub enum UnlockError {
@@ -123,6 +134,9 @@ pub enum UnlockError {
     /// that does not match its binding, a missing rollback counter. Refused;
     /// nothing is loaded.
     Integrity(StoreError),
+    /// ADR-165: the passphrase wrap is bound to a device key this Mac does not hold (or is damaged). The
+    /// passphrase was not tried; the recovery code opens the vault without the device key.
+    MachineLock(MachineLockError),
 }
 
 /// Why `gate_recover` refused (ADR-064).
@@ -131,6 +145,8 @@ pub enum GateRecoverError {
     /// The passphrase and the root recovery code did not both open the
     /// vault's root key — which of the two failed is not said.
     WrongFactors,
+    /// ADR-165: the passphrase wrap is bound to a device key this Mac does not hold (or is damaged).
+    MachineLock(MachineLockError),
     /// Both factors were right, but the vault failed an integrity check, or
     /// the reset could not be written.
     Store(StoreError),
@@ -167,7 +183,7 @@ pub(super) struct NextState {
 
 /// Everything a load verified, held apart from the running state until every
 /// check has passed — then committed in one step.
-struct LoadedVault {
+pub(super) struct LoadedVault {
     doc: RegistryDocument,
     manifests: HashMap<String, ManifestBody>,
     wrapped_root: WrappedKey,
@@ -183,8 +199,13 @@ impl BrokerState {
         self.durable.load(Ordering::SeqCst)
     }
 
-    pub(super) fn state_dir(&self) -> std::path::PathBuf {
+    pub fn state_dir(&self) -> std::path::PathBuf {
         self.state_dir.read().expect("state dir poisoned").clone()
+    }
+
+    /// The state directory, for the registry rebuild's generation counter.
+    pub fn state_dir_path(&self) -> std::path::PathBuf {
+        self.state_dir()
     }
 
     /// `root.wrap.pass` — from memory if this process holds it, else off disk.
@@ -206,13 +227,34 @@ impl BrokerState {
 
     /// The root key `passphrase` opens, through a request-scoped keystore
     /// that is dropped before this returns.
+    ///
+    /// ADR-165: a bound `root.wrap.pass` is opened with this Mac's device key first
+    /// ([`BrokerState::plain_pass_wrap`]); an unbound one goes to the Argon2id open byte for byte as before.
+    /// A machine-lock refusal is its own error, so no caller reports it as a wrong passphrase (which would
+    /// also feed the guessing back-off for a passphrase that was never tried).
     pub(super) fn root_from_passphrase(
         &self,
         passphrase: SecretBox<String>,
         reason: &str,
-    ) -> Result<SecretBox<[u8; 32]>, KeystoreError> {
-        let wrapped = self.wrapped_root_pass().ok_or(KeystoreError::Truncated)?;
-        SoftwareKeystore::new(passphrase, self.state_dir()).unwrap_root(&wrapped, reason)
+    ) -> Result<SecretBox<[u8; 32]>, PassRootError> {
+        let wrapped = self.wrapped_root_pass().ok_or(PassRootError::Wrong)?;
+        let plain = self
+            .plain_pass_wrap(&wrapped)
+            .map_err(PassRootError::MachineLock)?;
+        SoftwareKeystore::new(passphrase, self.state_dir())
+            .unwrap_root(&plain, reason)
+            .map_err(|_| {
+                // ADR-165 review P2-5: a sealed wrap cut down to the plain wrap's length is opened as plain
+                // first (so an unbound vault opens exactly as before); when that fails, it is the damaged seal
+                // it looks like — pointing to the recovery code, and not a guess for the back-off.
+                if credmgr_keystore::machine_lock::looks_like_truncated_seal(&plain.bytes) {
+                    PassRootError::MachineLock(
+                        credmgr_keystore::machine_lock::MachineLockError::Damaged,
+                    )
+                } else {
+                    PassRootError::Wrong
+                }
+            })
     }
 
     /// ADR-063: `vault.unlock` with the caller's passphrase — the live
@@ -239,8 +281,44 @@ impl BrokerState {
             .map_err(UnlockError::Integrity)?;
         let root = self
             .root_from_passphrase(passphrase, "vault unlock")
-            .map_err(|_| UnlockError::WrongPassphrase)?;
+            .map_err(|e| match e {
+                PassRootError::MachineLock(m) => UnlockError::MachineLock(m),
+                PassRootError::Wrong => UnlockError::WrongPassphrase,
+            })?;
+        // ADR-165 review P0-1: the passphrase opened a plain wrap, but this Mac bound the vault, and the root key
+        // it gave does not open the vault — an older, pre-bind wrap was put back. Say that (the recovery code
+        // opens it), rather than an integrity failure or a wrong passphrase: the passphrase was right.
+        let plain_while_bound = self.plain_wrap_while_bound();
+        self.complete_unlock_locked(root, now).map_err(|e| match e {
+            UnlockError::Integrity(_) | UnlockError::WrongPassphrase if plain_while_bound => {
+                UnlockError::MachineLock(
+                    credmgr_keystore::machine_lock::MachineLockError::PlainWhileBound,
+                )
+            }
+            other => other,
+        })
+    }
 
+    /// ADR-098: the unlock that starts from a root key already in hand — the Touch ID path. Everything
+    /// after "we have the root key" is shared with the passphrase unlock, so the registry HMAC, the
+    /// rollback counter and the second-factor gate apply identically.
+    pub fn unlock_with_root(
+        &self,
+        root: SecretBox<[u8; 32]>,
+        now: i64,
+    ) -> Result<bool, UnlockError> {
+        let _auth = self.auth_lock.lock().expect("auth lock poisoned");
+        self.recover_interrupted_rotation()
+            .map_err(UnlockError::Integrity)?;
+        self.complete_unlock_locked(root, now)
+    }
+
+    /// The tail of an unlock, `auth_lock` already held.
+    fn complete_unlock_locked(
+        &self,
+        root: SecretBox<[u8; 32]>,
+        now: i64,
+    ) -> Result<bool, UnlockError> {
         if !self.is_durable() && self.paths.registry().exists() {
             self.load_from_disk(root.expose_secret())
                 .map_err(UnlockError::Integrity)?;
@@ -268,9 +346,19 @@ impl BrokerState {
         Ok(false)
     }
 
+    /// ADR-098: after something rewrote the registry on disk behind this process's back (the
+    /// registry rebuild), lock and forget that this process holds the vault, so the next unlock loads
+    /// and verifies it from disk exactly as a fresh daemon would. Nothing is persisted in between: a
+    /// write-through needs a durable, unlocked vault, and this leaves neither.
+    pub fn invalidate_loaded_vault(&self) {
+        let _auth = self.auth_lock.lock().expect("auth lock poisoned");
+        self.lock_inner();
+        self.durable.store(false, Ordering::SeqCst);
+    }
+
     /// Load an existing vault from disk under `root_key` and commit it —
     /// only after every check has passed.
-    fn load_from_disk(&self, root_key: &[u8; 32]) -> Result<(), StoreError> {
+    pub(super) fn load_from_disk(&self, root_key: &[u8; 32]) -> Result<(), StoreError> {
         let loaded = self.verify_vault_on_disk(root_key)?;
 
         let counter = FileGenerationCounter::new(self.state_dir());
@@ -287,6 +375,21 @@ impl BrokerState {
         *self.manifests.write().expect("manifests poisoned") = loaded.manifests;
         self.merge_pending_tray(tray);
         self.load_key_material(loaded.wrapped_root, loaded.node_keys);
+        // ADR-098: the enrolled presence keys, verified under the same root key as everything else. A
+        // file that fails its tag is an integrity error, never "nothing enrolled".
+        // ADR-148 §P2-4: the list that counts is the one in the signed registry; the file is still verified
+        // when present (a tampered file is an integrity error, as before), and is the source only for a
+        // registry written before ADR-148 — whose next write carries the list into the registry.
+        let file_keys = credmgr_store::presence_file::load_presence(&self.paths, root_key)?;
+        self.set_presence_keys(loaded.doc.presence_keys.clone().unwrap_or(file_keys));
+        // ADR-148 addendum: the Touch ID unlock wraps the registry names. A registry written before the
+        // addendum names none; the wrap on disk now (unless its tag fails under this root key) is carried into
+        // the registry by the next write — the same one-time window as the presence keys above.
+        let wraps = match loaded.doc.device_wraps.clone() {
+            Some(named) => named,
+            None => self.device_wraps_to_carry(root_key),
+        };
+        self.set_device_wraps(Some(wraps));
         for (id, public) in loaded.public_only {
             self.seed_public_key_only(&id, public);
         }
@@ -313,13 +416,18 @@ impl BrokerState {
         // system. After everything signed has verified; best effort; it never
         // fails the unlock and never writes signed state.
         self.housekeep_after_load();
+        // ADR-131: and finish a destroy of sealed entries the process did not live to finish.
+        self.finish_interrupted_destroy(root_key);
         Ok(())
     }
 
     /// Every check a load makes, against one read of each file, touching no
     /// running state. See the module docs for the two interrupted-write
     /// recoveries it accepts and why neither weakens rollback detection.
-    fn verify_vault_on_disk(&self, root_key: &[u8; 32]) -> Result<LoadedVault, StoreError> {
+    pub(super) fn verify_vault_on_disk(
+        &self,
+        root_key: &[u8; 32],
+    ) -> Result<LoadedVault, StoreError> {
         let counter = FileGenerationCounter::new(self.state_dir());
         let external = counter.read(root_key, VAULT_GENERATION)?;
         let Some(external) = external else {
@@ -328,7 +436,18 @@ impl BrokerState {
             // before the gate was enrolled — load as current. It is refused
             // unless whoever started the daemon said, on purpose, that this
             // vault was moved from another machine.
-            if std::env::var(ACCEPT_MISSING_COUNTER_ENV).as_deref() != Ok("1") {
+            if std::env::var(ACCEPT_MISSING_COUNTER_ENV).as_deref() == Ok("1") {
+                return self.verify_registry_and_rest(
+                    root_key,
+                    registry_file::load(&self.paths, root_key)?,
+                );
+            }
+            // ADR-148 amendment (K-23 (e)): a restore-scoped acceptance. `credmgr restore` wrote a
+            // marker from the archive's restore ticket; it is accepted only if the ticket was signed under
+            // this vault's root key, and only for the exact `registry.json` bytes on disk and their
+            // generation. Then the counter is written and the marker consumed.
+            let marker_path = credmgr_store::restore_marker::marker_path(&self.state_dir());
+            if !marker_path.exists() {
                 return Err(corrupt(
                     self.state_dir(),
                     "the vault's rollback counter is missing — refusing to trust the registry. \
@@ -336,8 +455,33 @@ impl BrokerState {
                      once with CREDMGR_ACCEPT_MISSING_ROLLBACK_COUNTER=1",
                 ));
             }
-            return self
-                .verify_registry_and_rest(root_key, registry_file::load(&self.paths, root_key)?);
+            let marker = atomic::read(&marker_path)?;
+            let registry_json = atomic::read(&self.paths.registry())?;
+            let doc = registry_file::load(&self.paths, root_key)?;
+            let generation = credmgr_store::restore_marker::check_marker(
+                root_key,
+                &marker,
+                &registry_json,
+                doc.vault_generation,
+            )
+            .map_err(|refusal| {
+                corrupt(
+                    marker_path.clone(),
+                    &format!(
+                        "the vault's rollback counter is missing and {} — refusing to trust the \
+                         registry. Restore again with `credmgr restore`, or, if this vault was moved \
+                         from another machine or account, start credmgrd once with \
+                         CREDMGR_ACCEPT_MISSING_ROLLBACK_COUNTER=1",
+                        refusal.reason()
+                    ),
+                )
+            })?;
+            let loaded = self.verify_registry_and_rest(root_key, doc)?;
+            // Consumed once: the counter first (so a crash between the two leaves a counter, which then
+            // decides, and the marker is never consulted again), then the marker.
+            counter.write(root_key, VAULT_GENERATION, generation)?;
+            atomic::remove_durable(&marker_path)?;
+            return Ok(loaded);
         };
 
         // Review H2: `registry.json`/`registry.sig` are two writes. If the
@@ -387,6 +531,12 @@ impl BrokerState {
                 ));
             }
         }
+
+        // ADR-130: a `node.rekey` the process did not live to finish is settled — forward or back, by what
+        // the (now verified) registry says the node's public key is — before any key or manifest is read.
+        self.recover_interrupted_rekeys(root_key, &doc)?;
+        // ADR-158: likewise an `entry.move`, by the manifest generations the registry binds.
+        self.recover_interrupted_moves(root_key, &doc)?;
 
         let mut manifests = HashMap::new();
         let mut highest_ref = 0u32;
@@ -624,6 +774,12 @@ impl BrokerState {
         // ADR-079, custody rule 1: `keys/nodes/orphan.key` is never written.
         wrapped_keys.retain(|id, _| registry.nodes.contains_key(id) && id != ORPHAN_ID);
         doc.format = REGISTRY_FORMAT;
+        // ADR-148 §P2-4: the enrolled presence keys travel inside the signed registry.
+        doc.presence_keys = Some(self.presence_keys());
+        // ADR-148 addendum: and so do the Touch ID unlock wraps this vault set up.
+        if let Some(wraps) = self.device_wraps() {
+            doc.device_wraps = Some(wraps);
+        }
 
         doc.nodes.retain(|id, _| registry.nodes.contains_key(id));
         for (id, node) in &registry.nodes {
@@ -779,6 +935,18 @@ impl BrokerState {
         root_recovery_code: &str,
         now: i64,
     ) -> Result<bool, GateRecoverError> {
+        self.gate_recover_scope(passphrase, root_recovery_code, GATE_SCOPE_VAULT, now)
+    }
+
+    /// [`BrokerState::gate_recover`] for any gate scope: the vault's (`global`) or one node's own second
+    /// factor (ADR-135). The factors are the same two; only the gate that is reset differs.
+    pub fn gate_recover_scope(
+        &self,
+        passphrase: SecretBox<String>,
+        root_recovery_code: &str,
+        gate_scope: &str,
+        now: i64,
+    ) -> Result<bool, GateRecoverError> {
         let _auth = self.auth_lock.lock().expect("auth lock poisoned");
         // ADR-076: the recovery wrap this reads may be mid-rotation.
         self.recover_interrupted_rotation()
@@ -792,6 +960,9 @@ impl BrokerState {
                 unwrap_root_with_recovery_code(&code, &wrap).ok()
             })
             .map(|root| SecretBox::new(Box::new(root)));
+        if let Err(PassRootError::MachineLock(m)) = from_passphrase {
+            return Err(GateRecoverError::MachineLock(m));
+        }
         let (Ok(from_passphrase), Some(from_code)) = (from_passphrase, from_code) else {
             return Err(GateRecoverError::WrongFactors);
         };
@@ -808,16 +979,16 @@ impl BrokerState {
             .gate
             .write()
             .expect("gate poisoned")
-            .remove(GATE_SCOPE_VAULT)
+            .remove(gate_scope)
             .is_some_and(|g| g.confirmed);
         self.gate_pending
             .write()
             .expect("gate pending poisoned")
-            .remove(GATE_SCOPE_VAULT);
+            .remove(gate_scope);
         self.pending_gate_unlock
             .lock()
             .expect("pending gate unlock poisoned")
-            .remove(GATE_SCOPE_VAULT);
+            .remove(gate_scope);
 
         if self.is_durable() {
             self.persist_with_root(root, now)

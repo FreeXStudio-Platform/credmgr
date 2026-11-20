@@ -18,7 +18,17 @@ no-default-features = false
 
 [advisories]
 version = 2
-ignore = []
+# RUSTSEC-2026-0387 (crypto-bigint 0.5.5, timing variability on SECRET integers), pulled only by p256 0.13.
+# Not exploitable here, and written down so it is not forgotten: p256 is used for ECDSA VERIFICATION of a
+# presence proof (`credmgr_core::presence::verify`), whose inputs - the enrolled public key, a digest, a
+# signature - are all public. Every operation on a secret scalar (the ephemeral ECDH that seals the root key to
+# the Secure Enclave, and the Secure Enclave's own signing) runs in Apple's CryptoKit in the Swift helper
+# (ADR-098), never in this tree. The fix (crypto-bigint >= 0.7.6) needs a p256/elliptic-curve generation that
+# requires Rust 1.85+ (edition 2024), above this workspace's 1.78 MSRV pin (ADR-036). Revisit when the MSRV
+# moves; tracked in issue #18.
+ignore = [
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint timing on secret integers; p256 here only verifies signatures over public values (ADR-098); fix needs MSRV >= 1.85" },
+]
 
 [licenses]
 version = 2

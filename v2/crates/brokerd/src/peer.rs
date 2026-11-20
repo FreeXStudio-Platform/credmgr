@@ -124,6 +124,42 @@ mod platform {
         let nul = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
         std::str::from_utf8(&bytes[..nul]).ok().map(str::to_owned)
     }
+
+    /// ADR-148 §P1-5: a process's short name and parent pid, from `proc_pidinfo(PROC_PIDTBSDINFO)`.
+    /// Best-effort, like the cwd: `None` when the process is gone or the lookup is denied.
+    pub fn name_and_parent(pid: libc::pid_t) -> Option<(String, libc::pid_t)> {
+        let mut info: libc::proc_bsdinfo = unsafe { mem::zeroed() };
+        let size = mem::size_of::<libc::proc_bsdinfo>() as i32;
+        // SAFETY: `info` is a correctly-sized out-parameter for `PROC_PIDTBSDINFO`.
+        let written = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                &mut info as *mut _ as *mut libc::c_void,
+                size,
+            )
+        };
+        if written != size {
+            return None;
+        }
+        // `pbi_name` is the longer name when set, else `pbi_comm`; both are NUL-terminated byte buffers.
+        let pick = |raw: &[libc::c_char]| -> String {
+            let bytes: Vec<u8> = raw
+                .iter()
+                .take_while(|&&c| c != 0)
+                .map(|&c| c as u8)
+                .collect();
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let name = pick(&info.pbi_name);
+        let name = if name.is_empty() {
+            pick(&info.pbi_comm)
+        } else {
+            name
+        };
+        Some((name, info.pbi_ppid as libc::pid_t))
+    }
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -169,6 +205,16 @@ mod platform {
             .ok()
             .map(|p| p.to_string_lossy().into_owned())
     }
+
+    /// ADR-148 §P1-5: `/proc/<pid>/comm` and the parent pid from `/proc/<pid>/stat`. Best-effort.
+    pub fn name_and_parent(pid: libc::pid_t) -> Option<(String, libc::pid_t)> {
+        let name = std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        // `pid (comm) state ppid ...` — the comm may hold spaces or parentheses, so split after the last ')'.
+        let after = stat.rsplit_once(')')?.1;
+        let ppid = after.split_whitespace().nth(1)?.parse().ok()?;
+        Some((name.trim().to_string(), ppid))
+    }
 }
 
 /// The owning uid — `getuid()` of this (the broker's own) process. `02 §3`
@@ -178,7 +224,119 @@ pub fn owning_uid() -> u32 {
     unsafe { libc::getuid() }
 }
 
+/// How many ancestors [`describe`] walks looking for the system's root process before it gives up.
+#[cfg(unix)]
+const MAX_ANCESTORS: usize = 32;
+/// How many process names [`describe`] shows before it elides the middle of the chain.
+#[cfg(unix)]
+const SHOWN_NAMES: usize = 4;
+/// What the root of the process tree is called in the dialog.
+#[cfg(unix)]
+const ROOT_NAME: &str = if cfg!(target_os = "macos") {
+    "launchd"
+} else {
+    "init"
+};
+
+/// ADR-148 §P1-5 (and its addendum): who is asking, in words a person reads in the Touch ID dialog — the
+/// requesting process, its ancestors up to the system's root process, and its working directory:
+/// `credmgr (pid 4021) <- zsh <- Terminal <- launchd, in ~/projects/acme`. The chain is walked all the
+/// way to pid 1 (at most [`MAX_ANCESTORS`] steps); the first [`SHOWN_NAMES`] names are shown, then
+/// `<- … (N more)`, then the root. When a lookup fails before pid 1 is reached the chain ends in
+/// `<- ? (chain cut short)`, and a requester whose own parent is pid 1 (a double-forked or detached process,
+/// or an app the system launched) shows `<- launchd` directly after it.
+///
+/// **A hint, not proof.** Every name here comes from the process table, which the requester controls: a
+/// program can copy itself to a file called `zsh`, `cd` to the person's home folder, or detach so its parent
+/// is pid 1. Advisory, like the cwd (AR-5): it informs the person, it decides nothing.
+pub fn describe(peer: &PeerInfo) -> String {
+    let mut chain: Vec<String> = Vec::new();
+    #[cfg(unix)]
+    {
+        let mut names: Vec<String> = Vec::new();
+        let mut pid = peer.pid as libc::pid_t;
+        let mut reached_root = false;
+        for _ in 0..MAX_ANCESTORS {
+            if pid <= 1 {
+                reached_root = true;
+                break;
+            }
+            let Some((name, parent)) = platform::name_and_parent(pid) else {
+                break;
+            };
+            let name: String = name.chars().filter(|c| !c.is_control()).take(40).collect();
+            names.push(if names.is_empty() {
+                format!("{name} (pid {pid})")
+            } else {
+                name
+            });
+            pid = parent;
+        }
+        if !names.is_empty() {
+            let hidden = names.len().saturating_sub(SHOWN_NAMES);
+            chain.extend(names.into_iter().take(SHOWN_NAMES));
+            if hidden > 0 {
+                chain.push(format!("… ({hidden} more)"));
+            }
+            chain.push(if reached_root {
+                ROOT_NAME.to_string()
+            } else {
+                "? (chain cut short)".to_string()
+            });
+        }
+    }
+    if chain.is_empty() {
+        chain.push(format!("pid {} (not found)", peer.pid));
+    }
+    let mut out = chain.join(" <- ");
+    if let Some(cwd) = &peer.cwd {
+        let cwd: String = cwd.chars().filter(|c| !c.is_control()).collect();
+        out.push_str(", in ");
+        out.push_str(&cwd);
+    }
+    out
+}
+
 #[cfg(unix)]
 pub fn identify_peer(fd: std::os::unix::io::RawFd) -> Result<PeerInfo, PeerError> {
     platform::identify(fd)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    /// ADR-148 addendum: the chain is walked to the system's root process and says so, so a person sees where
+    /// it ends; a pid that does not exist is said to be not found rather than shown as a bare number.
+    #[test]
+    fn the_requester_chain_is_walked_to_the_root_or_marked_cut_short() {
+        let me = PeerInfo {
+            uid: 0,
+            pid: std::process::id() as i32,
+            cwd: Some("/tmp/x".into()),
+        };
+        let text = describe(&me);
+        assert!(
+            text.contains(&format!("(pid {})", std::process::id())),
+            "{text}"
+        );
+        assert!(text.ends_with(", in /tmp/x"), "{text}");
+        let chain = text.trim_end_matches(", in /tmp/x");
+        assert!(
+            chain.ends_with(&format!(" <- {ROOT_NAME}"))
+                || chain.ends_with(" <- ? (chain cut short)"),
+            "the chain ends at the root or says it was cut short: {text}"
+        );
+        assert!(
+            chain.split(" <- ").count() <= SHOWN_NAMES + 2,
+            "at most {SHOWN_NAMES} names, an elision and the end: {text}"
+        );
+
+        let gone = PeerInfo {
+            uid: 0,
+            pid: i32::MAX - 7,
+            cwd: None,
+        };
+        assert_eq!(describe(&gone), format!("pid {} (not found)", i32::MAX - 7));
+    }
 }

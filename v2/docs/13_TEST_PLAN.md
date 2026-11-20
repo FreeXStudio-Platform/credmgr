@@ -40,8 +40,8 @@ last_reviewed: 2026-08-19
 > 2026-09-13). The gate run on this tree is the orchestrator's and is recorded in `BUILD_LOG.md`, not here. The
 > desktop shell is a **separate** Cargo workspace and is **not** in that number — its own `cargo test` lists
 > **186 tests in 12 test executables** (2026-10-03; 156 passed on 2026-10-02; 65 on 2026-09-24, ADR-062; 40 on
-> 2026-08-18), and it runs in CI. The **isolation suite is 27 of 28**: I-1…I-25 and I-27…I-29 are implemented
-> (there is no I-26, see §1), and I-10 is implemented nowhere, an accepted risk (K-1) rather than an oversight.
+> 2026-08-18), and it runs in CI. The **isolation suite is 29 of 29**: I-1…I-25 and I-27…I-30 are implemented
+> (there is no I-26, see §1; I-30 since ADR-164); I-10, accepted risk K-1 until then, was closed on 2026-11-09 (ADR-156, §4.4).
 > Above the broker the front end has its own runners in `apps/desktop/` (`ADR-075`): **550 unit tests in 21 files**
 > (Vitest, `npm test`, passing 2026-10-03), **552 Playwright tests in 22 files** (276 per browser project; listed,
 > not run, 2026-10-03), a design audit probe, and a real-broker suite that drives the built app against a real
@@ -96,11 +96,12 @@ Two rules follow from that, and they are why several tests in this repository ar
 | Storage | `cargo test -p credmgr-store` | atomic writes, manifests, registry signature, generation counter, hash-chained audit log | **`built`** — but in-crate: `crates/store/tests/` is an empty directory, so every storage test is a `#[cfg(test)]` module inside `src/` |
 | Broker integration | `cargo test -p credmgr-brokerd` | 22 integration binaries under `crates/brokerd/tests/` over the real dispatch path with real fixtures — among them `durable_vault.rs` (2026-09-24), over a real on-disk vault that is created, unlocked by passphrase, restarted and reloaded (ADR-063…066); `field_model.rs` (27 tests, ADR-078); `seal_durable.rs` (37), `approval_locked.rs` (19), `seal_digest.rs` and `field_seal_joint.rs` (ADR-079); and `rotate_root.rs` (39, ADR-076) | **`built`** |
 | CLI / MCP end-to-end | `cargo test -p credmgr-cli` | spawns the **real compiled binaries** against a **real `credmgrd`** over a **real socket** — never a mock, never an in-process call standing in for the wire | **`built`** |
-| **Isolation suite** | `cargo test -p credmgr-brokerd --test isolation` (+ two tests elsewhere) | §4 — the security claims, including I-27…I-29 for the field ops | **`partial`**, 27 of 28 |
+| **Isolation suite** | `cargo test -p credmgr-brokerd --test isolation` (+ two tests elsewhere) | §4 — the security claims, including I-27…I-29 for the field ops and I-30 for agent tokens | **`built`**, 29 of 29 (I-10 since ADR-156, I-30 since ADR-164) |
 | Access matrix | `cargo test -p credmgr-core --test access_matrix` | all 8×8 cells of `06_ACCESS_GRAPH.md §2`'s worked example, table-driven | **`built`** |
 | Argv hygiene | `cargo test -p credmgr-cli --test no_secret_in_argv` | a structural grep over the one file that defines every flag the binary accepts | **`built`** |
 | Desktop bridge | `cargo test` inside `apps/desktop/src-tauri` | the Tauri↔broker command bridge (all 53 op commands, plus the shell's own three), its drift guards, the typed client's guard and the CSP guard — **a separate workspace** (ADR-035), excluded from `cargo test --workspace` and its count; runs in CI as `security.yml` → `v2-desktop-bridge` since 2026-09-24 | **`built`** |
 | Endpoint matrix | `python3 scripts/endpoint-matrix.py` (after `cargo build --workspace`) | every one of the 55 broker ops over the real socket against the real `credmgrd`, in a throwaway vault: 243 rows (2 probes) — 243 pass, 0 known-gap, 0 blocked, 0 failed (the three known-gap rows and two blocked rows that pinned K-7 are gone: ADR-079 closed it) — and five invariants (no plaintext under the vault directory across 38 generated secrets including four session tokens, socket and directory modes, the daemon survives, no unexpected panic, the real default locations untouched). `--check-coverage` fails if an op has no row. A known gap is pinned strictly: the run fails the day it stops holding. In CI as `security.yml` → `v2-endpoint-matrix` (PRs) and in `build.yml` (all legs) | **`built`** — re-measured 2026-10-24 |
+| Airlock | `bash scripts/airlock-check.sh` (builds `credmgrd` if missing) | `17_AIRLOCK_AND_LLM.md §1`'s A-1 and A-2 on the built artifact, not the source: the binary's symbols name no TCP/UDP socket type and no HTTP or TLS stack and it links no TLS/HTTP library (A-1); the real `credmgrd` on a throwaway vault holds no TCP, UDP or raw socket just after start or after init, unlock and an entry round trip (A-2). It first proves its socket detector sees a known `127.0.0.1` listener, so its silence means something. In CI as `security.yml` → `v2-airlock` (ADR-156) | **`built`** — 2026-11-09 |
 | Real-binary journey | `scripts/e2e-journey.sh` and `scripts/e2e-fields.sh` (after `cargo build --workspace`) | the path a user takes with the real binaries: init, unlock, projects and workdirs, restart, a locked write that survives a restart, import and notes, two-factor, the last door, a second daemon, a seal and a restore across a restart, and no plaintext value or token-shaped string under the vault directory (`e2e-journey.sh`, 61 checks, exit 0 on 2026-10-03); and the multi-field entry through the same binaries — bulk paste, selection, field edits, undo, a seal and a restore with fields, a restart (`e2e-fields.sh`, 59 checks — 44 in the multi-field segments and 15 in the alpha.6 compatibility segment, which needs the alpha.6 binaries and counts as a failure when they are absent; exit 0 on 2026-10-03) | **`built`** — run before calling a release real |
 | Corpus integrity | `python3 -m tools.corpus_check` | `endpoints`, `crossrefs`, `stamps` — the guards the documentation has never had | **`built`** |
 | Checklist drift | `python3 -m tools.release_verification_check` (`--self-test` proves it can fail) | `docs/RELEASE_VERIFICATION.md` §2 against the front-end templates: one row per control, every bound handler named, the Size line true (212 rows in 22 templates on 2026-10-03). Local-only and deliberately outside `corpus_check`'s default run, which also runs in the published tree | **`built`**, not in CI |
@@ -228,7 +229,7 @@ Each test corresponds to a claim in `05_THREAT_MODEL.md §3`. The fixture is
 under A; one human grant X → B at list+read but not reveal — so every assertion can be checked
 directly against that section's table rather than against a graph invented for the test.
 
-### 4.1 Coverage — **`partial`**, 27 of 28
+### 4.1 Coverage — **`built`**, 28 of 28
 
 The table in §4.2 and §4.3 is the **specification** and is deliberately not edited to match the
 code. This subsection is where the code's actual coverage is recorded, so the two can disagree
@@ -236,10 +237,9 @@ visibly instead of silently.
 
 | Where | Tests |
 |---|---|
-| `crates/brokerd/tests/isolation.rs` | I-1…I-9, I-11, I-12, I-14, I-15, I-16, I-18…I-25, I-27…I-29 (§4.3b), plus `i21b` (§4.5) and the zeroisation assertion of §5 |
+| `crates/brokerd/tests/isolation.rs` | I-1…I-12 (I-10 since ADR-156, on a durable vault through `f1_support`), I-14, I-15, I-16, I-18…I-25, I-27…I-29 (§4.3b), I-30 (§4.3d, six functions), plus `i21b` (§4.5) and the zeroisation assertion of §5 |
 | `crates/mcp/tests/i13_tool_registry.rs` | I-13 — four tests, written once Phase 4 gave the MCP crate a real registry to enumerate |
 | `crates/core/tests/isolation_i17.rs` | I-17 — `i17_every_allow_is_independently_justified`, a proptest over random graphs, living in `core` because it is a pure access-graph property and `core` cannot touch a file |
-| nowhere | **I-10** — §4.4 |
 
 `isolation.rs`'s module doc carries this same index, deliberately duplicated at the code end so a
 reader who never opens this document still learns which tests are missing. That comment is
@@ -297,7 +297,7 @@ think to specify; the `Finding` column names it.
 I-20's second clause (`doctor --rebuild-registry` showing the resurrected grant in a diff before
 writing), I-21's day-8 clause (the entries reachable via presence and a fresh TOTP), and I-23's
 positive path (native + presence + 2FA + reason succeeds) all require **presence attestation**,
-which no transport in this build can supply — the same wall that leaves I-10 open (§4.4).
+which no transport could supply when they were written. ADR-098's presence proofs now can, and I-10 was closed over them (§4.4, ADR-156); these three halves were not revisited in that change and stay open.
 `maintenance.doctor --rebuild-registry` exists and is dispatched
 (`crates/brokerd/src/maintenance.rs`), and is unconditionally `presence_required` once the caller
 holds Admin, so its refusal is tested and its diff is not. Each implementing test therefore proves
@@ -317,6 +317,14 @@ and the same envelope authentication as every op before it.
 | **I-28** | Vault locked, then one node locked on an otherwise unlocked vault | Whole vault locked: all five answer `vault_locked`, while `entry.create` with fields still lands in the review tray (F-1) and says how many fields it holds. One node locked: `node_locked` (ADR-077) for every one of them, the tray still takes writes, and another node is unaffected |
 | **I-29** | A field document written by this build, and a legacy version-1 envelope | The payload kind is authenticated: relabelling a version-2 envelope as version 1 on disk, or a version-1 envelope as version 2, fails authentication and the JSON text is never returned as if it were a single raw value; a version-2 envelope copied under another entry id or into another node does not open (the entry id and node id are in the AAD); and no refusal, and no field op on an unrelated entry, reveals the document |
 
+### 4.3d Added with agent tokens — I-30 (ADR-164)
+
+Four test functions in `isolation.rs` under one claim: an agent token is the narrowest credential the broker issues.
+
+| # | Setup | Assert |
+|---|---|---|
+| **I-30** | An agent token for a sub-node of the fixture graph that holds a grant (its parent, global, the grant's target, a sibling and an unrelated project around it), then revoked, rotated, expired; nodes set to Guarded and Sealed (shown as "Strict"); the node's `agentAccess` narrowed | `i30a`: the token lists, reads, reveals and writes on its own node only — every other node (global, parent, child, sibling, a grant's source) is denied (R8) for list, reveal and create, and search matches in its own node only; `i30b`: it calls no owner op (`node.policy`, `grant.create`, `maintenance.*`, …) and mints, rotates, lists or revokes no token, its own included; `i30c`: after revoke and after expiry the next request is `session_expired`, never the cwd or global scope, and is audited as `Agent:a_…(revoked\|expired)`; `i30d`: Guarded holds a high reveal as an approval and Sealed (shown as "Strict") holds every reveal; a token carrying `list` only cannot reveal whatever the node allows, and a narrowed `agentAccess` narrows the token at the next request; `i30e` (review P1-1): sealing the node ends its tokens, with no request in between, and a restore does not revive them (`Agent:a_…(node_gone)`); `i30f` (review P2-10): a token presented from another node's folder still reaches only its own node and writes `anomaly.agent_token_workdir_mismatch` naming its public id, but neither the other node nor the folder |
+
 ### 4.3c Added with the 2026-10-24 backend wave — names, second factor, factors, K-7
 
 Real server wiring on throwaway `vault.init_*` vaults (`crates/brokerd/tests/common/mod.rs`), each test mutation-checked
@@ -333,28 +341,28 @@ Real server wiring on throwaway `vault.init_*` vaults (`crates/brokerd/tests/com
 | `part4_approval_factors.rs` | approval 4b: the release while locked, the backoff, gate / code / recovery-code refusals, the spent step across a restart, deny, the closed paths, unknown field ids not burning the approval, the audit record, the TTL |
 | `seal_durable.rs` (four + two) | a child created between a seal's check and its lock is found; `node.create` / `node.set_workdirs` wait for a seal's / restore's window; a directory claimed before a restore's lock is dropped; the expired-seal purge |
 
-### 4.4 I-10 — the one that is not implemented
+### 4.4 I-10 — closed by ADR-156 (was accepted risk K-1)
 
-**`planned`.** I-10 is not implemented anywhere, and it is recorded as accepted risk **K-1** in
-`PHASE8_AUDIT_REPORT.md` rather than quietly rounded up to "24 is basically 25".
+**`built`, 2026-11-09.** I-10 was the one specified claim with no test, recorded as accepted risk
+**K-1** in `PHASE8_AUDIT_REPORT.md` rather than rounded up. It was held open on a fixed rule: implement it
+**in full, in the same change that first makes `presence_attested: true` reachable**, never as a
+denial-only test that would read as satisfied while the positive half went unbuilt.
 
-Its **denial half** — a sealed node's values are unreachable on every transport this build has —
-is proven three times over: `i21_seal_then_restore_day_6_succeeds_byte_identical_day_8_is_gone`,
+ADR-098 made it reachable (presence proofs; ADR-148 §P2-5 lets a software P-256 key sign them, so the
+test runs on every host, Linux CI included), and ADR-156 wrote the test:
+`i10_sealed_node_names_stay_listable_and_values_open_only_to_native_with_presence` in `isolation.rs`, on a
+durable vault. It seals a node with two entries and proves: both **names remain listable** to the owner
+(`orphan.list`, no proof asked, no value carried) and not to an agent; the **values** stay refused to the
+ordinary reveal, to the owner's session without a proof, and to an agent holding a proof-shaped object;
+the owner's `orphan.reveal` with a live presence proof for that exact request returns the value, and the
+same proof replayed is spent; and R0 itself, asked of `access::resolve` for every origin with and
+without `presence_attested` on `list`, `read` and `reveal`, allows exactly Native + presence.
+
+The **denial half** was already proven three times over and still is:
+`i21_seal_then_restore_day_6_succeeds_byte_identical_day_8_is_gone`,
 `i21b_restore_is_refused_to_an_admin_token_from_an_unrelated_node`, and criterion 2 of
-`crates/cli/tests/success_criteria.rs`, which drives a real `credmgr` against a real `credmgrd`
-over a real socket and includes the harder case that an orphan-scoped `List` token is refused too,
-because R0 has no exception. Nothing about sealed data is unproven-but-assumed.
-
-Its **positive half** — "names remain listable" via native-with-presence — is untestable today
-because **nothing in this build can set `presence_attested: true`**. That is the same honest gap
-ADR-046 names for the hardware keystores and ADR-047 names for sessions: the native shell that
-would attest presence does not exist.
-
-**Why it is not closed with a denial-only test.** A test asserting only the denial would make I-10
-read as satisfied while the half that needs a transport went unbuilt — a green checkbox over an
-untested guarantee, which is worse than an open one. The resolution is fixed and recorded in two
-places so it cannot lapse: I-10 will be implemented **in full, in the same change that first makes
-`presence_attested: true` reachable**, owned by whoever builds the native shell.
+`crates/cli/tests/success_criteria.rs` over a real socket, including an orphan-scoped `List` token.
+There is no CLI command or MCP tool for `orphan.reveal` (I-13 walks the tool registry).
 
 ### 4.5 Beyond the table
 
@@ -558,7 +566,7 @@ audit`, Semgrep SAST, the V1 dependency audit and test suite, and both secret gu
 (`guard-no-secrets.mjs --all`, `guard-no-personal-data.mjs --all`). **Since 2026-09-24 the same
 workflow also runs the desktop bridge's own suite** — job `v2-desktop-bridge`, `cargo test --locked`
 inside `apps/desktop/src-tauri` — because its token-custody tests are security tests (ADR-062). It
-had sat red for three weeks, from 2026-08-31, while nothing ran it.
+had sat red for three weeks, from 2026-08-31, while nothing ran it. **Since ADR-156 it also runs the airlock check** — job `v2-airlock`, `scripts/airlock-check.sh` on the built `credmgrd` (A-1 binary scan, A-2 no internet socket on the running broker).
 
 **What is not wired into CI at all — `planned`.** Neither `tools/corpus_check.py` nor the
 docgen test suite runs in any workflow; both are local-only today. That is the wrong place for
@@ -645,7 +653,7 @@ a threat model that only lists defeated adversaries.
 | feeds | `09_UI_UX_SPEC.md §4` | the hover-card rule §7 will assert by counting DOM nodes |
 | feeds | `18_ENDPOINT_INDEX.md §4` | the bridge invariants §6's drift guards hold |
 | depends on | `14_DECISIONS.md` | `ADR-036` (proptest pinned for the MSRV), `ADR-041`/`ADR-046` (why keystore conformance is deferred), `ADR-045` (the emergency-decrypt test obligation), `ADR-053` (`i21b`), `ADR-059` (the status vocabulary this rewrite applies) |
-| depends on | `PHASE8_AUDIT_REPORT.md` | K-1, the accepted risk that I-10 is unimplemented |
+| depends on | `PHASE8_AUDIT_REPORT.md` | K-1, the accepted risk that I-10 was unimplemented, closed by ADR-156 |
 | depends on | `RELEASE_VERIFICATION.md` | the human pass over every control of the built app that §8 cannot replace |
 
 ## 13. Source
@@ -710,7 +718,6 @@ invocation; no `criterion` dependency and no `[[bench]]` target; no `vitest` or 
 `echarts_bridge`, per `tools/ENGINE_ROUTING_POLICY.md`. 28 rows (I-1…I-25 and I-27…I-29; there is no I-26) × 3
 columns (`crates/brokerd/tests/isolation.rs`, `crates/mcp/tests/i13_tool_registry.rs`,
 `crates/core/tests/isolation_i17.rs`), re-derived on 2026-10-03 from a live `grep -n "^fn i" ...` over the three
-files rather than transcribed from this document's own §4.1 table — 25 claims land in `isolation.rs`
-(I-1…I-9, I-11, I-12, I-14…I-16, I-18…I-25, I-27…I-29; the file holds 26 test functions because `i21b` is a
-second test for I-21's row), one in `i13_tool_registry.rs` (I-13), one in `isolation_i17.rs` (I-17), and I-10's row is
-entirely empty, matching §4.4.
+files rather than transcribed from this document's own §4.1 table — 26 claims land in `isolation.rs`
+(I-1…I-12, I-14…I-16, I-18…I-25, I-27…I-29; I-10 since 2026-11-09, ADR-156; the file holds 28 test functions because `i21b` is a
+second test for I-21's row and one more asserts the hot set is zeroed after lock), one in `i13_tool_registry.rs` (I-13), and one in `isolation_i17.rs` (I-17).

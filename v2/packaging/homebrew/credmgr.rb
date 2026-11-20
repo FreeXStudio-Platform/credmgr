@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # --- template note (fill-formula.sh replaces this block) ---
-# Homebrew formula for the CredMgr V2 command-line client and broker (credmgr, credmgrd).
+# Homebrew formula for the CredMgr V2 command-line client and broker (credmgr, credmgrd) and the Touch ID helper (credmgr-presence).
 #
 # TEMPLATE. Prepared, not published: no tap repository exists yet. The version in the url line (written
 # as a double-brace placeholder) and the all-zero sha256 are placeholders, filled from a release's SHA256SUMS by
@@ -24,7 +24,7 @@ class Credmgr < Formula
   depends_on :macos
 
   def install
-    bin.install "bin/credmgr", "bin/credmgrd"
+    bin.install "bin/credmgr", "bin/credmgrd", "bin/credmgr-presence"
     doc.install "RELEASE.md", "CHANGELOG.md", "SECURITY.md"
     pkgshare.install "sbom"
   end
@@ -43,7 +43,8 @@ class Credmgr < Formula
   def caveats
     <<~EOS
       CredMgr is a pre-release. These binaries are UNSIGNED and your vault key is protected by your
-      passphrase alone (no Secure Enclave) - read the known limitations before trusting it with anything
+      passphrase; Touch ID (`credmgr presence enrol`, `credmgr touch-id enable`) adds a door on this Mac only and
+      does not replace it - read the known limitations before trusting it with anything
       that matters:
         #{doc}/RELEASE.md
 

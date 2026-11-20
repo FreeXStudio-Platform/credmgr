@@ -161,7 +161,7 @@ test.describe("reveal and copy are per field", () => {
     await openEntryOf(app, "atlas", "pg-main");
     await fieldRow(app, PG.password).getByRole("button", { name: "reveal", exact: true }).click();
     await expect(valueOf(app, PG.password)).toHaveText(PG_VALUE.password);
-    await fieldRow(app, PG.password).getByRole("button", { name: "hide", exact: true }).click();
+    await fieldRow(app, PG.password).getByRole("button", { name: /^hide(, re-masks in \d+ seconds)?$/ }).click();
     await expect(valueOf(app, PG.password)).toHaveText(MASK);
     expect(await page.content()).not.toContain(PG_VALUE.password);
   });
@@ -245,7 +245,7 @@ test.describe("a TOTP seed field", () => {
     const broker = await openWithExtra(app, "atlas", [VPN]);
     await openEntryOf(app, "atlas", "vpn");
     await fieldRow(app, "f_00c10002").getByRole("button", { name: "show seed" }).click();
-    await expect(notice(app, "Needs presence (Touch ID), which this beta cannot attest yet. Nothing was changed. (totp.seed)")).toBeVisible();
+    await expect(notice(app, "Needs Touch ID. Set it up in Settings, Security, then try again. Nothing was changed. (totp.seed)")).toBeVisible();
     expect(await broker.calls("totp_seed")).toEqual([{ cmd: "totp_seed", args: { node: "atlas", entry: "e-m1", field: "f_00c10002" } }]);
     await expect(valueOf(app, "f_00c10002")).toHaveText(MASK);
     expect(await page.content()).not.toContain("JBSWY3DPEHPK3PXP");

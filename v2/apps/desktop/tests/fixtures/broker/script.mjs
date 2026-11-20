@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Concatenated in this order: core defines the namespace the rest register on, install builds the first vault. */
-export const FILES = ["core.js", "seed.js", "fields.js", "session.js", "read.js", "write.js", "admin.js", "install.js"];
+export const FILES = ["core.js", "seed.js", "fields.js", "session.js", "read.js", "write.js", "names.js", "admin.js", "confirm.js", "switchboard.js", "quick.js", "agent_tokens.js", "install.js"];
 
 /** Test values, invented for this fixture.  Not credentials of anything. */
 export const FIXTURE_PASSPHRASE = "fixture-passphrase";

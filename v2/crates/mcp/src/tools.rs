@@ -67,11 +67,74 @@ fn node_entry_schema() -> Value {
 /// implemented — every call that took the advertised option was refused as
 /// malformed (review of 2026-09-24, gap G-14). Now pinned against
 /// `ops.rs` by `tests/schemas_match_the_broker.rs`.
-fn node_required_schema() -> Value {
+// ADR-155: the switchboard's schemas.
+fn settings_list_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "node": { "type": "string", "description": "A project (node) id: also list that project's settings. Leave it out for the vault settings only." },
+        },
+        "additionalProperties": false,
+    })
+}
+
+fn settings_get_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "id": { "type": "string", "description": "Setting id from credmgr_settings_list, e.g. `app.autoLockMins` or `node.securityLevel`." },
+            "node": { "type": "string", "description": "The project, for a `node.*` setting only." },
+        },
+        "required": ["id"],
+        "additionalProperties": false,
+    })
+}
+
+fn settings_set_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "id": { "type": "string", "description": "Setting id from credmgr_settings_list." },
+            "node": { "type": "string", "description": "The project, for a `node.*` setting only." },
+            "value": { "description": "The new value: the type and choices credmgr_settings_get lists (a boolean, a string, a number, or null where allowed). To toggle a boolean, send the other value." },
+            "reason": { "type": "string", "description": "Why — shown to the owner and kept in the record (required, at most 500 characters)." },
+        },
+        "required": ["id", "value", "reason"],
+        "additionalProperties": false,
+    })
+}
+
+fn settings_revert_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "change": { "type": "string", "description": "A change id (`sc-…`) from a credmgr_settings_set answer or credmgr_settings_get's recentChanges." },
+            "reason": { "type": "string", "description": "Why (optional)." },
+        },
+        "required": ["change"],
+        "additionalProperties": false,
+    })
+}
+
+fn settings_request_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "request": { "type": "string", "description": "The request id (`sr-…`) a pending credmgr_settings_set answered." },
+        },
+        "required": ["request"],
+        "additionalProperties": false,
+    })
+}
+
+/// `credmgr_list`: a node, and (ADR-167) an optional tag that narrows that one node's list. Agents read tags
+/// as they read names and never set them; the filter never reaches another node.
+fn list_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
             "node": { "type": "string", "description": "Node id — your own is `node` in credmgr_whoami's answer." },
+            "tag": { "type": "string", "description": "Only the entries carrying this tag (lower-cased; this node only)." },
         },
         "required": ["node"],
         "additionalProperties": false,
@@ -380,8 +443,9 @@ pub fn registry() -> Vec<ToolSpec> {
     vec![
         ToolSpec {
             name: "credmgr_whoami",
-            description: "Returns your own node, capabilities, and the nodes you can reach. \
-                Call this first and reason about your own boundary instead of discovering it \
+            description: "Returns your own node, capabilities, the nodes you can reach, and the \
+                node's security level (open, guarded or strict, which is stored as sealed: how much of what you ask for \
+                waits for the operator's approval). Call this first and reason about your own boundary instead of discovering it \
                 by being denied — it names only nodes you can actually reach, nothing else. \
                 You are scoped to one node (resolved from your working directory). You can \
                 read that node, its ancestors, Global, and anything explicitly granted. You \
@@ -395,7 +459,7 @@ pub fn registry() -> Vec<ToolSpec> {
             description: "Lists entry names and metadata (no values) on a node. Scope-filtered \
                 — never returns another node's entries.",
             op: "entry.list",
-            input_schema: node_required_schema,
+            input_schema: list_schema,
         },
         ToolSpec {
             name: "credmgr_search",
@@ -410,7 +474,9 @@ pub fn registry() -> Vec<ToolSpec> {
             description: "Reveals an entry's values. The answer carries `fields` (id, label, \
                 value, type, masked for each) and, when exactly one field is returned, `value`. \
                 Pass `fieldIds` to reveal only some fields. Subject to the node's two-factor \
-                policy and to the vault's lock state.",
+                policy, to the vault's lock state and to the node's security level: on a \
+                guarded node a high or critical value, and on a strict node every value, \
+                answers approval_pending until the operator approves it.",
             op: "entry.reveal",
             input_schema: get_schema,
         },
@@ -510,6 +576,43 @@ pub fn registry() -> Vec<ToolSpec> {
             op: "audit.tail",
             input_schema: recent_changes_schema,
         },
+        // ADR-155: the switchboard. Read every setting; change one; revert a change; poll a waiting request; read the KB.
+        ToolSpec {
+            name: "credmgr_settings_list",
+            description: "Lists every CredMgr setting with its current value, default, accepted values, what it is for,                 where it is stored, its risk, and the rule for you (`you`): cosmetic and stricter changes apply at once;                 a change that weakens the vault waits for the owner's approval. Pass `node` to include that project's                 settings (only projects you reach).",
+            op: "settings.list",
+            input_schema: settings_list_schema,
+        },
+        ToolSpec {
+            name: "credmgr_settings_get",
+            description: "Describes one setting in full, with its current value and its recent recorded changes                 (each with the value it replaced and its change id, for credmgr_settings_revert).",
+            op: "settings.get",
+            input_schema: settings_get_schema,
+        },
+        ToolSpec {
+            name: "credmgr_settings_set",
+            description: "Changes a setting (send the other boolean to toggle). A cosmetic or stricter change applies                 at once and answers `applied: true` with a `changeId`. A change that weakens the vault (a longer or no                 auto-lock, a looser reveal policy, a lower security level, more agent access, screen-capture protection                 off) answers `state: \"pending\"` with a `request` id: tell the user it waits for their approval in                 CredMgr, then poll credmgr_settings_request. Never retry a pending change in a loop.",
+            op: "settings.set",
+            input_schema: settings_set_schema,
+        },
+        ToolSpec {
+            name: "credmgr_settings_revert",
+            description: "Puts back the value a recorded change replaced, under the same rules as credmgr_settings_set                 (a revert that would weaken the vault waits for the owner).",
+            op: "settings.revert",
+            input_schema: settings_revert_schema,
+        },
+        ToolSpec {
+            name: "credmgr_settings_request",
+            description: "The state of a request you made: pending, approved (with the applied change id), denied or                 expired (after 10 minutes). Only the owner approves or denies, in CredMgr on their device.",
+            op: "settings.request_get",
+            input_schema: settings_request_schema,
+        },
+        ToolSpec {
+            name: "credmgr_kb",
+            description: "The CredMgr knowledge base for language models, as Markdown: every feature, every setting with                 what it is for and where it lives, how to connect, where data is kept, retention and backup, the                 switchboard's rules, and examples. Read it once when you start working with CredMgr.",
+            op: "settings.kb",
+            input_schema: no_params_schema,
+        },
     ]
 }
 
@@ -549,6 +652,51 @@ pub const FORBIDDEN_OPS: &[&str] = &[
     // ADR-076: replacing the root key is the most consequential act the vault
     // has — human, 2FA and presence only. Absent, not gated.
     "maintenance.rotate_root",
+    // ADR-156: changing the passphrase is the same rotation, and the owner's alone.
+    "vault.set_passphrase",
+    // ADR-163: opening the vault with the recovery code (and replacing the passphrase and the code) is a person
+    // at their own Mac who forgot the passphrase. Never a tool.
+    "vault.recover",
+    // ADR-148 (P3): the 2.0 owner ops — a node's rekey, destroying orphans, exporting a node, and a node's
+    // own second factor — are human-only like the rest; named here so I-13 fails if a tool ever maps to one.
+    "node.rekey",
+    "orphan.destroy",
+    "node.export",
+    "node.gate_enroll_begin",
+    "node.gate_enroll_confirm",
+    "node.gate_verify",
+    "node.gate_remove",
+    // ADR-158: moving an entry between nodes is the owner's (it would let an agent carry an entry out of
+    // its scope); no tool maps to it.
+    "entry.move",
+    // ADR-161: the doctor's scan reads every value in the vault to compare them; the owner's login only.
+    "vault.doctor_scan",
+    // ADR-168: merge suggestions say which entries share a value, and a merge removes entries and edits
+    // names; the decision memory is the owner's judgement. All eight are the owner's login only.
+    "merge.suggestions",
+    "merge.apply",
+    "merge.auto",
+    "merge.auto_all",
+    "merge.dismiss",
+    "merge.undismiss",
+    "merge.dismissed_list",
+    "merge.restore_all",
+    // ADR-169: applying a doctor plan is a run of `entry.move`s; the owner's login only.
+    "vault.doctor_apply",
+    // ADR-155: only the owner sees and decides the switchboard's waiting requests.
+    "settings.request_list",
+    "settings.request_decide",
+    // ADR-165: the machine lock decides on which computers the passphrase opens the vault — the owner's alone.
+    // Absent, not gated: an agent never reads the tier, binds or unbinds.
+    "keystore.status",
+    "keystore.bind",
+    "keystore.unbind",
+    // ADR-164: an agent never mints, widens, rotates, lists or revokes an agent token, its own included.
+    // Issuing is the owner's, with a second factor and Touch ID; the broker refuses every agent as well.
+    "agent.token_issue",
+    "agent.token_status",
+    "agent.token_rotate",
+    "agent.token_revoke",
 ];
 
 /// Dispatch one `tools/call` — looks up the named tool, forwards `arguments`

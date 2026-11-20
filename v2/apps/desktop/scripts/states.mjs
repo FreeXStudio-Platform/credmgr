@@ -40,7 +40,30 @@ const FIELD_EDIT = { ...FIELD_FORM, mode: "edit", field: "f_00a20004", label: "p
 /** The cosmetic choices at their defaults (src/design/logic/extras.js cosmDef); a state patches a few of them. */
 const COSM = { mark: "keep", glyph: "classic", halo: false, ring: false, shape: "circle", global: "bone", link: "default", dots: "spectrum", backdrop: "plain", badge: "none", icon: "keep", flourish: "off", trail: "standard" };
 
-export const SETTINGS_SECTIONS = ["security", "appearance", "backup", "mode", "games", "nodes", "grants", "agents", "maintenance", "audit", "advanced"];
+const AGENT_TOKENS = {
+  max: 32, defaultExpiresIn: 86400, maxExpiresIn: 604800,
+  tokens: [
+    { id: "a_00000000f1c00001", label: "claude on atlas", node: "atlas", capabilities: ["list", "read", "reveal"], effectiveCapabilities: ["list", "read", "reveal"], createdAt: 4102358400, expiresAt: 4102444800, lastUsedAt: 4102362000, rotatedAt: null },
+    { id: "a_00000000f1c00002", label: "ci on beacon", node: "beacon", capabilities: ["list", "read", "update"], effectiveCapabilities: ["list", "read"], createdAt: 4102358400, expiresAt: 4102963200, lastUsedAt: null, rotatedAt: null },
+  ],
+};
+const AGENTS_FOUND = {
+  binary: "/opt/homebrew/bin/credmgr", binaryFound: true, claudeCodeCommand: "claude mcp add --scope user credmgr -- /opt/homebrew/bin/credmgr mcp",
+  clients: [
+    { client: "claude-code", label: "Claude Code", path: "~/.claude.json", state: "ready", detail: null, writable: false, container: "mcpServers" },
+    { client: "claude-desktop", label: "Claude Desktop", path: "~/Library/Application Support/Claude/claude_desktop_config.json", state: "connected", detail: null, writable: true, container: "mcpServers" },
+    { client: "cursor", label: "Cursor", path: "~/.cursor/mcp.json", state: "ready", detail: null, writable: true, container: "mcpServers" },
+    { client: "vscode", label: "VS Code (Copilot)", path: "~/Library/Application Support/Code/User/mcp.json", state: "not_found", detail: null, writable: true, container: "servers" },
+    { client: "windsurf", label: "Windsurf", path: "~/.codeium/windsurf/mcp_config.json", state: "unreadable", detail: "the file is not valid JSON; it was left alone", writable: true, container: "mcpServers" },
+  ],
+};
+const AGENT_PLAN = {
+  client: "cursor", label: "Cursor", action: "connect", path: "~/.cursor/mcp.json", exists: true, unchanged: false,
+  diff: [{ kind: " ", text: "  \"mcpServers\": {" }, { kind: "+", text: "    \"credmgr\": {" }, { kind: "+", text: "      \"command\": \"/opt/homebrew/bin/credmgr\"," }, { kind: "+", text: "      \"args\": [\"mcp\"]" }, { kind: "+", text: "    }" }, { kind: " ", text: "  }" }],
+  backupName: "mcp.json.credmgr-backup-<time>", token: "tok-cursor-connect-ready",
+};
+
+export const SETTINGS_SECTIONS = ["security", "appearance", "backup", "mode", "games", "nodes", "grants", "agents", "maintenance", "audit", "report", "advanced"];
 
 export const STATES = [
   ["graph", {}],
@@ -52,6 +75,19 @@ export const STATES = [
   ["field-add", { openEntry: "e-a2", dialog: "field", fieldForm: { ...FIELD_FORM, label: "replica", value: "fixture-value-replica" } }],
   ["field-edit", { openEntry: "e-a2", dialog: "field", fieldForm: { ...FIELD_EDIT, type: "password", masked: "hidden" } }],
   ["field-remove", { openEntry: "e-a2", dialog: "field", fieldForm: { ...FIELD_EDIT, mode: "remove" } }],
+  ["alias", { openEntry: "e-a1", dialog: "alias", aliasForm: { node: "atlas", entry: "e-a1", entryName: "stripe-live", text: "live-payments\nPayments Key", orig: [], busy: false } }],
+  ["entry-history", { openEntry: "e-a1", entryTab: { key: "atlas\u0000e-a1", tab: "history" }, historyView: { key: "atlas\u0000e-a1", loading: false, err: null, data: { node: "atlas", entry: "e-a1", truncated: false, exists: true, name: "stripe-live", ref: 1, modified: 1760000000, rotatedAt: null, expiresAt: 1790000000,
+    records: [{ id: "aud-1", timestamp: 1760000000, actor: "human", action: "entry.create", decision: "allow", generation: null }, { id: "aud-2", timestamp: 1760000600, actor: "ses_fixture_agent", action: "entry.reveal", decision: "deny", generation: null }] } } }],
+  ["entry-history-failed", { openEntry: "e-a1", entryTab: { key: "atlas\u0000e-a1", tab: "history" }, historyView: { key: "atlas\u0000e-a1", loading: false, err: "internal", data: null } }],
+  ["expiry", { openEntry: "e-a1", dialog: "expiry", expiryForm: { node: "atlas", entry: "e-a1", entryName: "stripe-live", date: "2030-06-01", orig: null, busy: false } }],
+  ["rotate", { openEntry: "e-a2", dialog: "rotate", rotateForm: { node: "atlas", entry: "e-a2", entryName: "pg-main", field: "f_00a20004", fields: [{ id: "f_00a20004", label: "password", masked: true }, { id: "f_00a20001", label: "host", masked: false }], value: "", gen: false, genBits: 0, gl: "24", gs: true, gp: false, busy: false } }],
+  ["rotate-generated", { openEntry: "e-a1", dialog: "rotate", rotateForm: { node: "atlas", entry: "e-a1", entryName: "stripe-live", field: "f_00000000", fields: [{ id: "f_00000000", label: "field 1", masked: true }], value: "fixture-generated-state", gen: true, genBits: 150, gl: "24", gs: true, gp: false, busy: false } }],
+  ["remove-entry", { openEntry: "e-a1", dialog: "removeEntry", removeForm: { node: "atlas", entry: "e-a1", entryName: "stripe-live", busy: false } }],
+  ["removed-undo", { removedUndo: { node: "atlas", entry: "e-gone", name: "old-key", busy: false, clash: true } }],
+  ["expiry-change", { openEntry: "e-a1", dialog: "expiry", expiryForm: { node: "atlas", entry: "e-a1", entryName: "stripe-live", date: "2030-06-01", orig: 1790000000, busy: false } }],
+  ["import-env", { dialog: "importEnv", importForm: { node: "atlas", text: "NAME=value", fileName: "", stage: "input", pairs: [], skippedEmpty: [], plan: null, onConflict: "refuse", busy: false } }],
+  ["import-env-preview", { dialog: "importEnv", importForm: { node: "atlas", text: "", fileName: "", stage: "preview", pairs: [{ name: "FIX_ONE", value: "x" }, { name: "stripe-live", value: "y" }], skippedEmpty: ["FIX_EMPTY"], onConflict: "refuse", busy: false,
+    plan: { items: [{ name: "FIX_ONE", status: "new", similar: [{ id: "e-a1", name: "stripe-live", reason: "one-edit" }] }, { name: "stripe-live", status: "exists" }], counts: { new: 1, exists: 1, duplicate: 0, empty: 0, invalid: 0 } } } }],
   ["entry-locked", { openEntry: "e-a1", vaultLocked: true }],
   ["node-locked (cobalt)", { selected: "cobalt" }],
   ["orphan", { selected: "__orphan" }],
@@ -79,6 +115,11 @@ export const STATES = [
   ["help", { dialog: "help" }],
   ["pending", { dialog: "pending" }],
   ["touch", { dialog: "touch", touch: { title: "t", body: "b" } }],
+  // ADR-150: the confirm dialog (passphrase only; with Touch ID offered; a wrong passphrase said), and the Settings rows with the Pro options.
+  ["confirm", { dialog: "confirm", confirm: { ask: { command: "entry_reveal", operation: "entry.reveal", mode: "window", windowSeconds: 300 }, busy: false, error: "", touch: null } }],
+  ["confirm-touch", { dialog: "confirm", confirm: { ask: { command: "entry_reveal", operation: "entry.reveal", mode: "everyTime", windowSeconds: 0 }, busy: false, error: "", touch: "Touch ID" } }],
+  ["confirm-error", { overlay: "settings", dialog: "confirm", confirm: { ask: { command: "node_policy", operation: "node.policy", mode: "window", windowSeconds: 300 }, busy: false, error: "Wrong passphrase.", touch: null } }],
+  ["settings-confirm-on", { overlay: "settings", setSection: "security", mode: "pro", rc: { mode: "window", windowSeconds: 300, scope: "high" } }],
   ["gate-loading", { overlay: "settings", dialog: "gateEnrol", gateFlow: { ...GATE, step: "loading", qr: null, secret: "" } }],
   ["gate-qr", { overlay: "settings", dialog: "gateEnrol", gateFlow: { ...GATE, totp: "123" } }],
   ["gate-replace", { overlay: "settings", dialog: "gateEnrol", gateFlow: { ...GATE, replacing: true } }],
@@ -111,9 +152,38 @@ export const STATES = [
   ["lock2", { screen: "lock", lockStep: 2 }],
   ["lock3", { screen: "lock", lockStep: 3 }],
   ["lock4", { screen: "lock", lockStep: 4 }],
+  ["node-filter", { nodeFilter: "stag" }],
+  ["node-filter-none", { nodeFilter: "zzz" }],
+  ["node-find", { selected: "atlas", nodeFind: { node: "atlas", q: "pay", rows: [{ id: "e-a1", name: "stripe-live", alias: "live-payments" }], err: null } }],
+  ["node-find-none", { selected: "atlas", nodeFind: { node: "atlas", q: "zzz", rows: [], err: null } }],
+  ["search-ref", { searchOpen: true, searchQ: "#2", searchHits: { q: "#2", rows: [], ref: { node: "atlas", entry: "e-a1", name: "stripe-live", ref: 2 } } }],
+  ["audit-report", { overlay: "settings", setSection: "report", auditReport: { range: "30", fromDay: "2026-10-01", toDay: "2026-10-31", node: "", busy: false, err: "", report: {
+    from: 1760000000, to: 1762592000, node: null, records: 3, decisions: { allow: 2, deny: 1, other: 0 },
+    byAction: [{ action: "entry.list", count: 2, allow: 2, deny: 0 }, { action: "entry.reveal", count: 1, allow: 0, deny: 1 }],
+    byActor: [{ actor: "human", count: 2, allow: 2, deny: 0 }, { actor: "ses_fixture_agent", count: 1, allow: 0, deny: 1 }],
+    byNode: [{ node: "atlas", count: 3, allow: 2, deny: 1 }],
+    denials: { total: 1, reasons: [{ action: "entry.reveal", reason: "node_access_denied", count: 1 }], recent: [{ id: "aud-3", timestamp: 1760000600, actor: "ses_fixture_agent", action: "entry.reveal", node: "atlas", reason: "node_access_denied" }] },
+    presence: { uses: 1, byOp: [{ op: "entry.move", count: 1 }], refused: 0 }, chain: { months: ["2026-10"], verified: true } } } }],
+  ["audit-report-dates-error", { overlay: "settings", setSection: "report", auditReport: { range: "dates", fromDay: "2026-10-31", toDay: "2026-10-01", node: "atlas", busy: false, err: "The end date is before the start date.", report: null } }],
+  // ADR-163: "Forgot passphrase?" — the recovery-code form, the same form once the broker asked for the second factor (with a refusal), the new code shown once
+  ["lock5", { screen: "lock", lockStep: 5 }],
+  ["lock5-factor", { screen: "lock", lockStep: 5, forgotCode: "x", forgotPass: "abcd", forgotRepeat: "abcd", forgotNeedFactor: true, fieldErrors: { forgot: "That code was not accepted." } }],
+  ["lock6", { screen: "lock", lockStep: 6, forgotNewCode: "FIXT-NEWC-ODE0-0001" }],
   ["brokerdown", { screen: "brokerdown" }],
+  ["restore", { overlay: "settings", setSection: "backup", dialog: "restoreBackup", restoreForm: { archive: "/backups/credmgr-backup-1760000001.enc", target: "", passphrase: "", busy: false, done: null } }],
+  ["restore-refused", { overlay: "settings", setSection: "backup", dialog: "restoreBackup", restoreForm: { archive: "/backups/credmgr-backup-1760000001.enc", target: "", passphrase: "", busy: false, done: null }, fieldErrors: { "restore.save": "CredMgr's broker is running, and a restore never runs beside it. Nothing was read or written." } }],
+  ["restore-brokerdown", { screen: "brokerdown", dialog: "restoreBackup", restoreForm: { archive: "/backups/a.enc", target: "/restored", passphrase: "", busy: false, done: null } }],
+  ["restore-done", { screen: "brokerdown", dialog: "restoreBackup", restoreForm: { archive: "/backups/a.enc", target: "/restored", passphrase: "", busy: false, done: { target: "/restored", stateDir: "/state", files: 12, bytes: 4096, counter: "keptExisting", complete: false } } }],
   ["bootfailed", { screen: "bootfailed" }],
   ...SETTINGS_SECTIONS.map((k) => [`settings-${k}`, { overlay: "settings", setSection: k }]),
+  // ADR-143: the Agents section with what the shell found, and the change dialog drawn from a plan.
+  ["settings-agents-found", { overlay: "settings", setSection: "agents", agents: AGENTS_FOUND }],
+  ["agent-dialog", { overlay: "settings", setSection: "agents", agents: AGENTS_FOUND, dialog: "agent", agentDlg: { client: "cursor", action: "connect", busy: false, plan: AGENT_PLAN } }],
+  ["agent-dialog-nothing", { overlay: "settings", setSection: "agents", agents: AGENTS_FOUND, dialog: "agent", agentDlg: { client: "claude-desktop", action: "connect", busy: false, plan: { ...AGENT_PLAN, client: "claude-desktop", label: "Claude Desktop", unchanged: true, diff: [], backupName: null } } }],
+  // ADR-164: the Agent tokens list, the Issue dialog's form, and the token shown once (an invented value, not a credential).
+  ["agent-tokens-list", { overlay: "settings", setSection: "agents", agents: AGENTS_FOUND, atList: AGENT_TOKENS }],
+  ["agent-token-form", { overlay: "settings", setSection: "agents", agents: AGENTS_FOUND, atList: AGENT_TOKENS, dialog: "agentToken", atForm: { node: "atlas", label: "claude on atlas", caps: { list: true, read: true, reveal: true, create: false, update: false }, expires: 28800, busy: false, err: null } }],
+  ["agent-token-issued", { overlay: "settings", setSection: "agents", agents: AGENTS_FOUND, atList: AGENT_TOKENS, dialog: "agentToken", atForm: { node: "atlas", label: "claude on atlas", caps: { list: true, read: true }, expires: 28800, busy: false, err: null }, atIssued: { id: "a_00000000f1c00001", label: "claude on atlas", node: "atlas", capabilities: ["list", "read", "reveal"], expiresAt: 4102444800, copied: true, clearAfter: 30, revoked: false } }],
   ...[1, 2, 3, 4, 5].map((n) => [`firstrun-${n}`, { screen: "firstrun", __fr: n }]),
   ["dark-high", { contrastMode: "high" }],
   ["light", { theme: "light" }],

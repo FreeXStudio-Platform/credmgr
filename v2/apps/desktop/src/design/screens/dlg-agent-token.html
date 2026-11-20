@@ -1,0 +1,38 @@
+<!-- ADR-164: issue a node-scoped agent token.  Two steps in one dialog: the form, then what was issued.  The token itself never
+     reaches the page (ADR-057's rule for the login): the shell puts it on the concealed, self-clearing clipboard and the dialog says so.  It sits ahead of the settings overlay
+     in the document, like dlg-agent.html, because the focus trap acts on the first .cm-modal-panel in the page. -->
+<sc-if value="{{dlgAgentToken}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:90;background:var(--scrim);display:flex;align-items:center;justify-content:center">
+  <div class="cm-modal-panel" data-screen-label="S21d Issue agent token" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-at-title" style="width:min(560px,94vw);max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:14px">
+    <div id="dlg-at-title" class="t-h3" style="font-family:var(--f-mono)">Issue an agent token</div>
+    <sc-if value="{{atFormShow}}" hint-placeholder-val="{{true}}">
+      <div class="t-body-sm">The agent will reach this node only: not Global, not the nodes above or below it, not any grant. It can never do more than the node's agent access allows. Issuing asks for Touch ID.</div>
+      <div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px 12px;align-items:center">
+        <span class="t-mono-label">node</span>
+        <select aria-label="the node the token is for" value="{{atNodeVal}}" onChange="{{onAtNode}}" disabled="{{atIssueDisabled}}" style="font-family:var(--f-mono)"><sc-for list="{{atNodes}}" as="o" hint-placeholder-count="5"><option value="{{o.id}}">{{o.label}}</option></sc-for></select>
+        <span class="t-mono-label">agent</span>
+        <input type="text" data-at-label="1" aria-label="a name for the agent that will hold the token" value="{{atLabel}}" onChange="{{onAtLabel}}" disabled="{{atIssueDisabled}}" maxlength="64" placeholder="e.g. claude code on the api repo" autocomplete="off" spellcheck="false">
+        <span class="t-mono-label">may</span>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <sc-for list="{{atCaps}}" as="c" hint-placeholder-count="5"><label style="display:flex;min-height:24px;gap:6px;align-items:center;font-family:var(--f-mono);font-size:var(--fs-sm);cursor:pointer"><input type="checkbox" checked="{{c.on}}" onChange="{{c.toggle}}" disabled="{{atIssueDisabled}}" style="width:auto">{{c.label}}</label></sc-for>
+        </div>
+        <span class="t-mono-label">expires</span>
+        <select aria-label="how long the token lasts" value="{{atExpiresVal}}" onChange="{{onAtExpires}}" disabled="{{atIssueDisabled}}" style="font-family:var(--f-mono)"><sc-for list="{{atExpiries}}" as="x" hint-placeholder-count="4"><option value="{{x.secs}}">{{x.label}}</option></sc-for></select>
+      </div>
+      <sc-if value="{{atFormErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{atFormErr}}</div></sc-if>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="k-btn" data-at-cancel="1" onClick="{{closeAgentToken}}">Cancel</button>
+        <button class="k-btn" data-variant="primary" data-at-issue="1" onClick="{{issueAgentToken}}" disabled="{{atIssueDisabled}}">{{atIssueLabel}}</button>
+      </div>
+    </sc-if>
+    <sc-if value="{{atIssuedShow}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm" role="status">{{atIssuedWhat}}</div>
+      <sc-if value="{{atCopiedShow}}" hint-placeholder-val="{{true}}"><div class="t-caption" data-at-copied="1">{{atCopiedText}}</div></sc-if>
+      <sc-if value="{{atNotCopiedShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert" data-at-not-copied="1">{{atNotCopiedText}}</div></sc-if>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="k-btn" data-variant="primary" data-at-done="1" onClick="{{closeAgentToken}}">Done</button>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</sc-if>

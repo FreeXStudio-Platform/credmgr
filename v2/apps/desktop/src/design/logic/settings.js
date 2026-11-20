@@ -41,9 +41,12 @@ const PROMPTS = {
   backup:{ op:'maintenance.backup', title:'back up the vault', action:'Back up', label:'backup passphrase', repeat:true,
     body:'The backup is encrypted with this passphrase. It is not stored anywhere: keep it, because the backup cannot be opened without it.' },
   rotate:{ op:'maintenance.rotate_root', title:'rotate the root key', action:'Rotate', label:'vault passphrase', repeat:false,
-    body:'Enter the vault passphrase again. It protects the new root key. This replaces the root key and the recovery code, and needs presence (Touch ID), which this beta cannot attest yet: the broker will refuse it today and nothing will change.' },
+    body:'Enter the vault passphrase again. It protects the new root key. This replaces the root key and the recovery code, and asks for Touch ID (and a fresh second factor when one is on). If Touch ID is not set up the broker refuses and nothing changes.' },
+  // ADR-156: the current passphrase in the first input, the new one twice below it (`fresh`).  A root rotation under the new passphrase, so it ends in the same recovery-code dialog.
+  passphrase:{ op:'vault.set_passphrase', title:'change the vault passphrase', action:'Change passphrase', label:'current passphrase', repeat:false, fresh:true,
+    body:'Enter the current passphrase, then the new one twice. This also replaces the root key and the recovery code: the new code is shown once and the old one stops working. It asks for Touch ID, and a fresh second factor, when they are set up.' },
   rebuild:{ op:'maintenance.doctor', title:'rebuild the registry', action:'Rebuild', label:'passphrase of the latest backup', repeat:false,
-    body:'Rebuilds the registry from the most recent backup. Enter the passphrase that backup was made with. It needs presence (Touch ID), which this beta cannot attest yet: the broker will refuse it today and nothing will change.' }
+    body:'Rebuilds the registry from the most recent backup. Enter the passphrase that backup was made with. It asks for Touch ID. If Touch ID is not set up the broker refuses and nothing changes.' }
 };
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -75,7 +78,7 @@ export const settingsMethods = {
     if(S.captureProtection===false)this.applyCaptureProtection(false);
     // Whatever the vault layer's state is, the screens of this file hold nothing once it is locked.
     // (A dialog of this file that is open at that moment goes with it: a `dialog` left set with nothing to show blocks the bare shortcuts.)
-    this._unsubAdmin=this.model.subscribe(()=>{ if(this.model.kind==='bridge'&&this.model.status!=='unlocked'&&(this.state.admin||this._adminPass||this._adminRepeat)){ this.wipeAdminPass(); this.setState((st)=>({admin:null,dialog:(st.dialog==='adminPass'||st.dialog==='recovery')?null:st.dialog})); } });
+    this._unsubAdmin=this.model.subscribe(()=>{ if(this.model.kind==='bridge'&&this.model.status!=='unlocked'&&(this._mlPass||this._mlCode||this._mlRetype||this.state.machineLockShown)){ this.wipeMachineLockFields(); this.setState((st)=>({machineLockShown:null,machineLockAsk:null,dialog:st.dialog==='machineLock'?null:st.dialog})); } if(this.model.kind==='bridge'&&this.model.status!=='unlocked'&&(this.state.admin||this.state.tidy||this._adminPass||this._adminRepeat||this._adminNew||this._adminNewRepeat)){ this.wipeAdminPass(); this.setState((st)=>({admin:null,tidy:null,overlay:st.overlay==='tidy'?null:st.overlay,dialog:(st.dialog==='adminPass'||st.dialog==='recovery')?null:st.dialog})); } });
     const base=this.componentDidUpdate;
     this.componentDidUpdate=(prevProps,prevState)=>{ base.call(this,prevProps,prevState); this.afterUpdate(prevState); };
   },
@@ -84,9 +87,13 @@ export const settingsMethods = {
     if(!prev)return;
     const s=this.state, patch={};
     for(const k of PREF_KEYS) if(!Object.is(prev[k],s[k])) patch[k]=k==='greyscale'?!!s[k]:s[k];
-    if(Object.keys(patch).length)savePrefs(patch);
+    if(Object.keys(patch).length){ savePrefs(patch); this.queueSwitchboardPush(patch); } // and to the broker's registry (ADR-155), where agents read it
+    if(s.overlay==='settings'&&prev.overlay!=='settings'){ this._touchAsked=false; this.loadTouch(); this._rcAsked=false; this.loadRevealConfirm(); this.loadLoginAgent(); this._mlAsked=false; this.loadMachineLock(); } // ADR-098: what Touch ID can do, asked when Settings opens
     if(s.dialog==='about'&&prev.dialog!=='about')this.loadVersion(); // asked when About opens, not at start: the app makes no call it does not need
-    if(s.dialog!=='adminPass'&&(this._adminPass||this._adminRepeat))this.wipeAdminPass();
+    if(s.dialog!=='adminPass'&&(this._adminPass||this._adminRepeat||this._adminNew||this._adminNewRepeat))this.wipeAdminPass();
+    if(s.dialog!=='machineLock'&&(this._mlPass||this._mlCode||this._mlRetype))this.wipeMachineLockFields(); // ADR-165: the bind dialog's passphrase and codes
+    // Review N1: the dialog closed (Escape, a click outside) while it showed the new code: nothing has changed, and the broker forgets it.
+    if(s.dialog!=='machineLock'&&s.machineLockShown&&!s.machineLockBusy){ this.setState({machineLockShown:null,machineLockAsk:null}); admin.machineLockCancel().catch(()=>{}); }
     const gf=s.gateFlow;
     if(gf){
       // While a code is being confirmed the answer carries the recovery codes, and a window closed first would lose them: the dialog comes back.
@@ -114,6 +121,157 @@ export const settingsMethods = {
    * Tell the shell the user's screen-capture choice.  Resolves nothing the caller needs; a failure is said in a notice.  Turning protection OFF failing is
    * harmless (the window stays hidden from capture); turning it ON failing is not, so that one is an error and the words say what is true.
    */
+  /** ADR-098: read what this Mac can do for Touch ID and what is set up.  Once per opening of the Security tab. */
+  loadTouch(){
+    if(this._touchAsked)return; this._touchAsked=true;
+    admin.touchIdState().then((t)=>{ this.setState({touch:t?{probe:t.probe,status:t.status}:null,touchLoaded:true}); })
+      .catch(()=>{ this._touchAsked=false; this.setState({touchLoaded:true}); /* optional: a Mac without Touch ID just shows no row */ });
+  },
+  /** Turn Touch ID on or off.  A refusal (a fresh second factor, a dismissed prompt) is routed like any other; the state is re-read after. */
+  async setTouch(on){
+    if(this._touchBusy)return;
+    this._touchBusy=true; this.setState({touchBusy:true});
+    try{
+      if(on) await admin.touchIdSetUp(); else await admin.touchIdTurnOff();
+      this.notify('success',on?'Touch ID is on. You can unlock with it from the Lock screen.':'Touch ID is off.');
+    }catch(e){ this.routeError(e,{op:on?'device.enrol':'device.remove'}); }
+    finally{
+      this._touchBusy=false; this._touchAsked=false;
+      this.setState({touchBusy:false}); this.loadTouch();
+    }
+  },
+  // ─────────────── start at login (ADR-156) ───────────────
+  /** What the launch agent looks like.  Local to the shell (no broker call), so it is asked on the broker-down screen too.  `null` = not offered (no shell, not a Mac). */
+  loadLoginAgent(){
+    if(this._laAsked)return; this._laAsked=true;
+    admin.loginAgentState().then((st)=>{ this._laAsked=false; this.setState({loginAgent:st}); })
+      .catch(()=>{ this._laAsked=false; this.setState({loginAgent:null}); }); // optional, like the Touch ID row: a shell that cannot say offers nothing
+  },
+  /** Turn it on (the click is the ask: the row says what it writes) or off (asked once more first: it stops the broker the agent started). */
+  async setLoginAgent(on,from){
+    if(this.state.loginAgentBusy)return;
+    if(!on&&!this.state.loginAgentOffAsk){ this.setState({loginAgentOffAsk:true}); return; }
+    this.setState({loginAgentBusy:true,loginAgentOffAsk:false});
+    try{
+      const st=on?await admin.loginAgentTurnOn():await admin.loginAgentTurnOff();
+      this.setState({loginAgent:st});
+      if(from==='brokerdown'){ this.notify('success','The broker is starting. Retrying…'); clearTimeout(this._laRetryT); this._laRetryT=setTimeout(()=>this.retryBoot(),1500); }
+      else this.notify('success',on?'The broker now starts when you log in.':'The broker no longer starts at login. Start credmgrd yourself next time.');
+    }catch(e){
+      const code=errorCode(e);
+      this.notify('error',code==='login_agent_failed'
+        ?(on?'Could not set the broker to start at login. Nothing else was changed. Check that credmgrd is installed (RELEASE.md section 3).':'Could not stop the broker from starting at login. The agent file may still be there.')
+        :'Could not change start at login ('+(code||'unknown')+').');
+    }finally{ this.setState({loginAgentBusy:false}); this.loadLoginAgent(); }
+  },
+
+  // ─────────────── the machine lock (ADR-165) ───────────────
+  /** Whether the passphrase file is sealed to this Mac.  Once per opening of the Security tab; `null` (no row) when it cannot be asked. */
+  loadMachineLock(){
+    if(this._mlAsked)return; this._mlAsked=true;
+    admin.machineLockState().then((st)=>{ this.setState({machineLock:st}); })
+      .catch(()=>{ this._mlAsked=false; this.setState({machineLock:null}); });
+  },
+  /**
+   * Both directions are asked first, in a dialog that says what happens if this Mac is replaced (the recovery code is the way back).
+   * Review P1-1: turning it on asks for the vault passphrase and the CURRENT recovery code, which the broker proves before anything
+   * changes; turning it off asks for the passphrase (sent only when typed: the broker needs it where no Touch ID key and no second
+   * factor are set up).  Review N1: turning it on is two steps in the same dialog.  The first (`bind`) sends both values and nothing
+   * changes; the broker answers the NEW recovery code.  The second (`confirm`) shows that code and asks for it typed back, and only the
+   * typed-back code turns the lock on, so the person provably holds the code that becomes the only one that works.  Closing the dialog
+   * between the steps changes nothing (the broker is told to forget it).  Like the passphrase prompt, the typed values live on `this`,
+   * never in React state, and are wiped on close; the shown code lives in state only while the dialog shows it.
+   */
+  askMachineLock(on){
+    if(this.state.machineLockBusy)return;
+    this.wipeMachineLockFields();
+    this.setState({dialog:'machineLock',machineLockAsk:on?'bind':'unbind',machineLockError:'',machineLockShown:null});
+    this.focusLater(on?'input[data-machine-lock-pass]':'[data-machine-lock-cancel]');
+  },
+  wipeMachineLockFields(){ this._mlPass=''; this._mlCode=''; this._mlRetype=''; try{ document.querySelectorAll('input[data-machine-lock-secret]').forEach((el)=>{ el.value=''; }); }catch(e){} },
+  cancelMachineLock(){
+    const waiting=!!this.state.machineLockShown;
+    this.wipeMachineLockFields();
+    this.setState({dialog:null,machineLockAsk:null,machineLockError:'',machineLockShown:null});
+    if(waiting)admin.machineLockCancel().catch(()=>{});
+  },
+  async setMachineLock(on){
+    if(this.state.machineLockBusy)return;
+    if(on&&this.state.machineLockAsk==='confirm')return this.confirmMachineLockCode();
+    const pass=this._mlPass||'', code=(this._mlCode||'').trim();
+    if(on&&!pass){ this.setState({machineLockError:'Enter the vault passphrase.'}); return; }
+    if(on&&!code){ this.setState({machineLockError:'Enter your current recovery code.'}); return; }
+    this.wipeMachineLockFields();
+    if(on){
+      // Step one: nothing changes; the broker answers the new code (or, already bound, re-keys on the commit with no code).
+      this.setState({machineLockBusy:true,machineLockError:''});
+      let prepared=null;
+      try{ prepared=await admin.machineLockPrepare(pass,code); }
+      catch(e){ this.setState({machineLockBusy:false,dialog:null,machineLockAsk:null}); this.routeError(e,{op:'keystore.bind'}); return; }
+      if(prepared.already||!prepared.newRecoveryCode){ this.setState({machineLockBusy:false}); return this.finishMachineLockOn(undefined); }
+      this.setState({machineLockBusy:false,dialog:'machineLock',machineLockAsk:'confirm',machineLockShown:String(prepared.newRecoveryCode),machineLockError:''});
+      this.focusLater('input[data-machine-lock-retype]');
+      return;
+    }
+    this.setState({machineLockBusy:true,dialog:null,machineLockAsk:null,machineLockError:''});
+    try{
+      const st=await admin.machineLockTurnOff(pass||undefined);
+      this.setState({machineLock:st});
+      this.notify('success','The machine lock is off. The passphrase opens a copy of the vault folder on any computer again.');
+    }catch(e){ this.routeError(e,{op:'keystore.unbind'}); }
+    finally{
+      this.setState({machineLockBusy:false}); this._mlAsked=false;
+      if(this.model.status==='unlocked')this.loadMachineLock();
+    }
+  },
+  /** Step two: the new code typed back.  A code that is not the one shown keeps the dialog open (nothing changed). */
+  async confirmMachineLockCode(){
+    if(this.state.machineLockBusy)return;
+    const typed=(this._mlRetype||'').trim();
+    if(!typed){ this.setState({machineLockError:'Type the new recovery code back, exactly as shown above.'}); return; }
+    return this.finishMachineLockOn(typed);
+  },
+  async finishMachineLockOn(typed){
+    this.setState({machineLockBusy:true,machineLockError:''});
+    let pendingAfter=false;
+    try{
+      const st=await admin.machineLockConfirm(typed);
+      this.wipeMachineLockFields();
+      pendingAfter=!!st.completionPending;
+      this.setState({machineLock:st,dialog:null,machineLockAsk:null,machineLockShown:null});
+      if(Array.isArray(st.rekeyFailed)&&st.rekeyFailed.length)this.notify('warn','Locked to this Mac, but '+st.rekeyFailed.length+' project(s) kept their old key: '+st.rekeyFailed.map((f)=>String(f.node)).join(', ').slice(0,200)+'. Turn the lock on again to finish.');
+      else if(pendingAfter)this.notify('warn','The vault is locked to this Mac and the recovery code you typed back is the live one. Moving the last files into place did not finish, so the vault locked itself: unlock it, then turn the lock on again to finish.');
+      else this.notify('success',st.changed
+        ?'The vault is locked to this Mac. The recovery code you typed back is now the only one that works: copies of the vault folder made from now on open elsewhere only with it.'
+        :'The vault was already locked to this Mac.');
+    }catch(e){
+      if(e&&e.code==='recovery_code_mismatch'){
+        // The prepared bind still waits: let them check what they wrote down.
+        this._mlRetype=''; try{ document.querySelectorAll('input[data-machine-lock-retype]').forEach((el)=>{ el.value=''; }); }catch(_){}
+        this.setState({machineLockError:'That is not the code shown above. Nothing has changed. Check what you wrote down and type it again.'});
+      } else {
+        this.wipeMachineLockFields();
+        this.setState({dialog:null,machineLockAsk:null,machineLockShown:null});
+        this.routeError(e,{op:'keystore.bind_commit'});
+      }
+    }
+    finally{
+      this.setState({machineLockBusy:false}); this._mlAsked=false;
+      // A bind whose rotation's last step is pending has locked the vault: nothing reads after it.
+      if(!pendingAfter&&this.model.status==='unlocked')this.loadMachineLock();
+    }
+  },
+
+  // ─────────────── the cross-node anomaly alarm (ADR-156) ───────────────
+  /** Acknowledge the alarm (the notice bar's dismiss, and its link to the audit view: having looked is having seen).  The broker resets its count; the model drops the bar. */
+  async ackAnomalies(openAudit){
+    if(openAudit)this.setState({overlay:'settings',setSection:'audit'},()=>this.loadAudit());
+    if(this._anomalyAcking)return; this._anomalyAcking=true;
+    try{ await admin.acknowledgeAnomalies(this.model); }
+    catch(e){ this.routeError(e,{op:'vault.anomalies_ack'}); }
+    finally{ this._anomalyAcking=false; }
+  },
+
   async applyCaptureProtection(enabled){
     try{
       const r=await admin.setCaptureProtection(enabled);
@@ -151,9 +309,10 @@ export const settingsMethods = {
     finally{ if(this.state.admin)this.admSet({busy:null}); } // a lock during the call already dropped the working state: do not bring it back
   },
   /** Forget what the passphrase prompt's inputs hold (the text lives in the inputs, not in state). */
-  wipeAdminPass(){ this._adminPass=''; this._adminRepeat=''; try{ document.querySelectorAll('input[data-admin-pass]').forEach((el)=>{ el.value=''; }); }catch(e){} },
+  wipeAdminPass(){ this._adminPass=''; this._adminRepeat=''; this._adminNew=''; this._adminNewRepeat=''; try{ document.querySelectorAll('input[data-admin-pass]').forEach((el)=>{ el.value=''; }); }catch(e){} },
   /** Move the keyboard into a dialog that opened over an overlay (core.js only focuses a dialog when nothing was open before it). */
-  focusLater(selector){ setTimeout(()=>{ try{ const el=document.querySelector(selector); if(el)el.focus(); }catch(e){} },40); },
+  /** The scheduled focus move.  `data-focus-settled` marks the element the move has landed on, so a test (and anything assistive) can wait for the move instead of racing it. */
+  focusLater(selector){ setTimeout(()=>{ try{ const el=document.querySelector(selector); if(el){ el.focus(); el.setAttribute('data-focus-settled','true'); } }catch(e){} },40); },
   labelOf(id){ const n=this.node(id); return n?n.label:String(id); },
   entryNameOf(node,id){ const e=(this.vault.entries[node]||[]).find((x)=>x.id===id); return e?e.name:String(id); },
 
@@ -292,20 +451,30 @@ export const settingsMethods = {
   async submitAdminPass(){
     const p=this.adm().prompt, def=p&&PROMPTS[p.kind];
     if(!def||this.adm().busy)return;
-    const pass=this._adminPass||'', again=this._adminRepeat||'';
-    if(!pass){ this.setAdminPassError('Enter the passphrase.'); return; }
+    const pass=this._adminPass||'', again=this._adminRepeat||'', fresh=this._adminNew||'', fresh2=this._adminNewRepeat||'';
+    if(!pass){ this.setAdminPassError(def.fresh?'Enter the current passphrase.':'Enter the passphrase.'); return; }
     if(def.repeat&&pass!==again){ this.setAdminPassError('The two passphrases are different.'); return; }
+    if(def.fresh){
+      if(!fresh){ this.setAdminPassError('Enter the new passphrase.'); return; }
+      if(fresh!==fresh2){ this.setAdminPassError('The two new passphrases are different.'); return; }
+      if(fresh===pass){ this.setAdminPassError('The new passphrase is the same as the current one.'); return; }
+    }
     this.setAdminPassError('');
     this.wipeAdminPass();
     const kind=p.kind, retain=this.state.backupRetain||14;
-    const call=()=>kind==='backup'?admin.backupVault(this.model,pass,retain):kind==='rotate'?admin.rotateRootKey(this.model,pass):admin.runDoctor(this.model,{apply:true,rebuildRegistry:true,passphrase:pass});
+    const call=()=>kind==='backup'?admin.backupVault(this.model,pass,retain):kind==='rotate'?admin.rotateRootKey(this.model,pass):kind==='passphrase'?admin.changePassphrase(this.model,pass,fresh):admin.runDoctor(this.model,{apply:true,rebuildRegistry:true,passphrase:pass});
     const r=await this.runAdmin(def.op,call,{field:'adminPass',inlineRendered:true});
     if(!r.ok){ if(r.route&&r.route.route==='presence')this.closeAdminPass(); return; } // refused for lack of presence: nothing changed, nothing to retry here
     if(kind==='backup'){ this.admSet({backup:r.value,last:'backup',prompt:null},{dialog:null}); this.notify('success','Backup written.'); }
-    else if(kind==='rotate'){
+    else if(kind==='rotate'||kind==='passphrase'){
       // The new recovery code is shown once.  Nothing reads the model after this call: a rotation whose last step is still pending locks the vault.
-      this.admSet({recovery:{code:r.value.recoveryCode,pending:!!r.value.completionPending,nodes:r.value.nodesRewrapped,saved:false},last:'rotate',prompt:null},{dialog:'recovery'});
+      // (A passphrase change is that rotation under the new passphrase, ADR-156: the same dialog, the same "never kept".)
+      this.admSet({recovery:{code:r.value.recoveryCode,pending:!!r.value.completionPending,nodes:r.value.nodesRewrapped,saved:false,kind},last:kind,prompt:null},{dialog:'recovery'});
       this.focusLater('[data-screen-label="New recovery code"] input');
+      if(kind==='passphrase')this.notify('success','Passphrase changed. Use the new one from now on.');
+      // ADR-165 review P1-4: a rotation that could not seal the new passphrase file turned the machine lock OFF.  Said, never silent.
+      if(r.value.machineLockRemoved)this.notify('warn','The machine lock is off now: the new passphrase file could not be sealed to this Mac ('+String(r.value.machineLockRemoved).slice(0,200)+'). Turn it on again here once the cause is fixed.');
+      this._mlAsked=false;
     } else {
       const {readbackError,...doctor}=r.value;
       this.admSet({doctor,last:'doctor',prompt:null},{dialog:null});
@@ -348,7 +517,11 @@ export const settingsMethods = {
     } else if(a.last==='backup'&&a.backup){
       title='Back up vault';
       line(`written to ${a.backup.path}`,'var(--bone)');
+      if(a.backup.outsideVaultFolder)line('the machine lock is on, so the archive is kept outside the vault folder: no copy of the folder carries it. It opens with the backup passphrase and the vault passphrase alone, without the device key, so keep any copy of it as safe as the vault.');
       line(`${plural(a.backup.pruned,'older archive')} removed · keeping ${a.backup.retain}`);
+    } else if(a.last==='passphrase'){
+      title='Change passphrase';
+      line('The passphrase was changed and the root key replaced. The new recovery code was shown once.','var(--bone)');
     } else if(a.last==='rotate'){
       title='Rotate root key';
       line('The root key was replaced. The new recovery code was shown once.','var(--bone)');
@@ -364,18 +537,20 @@ export const settingsMethods = {
     const a=this.adm(), busy=!!a.busy;
     // settings
     // Lite hides levers, never safety: revoking a grant is reachable in both modes (creating one is Pro's).
-    const navL=[['security','Security'],['appearance','Appearance'],['backup','Backup'],['mode','Mode'],['grants','Grants'],['games','Games']];
-    const navP=[['security','Security'],['appearance','Appearance'],['backup','Backup'],['mode','Mode'],['games','Games'],['nodes','Nodes'],['grants','Grants'],['maintenance','Maintenance'],['audit','Audit'],['advanced','Advanced'],['ops','Operations ⌘⇧O']];
-    const nav=(isPro?navP:navL).map(([id,label])=>({label,current:s.setSection===id?'true':'false',bg:s.setSection===id?'var(--steel-3)':'transparent',go:()=>{ if(id==='ops'){this.setState({overlay:'ops'});} else { this.setState({setSection:id}); if(id==='audit')this.loadAudit(); } }}));
+    const navL=[['security','Security'],['agents','Agents'],['appearance','Appearance'],['backup','Backup'],['mode','Mode'],['grants','Grants'],['games','Games']];
+    const navP=[['security','Security'],['agents','Agents'],['appearance','Appearance'],['backup','Backup'],['mode','Mode'],['games','Games'],['nodes','Nodes'],['grants','Grants'],['maintenance','Maintenance'],['audit','Audit'],['report','Audit report'],['advanced','Advanced'],['ops','Operations ⌘⇧O']];
+    const nav=(isPro?navP:navL).map(([id,label])=>({label,current:s.setSection===id?'true':'false',bg:s.setSection===id?'var(--steel-3)':'transparent',go:()=>{ if(id==='ops'){this.setState({overlay:'ops'});} else { this.setState({setSection:id}); if(id==='audit')this.loadAudit(); if(id==='security'){ this._touchAsked=false; this.loadTouch(); this._rcAsked=false; this.loadRevealConfirm(); this.loadLoginAgent(); this._mlAsked=false; this.loadMachineLock(); } if(id==='agents')this.loadAgents(); } }}));
     // Operations that exist in beta.1.  merge, re-key, export, import and purge are not part of this release (design-upstream/PROVENANCE.md).
     const op=(name,desc,label,run)=>({name,desc,label,run,disabled:busy});
     const opsRows=[
       op('Verify integrity','Check every envelope and manifest checksum.','Run',()=>this.doVerify()),
       op('Doctor','Diagnose registry and manifest problems; a dry run shows what it would fix. It never purges anything.','Run',()=>this.doDoctor(false,false)),
       op('Doctor with purge','Also lists the seals older than 7 days; Apply then removes their retained originals. Irreversible; a plain Doctor run never does this.','Preview purge',()=>this.doDoctor(false,true)),
-      op('Back up vault','Encrypted archive in the vault’s backups folder.','Back up…',()=>this.openAdminPass('backup')),
-      op('Rotate root key','New root key and a new recovery code. Needs presence.','Rotate…',()=>this.openAdminPass('rotate')),
-      op('Audit report','Denied requests and grant changes, last 30 days.','Run',()=>this.doAuditReport())
+      op('Back up vault','Encrypted archive in the vault’s backups folder, or in CredMgr’s state folder while the machine lock is on.','Back up…',()=>this.openAdminPass('backup')),
+      op('Rotate root key','A new root key and a new recovery code. Asks for Touch ID.','Rotate…',()=>this.openAdminPass('rotate')),
+      op('Audit report','Denied requests and grant changes, last 30 days.','Run',()=>this.doAuditReport()),
+      // ADR-161: the doctor's tidy-up scan, in its own overlay.
+      op('Tidy up','Shared values, near-identical names, misfiled, weak, mistyped, expired and stale entries, each with what to do. Changes nothing; never shows a value.','Scan…',()=>this.openTidy())
     ];
     const res=this.opsResult(a);
     // audit
@@ -404,11 +579,33 @@ export const settingsMethods = {
     // the passphrase prompt
     const p=a.prompt, pd=p?PROMPTS[p.kind]:null;
     const rec=a.recovery;
+    // Touch ID (ADR-098, ADR-156): what this Mac's Secure Enclave allows, from presence.status (the probe when the status did not say), and the plain-words protection line.
+    const tch=s.touch, tchOn=!!(tch&&tch.status&&tch.status.touchIdUnlock);
+    const enclave=tch&&tch.probe?(tch.status&&typeof tch.status.secureEnclave==='boolean'?tch.status.secureEnclave:!!tch.probe.secureEnclave):null;
+    const noEnclave=enclave===false;
+    const protection=enclave===null?'':noEnclave?'Protected by your passphrase only; this Mac has no Secure Enclave.':tchOn?'Protected by your passphrase, plus Touch ID on this Mac.':'Protected by your passphrase only. Touch ID is not set up on this Mac.';
+    // start at login (ADR-156)
+    const la=s.loginAgent, laOn=!!(la&&la.installed), laBusy=!!s.loginAgentBusy;
+    const laCaption=!la?'':!la.daemon?'No credmgrd was found beside the app, in /usr/local/bin or in /opt/homebrew/bin. Install it first (RELEASE.md section 3).'
+      :laOn?(la.current?'credmgrd starts when you log in and is kept running · a launchd agent for your user only, never root · '+la.daemon:'The agent points at another credmgrd. Turn it on again to point it at '+la.daemon+'.')
+      :'Keep credmgrd running: a launchd agent for your user only (never root) starts '+la.daemon+' now and at every login.';
+    // the machine lock (ADR-165): the honest tier from keystore.status, never more than a key file on this Mac
+    const ml=s.machineLock, mlOn=!!(ml&&ml.bound), mlBusy=!!s.machineLockBusy, mlAsk=s.dialog==='machineLock'?s.machineLockAsk:null;
+    const mlCaption=!ml?'':ml.damaged?'The machine-locked passphrase file is damaged. Lock the vault and open it with your recovery code; that writes it again.'
+      // ADR-165 M5: this Mac's record names this folder under another vault id; the broker's words, nothing repaired
+      :ml.recordDetached?(ml.warning?String(ml.warning):'This Mac turned the lock on for a vault in this folder under another vault id: vault.id was changed or the folder was put back to an older copy. Nothing was repaired.')
+      :ml.plainWhileBound||(ml.preBindNodes&&ml.preBindNodes.length)?(ml.warning?String(ml.warning):'Turning the lock on did not finish. Turn it on again.')
+      :mlOn&&!ml.opensHere?'Sealed to a device key this Mac does not hold. Lock the vault and open it with your recovery code to seal it to this Mac.'
+      :mlOn?'On · the passphrase file is sealed to a device key file on this Mac (not the Secure Enclave). A copy of the vault folder made since then opens elsewhere only with the recovery code. Copies made before, CredMgr backups (kept outside the vault folder while this is on), Time Machine and a stolen or unlocked Mac are not protected by this.'+(ml.deviceKeyModeOpen?' The key file can be read by other users; it is narrowed the next time it is read.':'')
+      :!ml.recoveryUnlock?'Needs a recovery code first, so a new Mac can still open the vault: change the passphrase once to set one up.'
+      :'Seal the passphrase file to this Mac, so a copy of the vault folder made from then on (a synced folder, a copied directory) does not open on another computer with the passphrase alone. It does not protect a stolen or unlocked Mac, Time Machine, or CredMgr backups.';
+    // the cross-node anomaly alarm (ADR-156)
+    const anomN=this.model.kind==='bridge'?(this.model.anomaliesUnseen||0):0;
     const verifyChip=a.verify?(a.verify.ok?{state:'ok',label:`ok · ${plural(a.verify.nodesChecked,'node')} checked`}:{state:'danger',label:plural(a.verify.errors.length,'problem')}):{state:'',label:'not checked yet'};
     return {
       dlgHelp:s.dialog==='help',
       helpGoAbout:(ev)=>{ev.preventDefault();this.setState({dialog:'about',aboutTab:'main'});},
-      // grant dialog (creating one needs presence, which this beta cannot attest: the broker refuses it and nothing changes)
+      // grant dialog (creating one asks for Touch ID; without it set up the broker refuses and nothing changes)
       dlgGrant:s.dialog==='grant',
       grantLiteNote:isLite,
       grantDisabledAll:isLite,
@@ -436,6 +633,7 @@ export const settingsMethods = {
       aboutIsDonate:s.aboutTab==='donate',
       aboutIsPrivacy:s.aboutTab==='privacy',
       aboutIsLicenses:s.aboutTab==='licenses',
+      aboutBuild:typeof __CREDMGR_BUILD_COMMIT__==='string'&&__CREDMGR_BUILD_COMMIT__?__CREDMGR_BUILD_COMMIT__:'unknown', // the commit this bundle was built from (vite.config.ts `define`)
       aboutVersion:s.appVersion||(DEMO_BUILD&&this.model.kind==='demo'?'browser preview':(s.versionFailed?'unknown':'…')),
       goDonate:(ev)=>{ev.stopPropagation();this.setState({aboutTab:'donate'});},
       goPrivacy:(ev)=>{ev.stopPropagation();this.setState({aboutTab:'privacy'});},
@@ -540,6 +738,29 @@ export const settingsMethods = {
       hwAccelOn:s.hwAccel!==false,
       toggleHwAccel:()=>this.setState(st=>({hwAccel:!st.hwAccel})),
       hwAccelLabel:s.hwAccel!==false?'on':'off',
+      // Touch ID (ADR-098)
+      // ADR-156 (item 7): a Mac without a Secure Enclave sees the row greyed out and why, instead of no row at all.
+      touchShow:!!(s.touch&&s.touch.probe),
+      touchNoEnclave:noEnclave,
+      touchSetupDisabled:!!s.touchBusy||noEnclave,
+      touchRowStyle:noEnclave?'opacity:.6':'',
+      protectionShow:!!protection,
+      protectionLine:protection,
+      touchOn:!!(s.touch&&s.touch.status&&s.touch.status.touchIdUnlock),
+      touchOff:!(s.touch&&s.touch.status&&s.touch.status.touchIdUnlock),
+      touchBusy:!!s.touchBusy,
+      touchChipLabel:noEnclave?'unavailable':s.touch&&s.touch.status&&s.touch.status.touchIdUnlock?'on':'off',
+      touchChipState:noEnclave?'':s.touch&&s.touch.status&&s.touch.status.touchIdUnlock?'ok':'warn',
+      touchCaption:(()=>{
+        const t=s.touch; if(!t||!t.probe)return 'Checking what this Mac can do…';
+        if(noEnclave)return 'This Mac has no Secure Enclave, so Touch ID cannot protect this vault here. Your passphrase and recovery code work as before.';
+        const kind=t.probe.biometry==='touchid'?'Touch ID':t.probe.biometry==='faceid'?'Face ID':'your Mac password';
+        return t.status.touchIdUnlock
+          ? 'Unlock with '+kind+' from the Lock screen, and confirm sensitive changes (grants, moving projects, reading sealed entries) with it. The vault key is sealed in this Mac\u2019s Secure Enclave. Your passphrase and recovery code still work.'
+          : 'Use '+kind+' to unlock and to confirm sensitive changes. Sets up a key in this Mac\u2019s Secure Enclave. Your passphrase and recovery code keep working.';
+      })(),
+      touchSetUp:()=>{ if(!noEnclave)this.setTouch(true); },
+      touchTurnOff:()=>this.setTouch(false),
       // screen capture (threat T10): turning it OFF asks first; turning it ON does not
       captureProtectionOn:s.captureProtection!==false,
       captureProtectionLabel:s.captureProtection!==false?'on':'off',
@@ -577,7 +798,8 @@ export const settingsMethods = {
       // grants
       grantRows:v.grants.map((gr)=>({fromTo:`${this.labelOf(gr.from)} ⇢ ${this.labelOf(gr.to)}${gr.toEntry?' · '+this.entryNameOf(gr.to,gr.toEntry):''}`,scope:gr.scope,expiry:gr.expires==='never'?'never expires':'expires '+gr.expires,reason:gr.reason,revoke:()=>this.doRevokeGrant(gr.id)})),
       grantsEmpty:!v.grants.length,
-      openGrantDlg:set({dialog:'grant'}),
+      openGrantDlg:()=>this.setState(st=>({dialog:'grant',grant:{...st.grant,reason:'',code:''}})),
+      closeGrantDlg:()=>this.setState(st=>({dialog:null,grant:{...st.grant,reason:'',code:''}})),
       // maintenance and operations
       openOps:set({overlay:'ops'}),
       opsRows,
@@ -609,11 +831,62 @@ export const settingsMethods = {
       // the recovery code shown once after a root-key rotation
       dlgRecovery:s.dialog==='recovery'&&!!rec,
       recoveryCode:rec?rec.code:'',
-      recoveryNote:rec&&rec.pending?'The rotation committed, but moving the last files into place did not finish. The vault has locked itself; unlocking it again finishes the move. This code is already the live one.':'Your previous recovery code no longer works. Write this one down somewhere safe, away from this computer.',
+      recoveryNote:rec&&rec.kind==='bind'&&!rec.pending?'The vault is locked to this Mac. Turning it on replaced the root key and every project key, so your previous recovery code no longer works. This code is what opens the vault on another Mac: write it down somewhere safe, away from this computer.':rec&&rec.kind==='passphrase'&&!rec.pending?'Your passphrase is changed. Your previous recovery code no longer works. Write this one down somewhere safe, away from this computer.':rec&&rec.pending?'The rotation committed, but moving the last files into place did not finish. The vault has locked itself; unlocking it again finishes the move. This code is already the live one.':'Your previous recovery code no longer works. Write this one down somewhere safe, away from this computer.',
       recoverySaved:!!(rec&&rec.saved),
       onRecoverySaved:(ev)=>this.admSet({recovery:{...rec,saved:!!ev.target.checked}}),
       dismissRecovery:()=>this.dismissRecovery(),
       recoveryCloseDisabled:!(rec&&rec.saved),
+      // change passphrase (ADR-156): Settings → Security, both modes
+      passphraseCaption:'change the vault passphrase · this also replaces the root key and your recovery code; the new code is shown once',
+      openChangePassphrase:()=>this.openAdminPass('passphrase'),
+      adminPassNewShow:!!(pd&&pd.fresh),
+      onAdminNew:(ev)=>{ this._adminNew=ev.target.value; },
+      onAdminNewRepeat:(ev)=>{ this._adminNewRepeat=ev.target.value; },
+      // start at login (ADR-156): Settings → Security, and the broker-down screen
+      // the machine lock (ADR-165)
+      machineLockShow:!!ml,
+      machineLockOn:mlOn,
+      machineLockChipLabel:!ml?'':ml.damaged?'damaged':mlOn?'on · file':'off',
+      machineLockChipState:!ml?'':ml.damaged||ml.plainWhileBound||(mlOn&&!ml.opensHere)?'danger':(ml.preBindNodes&&ml.preBindNodes.length)||ml.recordDetached?'warn':mlOn?'ok':'',
+      machineLockCaption:mlCaption,
+      // An unfinished bind (status says so) is finished by binding again, so the button offers that rather than Unbind.
+      machineLockLabel:mlOn&&!(ml.preBindNodes&&ml.preBindNodes.length)?'Unbind…':'Bind…',
+      machineLockDisabled:mlBusy||(!mlOn&&!!ml&&!ml.recoveryUnlock),
+      toggleMachineLock:()=>this.askMachineLock(!(mlOn&&!(ml.preBindNodes&&ml.preBindNodes.length))),
+      onMachineLockPass:(ev)=>{ this._mlPass=ev.target.value; },
+      onMachineLockCode:(ev)=>{ this._mlCode=ev.target.value; },
+      onMachineLockRetype:(ev)=>{ this._mlRetype=ev.target.value; },
+      machineLockKey:(ev)=>{ if(ev.key==='Enter')this.setMachineLock(mlAsk==='bind'||mlAsk==='confirm'); },
+      machineLockError:s.machineLockError||'',
+      dlgMachineLock:!!mlAsk,
+      machineLockBind:mlAsk==='bind',
+      machineLockUnbind:mlAsk==='unbind',
+      machineLockConfirmStep:mlAsk==='confirm',
+      machineLockNewCode:mlAsk==='confirm'?String(s.machineLockShown||''):'',
+      machineLockTitle:mlAsk==='unbind'?'turn off the machine lock?':mlAsk==='confirm'?'write down your new recovery code':'lock this vault to this Mac?',
+      machineLockConfirmLabel:mlAsk==='unbind'?'Turn off':mlAsk==='confirm'?'Turn the lock on':'Next',
+      machineLockCancelLabel:mlAsk==='unbind'?'Keep it on':'Cancel',
+      confirmMachineLock:()=>this.setMachineLock(mlAsk==='bind'||mlAsk==='confirm'),
+      cancelMachineLock:()=>this.cancelMachineLock(),
+      loginAgentShow:!!la,
+      loginAgentOn:laOn,
+      loginAgentLabel:laOn&&!la.current?'update':laOn?'on':'off',
+      loginAgentCaption:laCaption,
+      loginAgentDisabled:laBusy||!(la&&la.daemon)&&!laOn,
+      toggleLoginAgent:()=>this.setLoginAgent(!laOn||!(la&&la.current)),
+      loginAgentOffAsk:!!s.loginAgentOffAsk&&laOn,
+      confirmLoginAgentOff:()=>this.setLoginAgent(false),
+      keepLoginAgent:()=>this.setState({loginAgentOffAsk:false}),
+      bootLoginAgentShow:!!(la&&la.daemon&&!la.loaded),
+      bootLoginAgentLabel:laBusy?'Starting…':'Start the broker at login',
+      bootLoginAgentDisabled:laBusy,
+      bootLoginAgent:()=>this.setLoginAgent(true,'brokerdown'),
+      // the cross-node anomaly alarm (ADR-156): a bar under the header while the owner has not seen it
+      anomalyBannerShow:anomN>0&&s.screen==='app',
+      anomalyBannerText:(anomN===1?'An agent was blocked after repeated refused requests for a project it cannot reach':'Agents were blocked '+anomN+' times after repeated refused requests for projects they cannot reach')+' (5 refusals in 10 minutes). '+(isPro?'The audit trail lists them.':'The Audit view in Pro mode lists them.'),
+      anomalyAuditShow:isPro,
+      anomalyOpenAudit:()=>this.ackAnomalies(true),
+      dismissAnomalyBanner:()=>this.ackAnomalies(false),
     };
   },
 };

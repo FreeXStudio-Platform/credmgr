@@ -148,10 +148,44 @@
     return e;
   };
 
+  /**
+   * Issue #40 / ADR-111 in miniature (core `looks_like_possible_totp_seed` + `fields::possible_totp_seed`): a field with no type pin whose value
+   * is not already a seed or a recovery phrase and is one base32-alphabet run of 16-128 characters (padding, or groups of exactly four, ignored)
+   * that mixes letters with a digit 2-7, or whose label names a second factor.
+   */
+  B.possibleSeed = function (f) {
+    if (f.typePin) return false;
+    var v = String(f.value || "");
+    if (looksLikeTotpSeed(v) || looksLikeSeedPhrase(v)) return false;
+    var t = v.trim();
+    var parts = t.split(/[ -]/);
+    if (parts.length > 1 && !(parts.length >= 4 && parts.every(function (g) { return g.length === 4; }))) return false;
+    var run = t.replace(/[ -]/g, "").replace(/=+$/, "");
+    if (run.length < 16 || run.length > 128 || !/^[A-Za-z2-7]+$/.test(run)) return false;
+    var mixed = /[2-7]/.test(run) && /[A-Za-z]/.test(run);
+    return mixed || labelHas(f.label, ["2fa", "totp", "otp", "authenticator", "mfa", "two-factor", "two factor", "seed"]);
+  };
+
+  /** The ids of an entry's fields that could be a seed. */
+  B.possibleSeedIds = function (e) {
+    return B.fieldsOf(e).filter(B.possibleSeed).map(function (f) { return f.id; });
+  };
+
+  /** Adds `possibleSeedFields` and the `possible_totp_seed` warning to a write's answer, when there are any (absent otherwise, as on the wire). */
+  B.seedHint = function (answer, e) {
+    var ids = B.possibleSeedIds(e);
+    if (!ids.length) return answer;
+    answer.possibleSeedFields = ids;
+    answer.warnings = (answer.warnings || []).concat(["possible_totp_seed"]);
+    return answer;
+  };
+
   /** A field as `entry.get` states it: no value. */
   B.fieldMeta = function (f) {
     var eff = B.effective(f);
-    return { id: f.id, label: f.label, type: eff.type, masked: eff.masked, typeOverridden: !!f.typePin, maskedOverridden: f.maskedPin !== undefined && f.maskedPin !== null };
+    var row = { id: f.id, label: f.label, type: eff.type, masked: eff.masked, typeOverridden: !!f.typePin, maskedOverridden: f.maskedPin !== undefined && f.maskedPin !== null };
+    if (B.possibleSeed(f)) row.possibleSeed = true;
+    return row;
   };
 
   /** A field as `entry.reveal` states it. */

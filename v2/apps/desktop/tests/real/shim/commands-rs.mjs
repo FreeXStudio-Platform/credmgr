@@ -75,7 +75,7 @@ export function rustType(ty) {
     optional = true;
     t = m[1];
   }
-  const kinds = { String: "string", bool: "bool", u64: "u64", Value: "json", "Vec<String>": "string[]" };
+  const kinds = { String: "string", bool: "bool", u64: "u64", i64: "i64", Value: "json", "Vec<String>": "string[]" };
   if (!(t in kinds)) throw new Error(`commands-rs: no shim kind for Rust type ${ty}`);
   return { kind: kinds[t], optional };
 }

@@ -28,27 +28,54 @@ use std::sync::Arc;
 
 use secrecy::SecretBox;
 
+use credmgr_brokerd::diag_log::{self, Value as Diag};
 use credmgr_brokerd::server;
 use credmgr_brokerd::state::BrokerState;
 use credmgr_keystore::software::SoftwareKeystore;
 use credmgr_store::paths::VaultPaths;
+
+/// The build stamp `build.rs` writes from the release script's environment
+/// (`credmgr-build-stamp:v1:commit=<hex>:dirty=<0|1>`). It is a constant of the
+/// binary on purpose: `scripts/release.sh --verify` finds it in the bytes (issue
+/// #38) without running the program, and `--version` is read from the same string.
+const BUILD_STAMP: &str = env!("CREDMGR_BUILD_STAMP");
+
+/// `(commit, dirty)` out of a stamp; `None` for a build with no commit.
+fn parse_build_stamp(stamp: &str) -> Option<(&str, bool)> {
+    let rest = stamp.strip_prefix("credmgr-build-stamp:v1:commit=")?;
+    let (commit, dirty) = rest.split_once(":dirty=")?;
+    if commit == "none" || commit.is_empty() {
+        return None;
+    }
+    Some((commit, dirty == "1"))
+}
 
 /// Same stamp as `credmgr --version` (see that function): version, commit,
 /// dirty flag — inert data an honest build uses to identify itself.
 fn version_line() -> String {
     let version = env!("CARGO_PKG_VERSION");
     let platform = format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS);
-    match option_env!("CREDMGR_BUILD_COMMIT") {
-        Some(commit) if !commit.is_empty() => {
+    // `black_box`: the optimiser must keep the stamp whole in the binary (the
+    // release verifier greps for it), not fold it into the pieces parsed below.
+    match parse_build_stamp(std::hint::black_box(BUILD_STAMP)) {
+        Some((commit, dirty)) => {
             let short = &commit[..commit.len().min(12)];
-            let dirty = if option_env!("CREDMGR_BUILD_DIRTY") == Some("1") {
-                ", dirty"
-            } else {
-                ""
-            };
+            let dirty = if dirty { ", dirty" } else { "" };
             format!("credmgrd {version} (commit {short}{dirty}, {platform})")
         }
-        _ => format!("credmgrd {version} (development build, no commit stamp, {platform})"),
+        None => format!("credmgrd {version} (development build, no commit stamp, {platform})"),
+    }
+}
+
+/// A name-free description of an I/O failure for the start-up messages: the error's kind, never
+/// its text, because an `io::Error` built by this crate or by `std` can quote a path (ADR-159
+/// amendment: the daemon's own output carries no home directory and so no user name).
+fn kind_label(e: &std::io::Error) -> &'static str {
+    match e.kind() {
+        std::io::ErrorKind::AddrInUse => "another broker is already serving this vault",
+        std::io::ErrorKind::PermissionDenied => "permission denied",
+        std::io::ErrorKind::NotFound => "not found",
+        _ => "i/o error",
     }
 }
 
@@ -65,14 +92,52 @@ fn main() -> ExitCode {
     }
     let paths = VaultPaths::default_location();
 
+    // ADR-159: the diagnostic log, off unless `CREDMGR_DIAG_LOG=1`. Nothing below writes a path, a
+    // name or a value to it — only static labels and numbers (`diag_log`'s module doc).
+    if diag_log::enabled_by_env() {
+        let dir = credmgr_store::paths::default_log_dir();
+        if let Err(e) = diag_log::install(&dir) {
+            eprintln!(
+                "credmgrd: could not open the diagnostic log in the log folder ({}) — running without it",
+                kind_label(&e)
+            );
+        }
+    }
+    let (commit, dirty) = parse_build_stamp(BUILD_STAMP).unwrap_or(("none", false));
+    diag_log::event(
+        "start",
+        &[
+            ("version", Diag::Str(env!("CARGO_PKG_VERSION"))),
+            ("commit", Diag::Str(&commit[..commit.len().min(12)])),
+            ("dirty", Diag::Str(if dirty { "yes" } else { "no" })),
+            ("os", Diag::Str(std::env::consts::OS)),
+            ("arch", Diag::Str(std::env::consts::ARCH)),
+            (
+                "vault_dir",
+                Diag::Str(if std::env::var_os("CREDMGR_VAULT_DIR").is_some() {
+                    "override"
+                } else {
+                    "default"
+                }),
+            ),
+            (
+                "vault",
+                Diag::Str(if paths.registry().exists() {
+                    "present"
+                } else {
+                    "absent"
+                }),
+            ),
+        ],
+    );
+
     // Directory layout only — `run/` (`0700`) must exist before the socket
     // can bind; every other subdirectory is created lazily by whichever
     // write first needs it (`atomic::write`'s own behavior, unchanged here).
     if let Err(e) = credmgr_store::atomic::ensure_dir(&paths.run_dir()) {
-        eprintln!(
-            "credmgrd: could not create {}: {e}",
-            paths.run_dir().display()
-        );
+        diag_log::event("exit", &[("reason", Diag::Str("run_dir"))]);
+        let _ = e; // not printed: its text can quote the run folder's path
+        eprintln!("credmgrd: could not create the vault's run folder");
         return ExitCode::FAILURE;
     }
 
@@ -91,11 +156,23 @@ fn main() -> ExitCode {
     // stage as a crash leftover (the ADR-076 review's P2).
     let state_dir = credmgr_store::paths::default_state_dir();
     if broker_is_serving(&paths.run_socket()) {
+        diag_log::event(
+            "recovery",
+            &[("result", Diag::Str("left_to_running_broker"))],
+        );
         eprintln!(
             "credmgrd: a broker is already serving this vault — leaving rotation recovery to it."
         );
     } else {
-        match BrokerState::recover_interrupted_rotation_at(&paths, &state_dir) {
+        let recovery = BrokerState::recover_interrupted_rotation_at(&paths, &state_dir);
+        let label = match &recovery {
+            Ok(credmgr_store::rotation::Recovery::Nothing) => "nothing",
+            Ok(credmgr_store::rotation::Recovery::DiscardedStage) => "discarded_stage",
+            Ok(credmgr_store::rotation::Recovery::RolledForward { .. }) => "rolled_forward",
+            Err(_) => "error",
+        };
+        diag_log::event("recovery", &[("result", Diag::Str(label))]);
+        match recovery {
             Ok(credmgr_store::rotation::Recovery::Nothing) => {}
             // What was left behind cannot say whether the rotation had finished,
             // so neither can this line (see `Recovery::DiscardedStage`).
@@ -110,8 +187,10 @@ fn main() -> ExitCode {
                  If the new recovery code was never shown to you, rotate again to get one you hold: \
                  the old recovery code no longer opens anything."
             ),
-            Err(e) => eprintln!(
-                "credmgrd: could not recover an interrupted root-key rotation: {e} — unlock will report the same until it is resolved."
+            // The error is not printed: some of its texts quote a file path, and so the user name.
+            // `vault.unlock` reports the same failure to the person, in the app or the CLI.
+            Err(_) => eprintln!(
+                "credmgrd: could not recover an interrupted root-key rotation — unlock will report the same until it is resolved."
             ),
         }
     }
@@ -137,16 +216,26 @@ fn main() -> ExitCode {
     // `vault.gate_recover`/`vault.init_*` has nothing to act on.
     if !paths.registry().exists() {
         eprintln!(
-            "credmgrd: no vault at {} yet — run `credmgr init` from another terminal to create one; this process keeps serving vault.init_begin/vault.init_confirm in the meantime.",
-            paths.root().display()
+            "credmgrd: no vault in the vault folder yet — run `credmgr init` from another terminal to create one; this process keeps serving vault.init_begin/vault.init_confirm in the meantime."
         );
     }
 
-    println!("credmgrd: listening on {}", paths.run_socket().display());
+    println!("credmgrd: listening on the broker socket");
+    diag_log::event("listening", &[]);
     match server::run(state, &paths.run_socket()) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => {
+            diag_log::event("exit", &[("reason", Diag::Str("listener_closed"))]);
+            ExitCode::SUCCESS
+        }
         Err(e) => {
-            eprintln!("credmgrd: server error: {e}");
+            let reason = match e.kind() {
+                std::io::ErrorKind::AddrInUse => "another_broker_serving",
+                std::io::ErrorKind::PermissionDenied => "permission_denied",
+                std::io::ErrorKind::NotFound => "not_found",
+                _ => "io_error",
+            };
+            diag_log::event("exit", &[("reason", Diag::Str(reason))]);
+            eprintln!("credmgrd: server error ({reason})");
             ExitCode::FAILURE
         }
     }

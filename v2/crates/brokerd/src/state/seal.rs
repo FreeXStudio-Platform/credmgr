@@ -499,6 +499,8 @@ impl BrokerState {
                     modified: now,
                     expires_at: entry.expires_at,
                     rotated_at: entry.rotated_at,
+                    aliases: Vec::new(),
+                    tags: Vec::new(),
                 },
                 resealed,
             ));
@@ -1400,13 +1402,13 @@ impl BrokerState {
     /// Whether an injected crash has fired: every cleanup and revert a real
     /// crash would never have run is skipped.
     #[cfg(feature = "test-utils")]
-    fn was_crash_injected(&self) -> bool {
+    pub(super) fn was_crash_injected(&self) -> bool {
         self.crash_injected
             .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     #[cfg(not(feature = "test-utils"))]
-    fn was_crash_injected(&self) -> bool {
+    pub(super) fn was_crash_injected(&self) -> bool {
         false
     }
 }

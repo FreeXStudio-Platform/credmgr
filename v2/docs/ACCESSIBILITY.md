@@ -47,7 +47,7 @@ their visible words, clipped dialog text, squashed controls. The graph `<canvas>
 | 1.4.4 Resize text | AA | Supports | 200 % zoom at a 924 px window is a 462 px layout; the 480 px sweep is clean (rail and inspector become sheets) |
 | 1.4.5 Images of text | AA | Supports | None |
 | 1.4.10 Reflow | AA | Supports | Swept at 320 px (400 % zoom of a 1280 px window): 55 states, all counts 0, and no horizontal scroll on 15 app states, the lock screen and first run. The graph is a diagram and may scroll in two directions (exception) |
-| 1.4.11 Non-text contrast | AA | Partially supports | Standard mode: control borders are `--faint`, about 1.5 : 1; inputs are identified by their fill and label, buttons by their text. High-contrast mode: borders ≥ 3 : 1 (gate). Raising them in standard mode is a KEEP decision (`KEEP_UPSTREAM_NOTES.md`) |
+| 1.4.11 Non-text contrast | AA | Partially supports | Standard mode: button and other control borders are `--faint`, about 1.5 : 1; text-input borders are `--mute` (operator decision 2026-11-07, ADR-092 item 6); buttons are identified by their text. High-contrast mode: borders ≥ 3 : 1 (gate). Raising them in standard mode is a KEEP decision (`KEEP_UPSTREAM_NOTES.md`) |
 | 1.4.12 Text spacing | AA | Supports | The four WCAG values applied to every element (line height 1.5, letter spacing 0.12 em, word spacing 0.16 em, paragraph spacing 2 em): 55 states, 0 clipped, 0 overflowing, 0 squashed. The probe's `clip` metric (text cut off vertically) has a canary |
 | 1.4.13 Content on hover or focus | AA | Supports | The hover card shows only on pointer hover, stays while hovered, and Esc dismisses it |
 | 2.1.1 Keyboard | A | Supports | Every action has a keyboard path: tree view for the graph, context menu (tree row `⋮`) for node actions, the Grant dialog instead of drag, Tab inside dialogs. CredGames plays by keyboard |
@@ -80,13 +80,46 @@ their visible words, clipped dialog text, squashed controls. The graph `<canvas>
 | 3.3.3 Error suggestion | AA | Supports | The duplicate-name message says what it compared and where |
 | 3.3.4 Error prevention (legal, financial, data) | AA | Supports | Removing a node is a typed confirmation and reversible for 7 days; held writes are reviewed before they land |
 | 3.3.7 Redundant entry | A | Supports | First run asks for the passphrase twice on purpose (security exception); nothing else is re-asked |
-| 3.3.8 Accessible authentication (minimum) | AA | Supports | The beta unlocks by passphrase (Touch ID is not built); paste is not blocked in the design or in the desktop shell (checked in the real app, 2026-10-18). Second factor: a typed code, no transcription between devices is forced |
+| 3.3.8 Accessible authentication (minimum) | AA | Supports | The beta unlocks by passphrase, with Touch ID or the device password as an optional shortcut on a Mac with a Secure Enclave; paste is not blocked in the design or in the desktop shell (checked in the real app, 2026-10-18). Second factor: a typed code, no transcription between devices is forced |
 | 4.1.2 Name, role, value | A | Supports, not tested with AT | Gate: 0 unnamed controls; toggles expose `aria-pressed` |
 | 4.1.3 Status messages | AA | Supports, not tested with AT | `aria-live` on reveal and copy, pending writes, backup, Operations results, supporter-code feedback |
 
+## Accessibility-tree pass, 2026-11-08 (built rc.1 app, macOS accessibility API)
+
+What VoiceOver reads is the accessibility tree; it was read directly from the running built app (`AXUIElement`, the same
+API VoiceOver uses), not listened to. Results against the screen-reader script:
+
+| Script step | Result |
+|---|---|
+| Landmarks | pass: banner (search, lock, vault menu, help, settings), navigation (worktree rows, graph/tree/games), main (node rows with "N entries · N 2FA", "node actions"), complementary (inspector) |
+| Rail rows | pass: each row is a button named "name count"; the selected row exposes `aria-current=true` (VoiceOver says "current") |
+| Search field | **fail, fixed**: the header search field had no accessible name (only the placeholder); it now has `aria-label="search entries"` |
+| Dialogs | pass: "New entry" is `AXApplicationDialog` titled "New entry"; its fields are labelled ("entry name", "label (optional)" with help text, "value") |
+| Lock screen | pass: secure field "passphrase", buttons "Unlock with Touch ID", "Unlock", status region |
+| Live regions | pass: a polite status region is present for announcements (reveal countdown, copy, notices) |
+| Toggles | pass: Open / Guarded / Strict are toggle buttons with their state |
+| Focus order, spoken announcements | **not checked here**: focus can only be read while the window is frontmost; covered by the automated e2e focus tests (QT-1 `data-focus-settled`), not by a listening pass |
+
+## VoiceOver listening pass, 2026-11-08 (built rc.1 app `e0b0b2e`, VoiceOver driven through its AppleScript interface)
+
+VoiceOver was on; each step was driven with the VoiceOver cursor and its spoken output read back (`content of last phrase`).
+
+| Step | Spoken / observed | Result |
+|---|---|---|
+| Lock screen | "credmgr is locked", "passphrase secure text field", "Unlock with Touch ID button", "Unlock dimmed button" | pass |
+| Unlock with Touch ID via VoiceOver | button activated with VO, fingerprint, app opened | pass |
+| Landmarks and header | "banner" … "end of banner", "navigation", "main", "complementary" | pass |
+| Search field | "search… / edit text blank" | **fail, fixed in `1a83f83`** (now "search entries") |
+| Worktree list | "list 5 items", "Global 0 current item button 1 of 5", "Personal 1 button 4 of 5" | pass |
+| Inspector | "NODE · GLOBAL", "AGENTS HERE group", "Guarded selected toggle button", the level caption | pass |
+| Reveal | "hide" only — the "re-masks in N s" countdown was never spoken (a live region inserted already filled is not announced) | **fail, fixed**: the button now announces "hide, re-masks in 20 seconds" once; the per-second countdown is hidden from assistive technology |
+| Copy | "copied" | pass |
+| New entry dialog | opened with VO; focus moved inside to its first control ("entry location (node)"); Escape returned focus to "+ New entry" | pass |
+| Lock | the vault locked and the lock screen's tree is correct; a spoken "locked" was not captured (the click came from outside VoiceOver) | pass, announcement not verified |
+
 ## Open
-1. Screen-reader pass (VoiceOver, NVDA): script in `NEXT_SESSION.md`. Turns five "not tested with AT" rows into results.
-2. 1.4.11 in standard contrast: KEEP decision.
+1. Screen-reader pass (VoiceOver, NVDA): script in `NEXT_SESSION.md`. Turns five "not tested with AT" rows into results. **2026-11-08: the accessibility-tree half is done (section above, one defect fixed); the listening pass with VoiceOver followed the same day (section above): two defects found and fixed. NVDA (Windows) is not applicable until a Windows build exists (2.1).** **Status 2026-11-07: still open, and it is the operator's** (a person with VoiceOver on the built app; tracked as issue #22 for `2.0.0-rc.1`). NVDA belongs with the Windows build, which moves to `2.1` (ADR-147).
+2. 1.4.11 in standard contrast: **decided 2026-11-07** (operator, ADR-092 amendment): the input border `--faint` to `--mute` is accepted. The CSS change is made on another lane; re-run the gate and re-measure when it lands.
 
 Legal scope (EAA, Section 508): `LEGAL_REGISTER.md` L7.
 

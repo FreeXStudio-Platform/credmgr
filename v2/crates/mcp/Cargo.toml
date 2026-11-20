@@ -14,12 +14,12 @@ name = "credmgr_mcp"
 workspace = true
 
 [dependencies]
-credmgr-core = { path = "../core", version = "2.0.0-beta.1" }
-credmgr-store = { path = "../store", version = "2.0.0-beta.1" }
+credmgr-core = { path = "../core", version = "2.0.0-rc.2" }
+credmgr-store = { path = "../store", version = "2.0.0-rc.2" }
 serde_json = "1"
 
 [dev-dependencies]
-credmgr-brokerd = { path = "../brokerd", version = "2.0.0-beta.1" }
-credmgr-keystore = { path = "../keystore", version = "2.0.0-beta.1" }
+credmgr-brokerd = { path = "../brokerd", version = "2.0.0-rc.2" }
+credmgr-keystore = { path = "../keystore", version = "2.0.0-rc.2" }
 secrecy = "0.10.3"
 tempfile = "=3.15.0"

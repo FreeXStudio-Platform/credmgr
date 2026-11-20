@@ -110,6 +110,92 @@ pub enum AgentAccess {
     None,
 }
 
+/// ADR-140: how much an agent may do on this node without the owner stepping in. A per-node
+/// setting (`17_AIRLOCK_AND_LLM.md §2`); the default is `Guarded`. It changes what an *agent*
+/// (an agent-origin scope) may do; it never changes cross-node isolation, orphan sealing or the
+/// human-only nature of grants, and it does not touch the owner's own session.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum SecurityLevel {
+    /// No approvals: an agent reveals, creates and updates as its capabilities allow.
+    Open,
+    /// The default: an agent reveals low and medium values freely; a high or critical value
+    /// waits for the owner's approval.
+    #[default]
+    Guarded,
+    /// Every reveal waits for the owner; an agent's create lands in the held-entry tray and an
+    /// agent cannot change or remove what already exists.
+    Sealed,
+}
+
+impl SecurityLevel {
+    pub const ALL: [SecurityLevel; 3] = [
+        SecurityLevel::Open,
+        SecurityLevel::Guarded,
+        SecurityLevel::Sealed,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SecurityLevel::Open => "open",
+            SecurityLevel::Guarded => "guarded",
+            SecurityLevel::Sealed => "sealed",
+        }
+    }
+
+    /// The wire / stored spelling only (`sealed`). Anything a person types goes through
+    /// [`SecurityLevel::parse_input`].
+    pub fn parse(s: &str) -> Option<SecurityLevel> {
+        match s {
+            "open" => Some(SecurityLevel::Open),
+            "guarded" => Some(SecurityLevel::Guarded),
+            "sealed" => Some(SecurityLevel::Sealed),
+            _ => None,
+        }
+    }
+
+    /// ADR-152: what a person may type. `strict` is the user-facing name of the stored `sealed`
+    /// level; the stored and wire value never changes.
+    pub fn parse_input(s: &str) -> Option<SecurityLevel> {
+        match s {
+            "strict" => Some(SecurityLevel::Sealed),
+            other => SecurityLevel::parse(other),
+        }
+    }
+
+    /// ADR-152: how the level is named to people (`strict` for the stored `sealed`).
+    pub fn label(self) -> &'static str {
+        match self {
+            SecurityLevel::Sealed => "strict",
+            other => other.as_str(),
+        }
+    }
+
+    /// Does an agent reveal of an entry of this sensitivity wait for the owner?
+    pub fn reveal_needs_approval(self, sensitivity: crate::inference::Sensitivity) -> bool {
+        use crate::inference::Sensitivity;
+        match self {
+            SecurityLevel::Open => false,
+            SecurityLevel::Guarded => {
+                matches!(sensitivity, Sensitivity::High | Sensitivity::Critical)
+            }
+            SecurityLevel::Sealed => true,
+        }
+    }
+
+    /// Is an agent's create held in the tray for the owner to accept?
+    pub fn create_is_held(self) -> bool {
+        self == SecurityLevel::Sealed
+    }
+
+    /// May an agent change or remove an entry that already exists?
+    pub fn agent_may_change_existing(self) -> bool {
+        self != SecurityLevel::Sealed
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodePolicy {
@@ -119,6 +205,26 @@ pub struct NodePolicy {
     pub lock_after_seconds: Option<u32>,
     pub private_names: bool,
     pub agent_access: AgentAccess,
+    /// ADR-140. Absent in a registry written before it existed: that reads as `Guarded`.
+    #[serde(default)]
+    pub security_level: SecurityLevel,
+    /// ADR-150: "confirm before showing secrets". Vault policy, so it is read from the `global` node only
+    /// (the broker refuses it on any other node). Absent in every registry written before ADR-150, and left
+    /// out when it is the default: that reads as off, and every older registry signs and verifies unchanged.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::reveal_confirm::RevealConfirm::is_default"
+    )]
+    pub reveal_confirm: crate::reveal_confirm::RevealConfirm,
+    /// ADR-155: the app's preferences (`crate::settings`, `Store::AppPref`), vault-wide, so they are read from the
+    /// `global` node only. Each value is checked against the settings table when it is written. Absent when empty: every
+    /// older registry signs and verifies unchanged.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub app_prefs: std::collections::BTreeMap<String, serde_json::Value>,
+    /// ADR-155: the switchboard's record of applied setting changes, newest last, at most
+    /// [`crate::settings::HISTORY_LIMIT`]; `global` only. What `settings.revert` reads.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub settings_history: Vec<crate::settings::SettingChange>,
 }
 
 impl Default for NodePolicy {
@@ -131,6 +237,10 @@ impl Default for NodePolicy {
             lock_after_seconds: None,
             private_names: false,
             agent_access: AgentAccess::ReadWrite,
+            security_level: SecurityLevel::Guarded,
+            reveal_confirm: crate::reveal_confirm::RevealConfirm::default(),
+            app_prefs: std::collections::BTreeMap::new(),
+            settings_history: Vec::new(),
         }
     }
 }
@@ -578,5 +688,30 @@ mod tests {
         assert!(reg.is_strict_ancestor("a", "x"));
         assert!(!reg.is_strict_ancestor("x", "x"));
         assert!(!reg.is_strict_ancestor("x", "a"));
+    }
+
+    #[test]
+    fn strict_is_the_name_for_people_and_sealed_stays_the_wire_value() {
+        assert_eq!(
+            SecurityLevel::parse_input("strict"),
+            Some(SecurityLevel::Sealed)
+        );
+        assert_eq!(
+            SecurityLevel::parse_input("sealed"),
+            Some(SecurityLevel::Sealed)
+        );
+        assert_eq!(
+            SecurityLevel::parse("strict"),
+            None,
+            "the wire never carries strict"
+        );
+        assert_eq!(SecurityLevel::Sealed.as_str(), "sealed");
+        assert_eq!(SecurityLevel::Sealed.label(), "strict");
+        assert_eq!(SecurityLevel::Open.label(), "open");
+        assert_eq!(SecurityLevel::Guarded.label(), "guarded");
+        assert_eq!(
+            serde_json::to_string(&SecurityLevel::Sealed).unwrap(),
+            "\"sealed\""
+        );
     }
 }

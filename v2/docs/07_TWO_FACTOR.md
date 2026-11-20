@@ -10,7 +10,7 @@ surface: repo
 last_reviewed: 2026-08-19
 ---
 
-<!-- artifact-hardened: NEEDS RE-HARDENING — rewritten to ultimate-destination state on
+<!-- artifact-hardened: NEEDS RE-HARDENING — edited 2026-11-06 for ADR-098 (Touch ID honesty pass). Earlier note: rewritten to ultimate-destination state on
      2026-08-18 (Session 21), then corrected again the same day closing the independent
      verifier's findings (`v2/VERIFICATION_BACKLOG_S21.md` — `07_TWO_FACTOR.md` section), then
      corrected once more on 2026-08-19 closing the round-2 verifier's finding
@@ -66,8 +66,10 @@ last_reviewed: 2026-08-19
 > scope yet), and enforcement of the `requireTwoFactor` node policy (stored and reported,
 > consulted by no operation). A third is **partial**: the scoped elevation window is granted on
 > success and read by exactly one thing — re-enrolling a gate that is already confirmed (§4) —
-> and gates nothing else. Everything a live presence check gates is likewise unreachable today —
-> no transport in this codebase can set `presence_attested`.
+> and gates nothing else. A live presence check is **built on macOS since ADR-098**: a Secure
+> Enclave key signs a single-use broker challenge (Touch ID or the device password) and the broker verifies it
+> (`04_CRYPTO_AND_KEYS.md §5.3`), so the operations a presence check gates run for the owner. Without an enrolled
+> presence key, for agents and fixture tokens, and off macOS they are still refused with `presence_required`.
 
 ---
 
@@ -102,7 +104,8 @@ whose entire job is to stop a reader confusing them with the *root* recovery cod
 unlock — and nothing re-challenges after that. The per-operation and per-node columns below are
 the target design.
 
-Factor one is **something you are or know**: a platform presence check, or the passphrase.
+Factor one is **something you are or know**: a platform presence check (Touch ID, on a Mac with an enrolled
+presence key — ADR-098), or the passphrase.
 Factor two is **something you have**: a TOTP code from an authenticator.
 
 The finished gating matrix, which the built system implements only in its first row:
@@ -113,31 +116,36 @@ The finished gating matrix, which the built system implements only in its first 
 | List / read metadata | — | — | — |
 | **Reveal** a value | session | the vault gate, if `requireTwoFactor` ≥ `reveal` · **built** (ADR-085; a per-node gate secret is *planned*) | — |
 | Export a node to a file | session | node · *planned* | yes · *planned* |
-| Create or modify a **grant** | session | global **and** target node · *planned* | yes · *planned* |
+| Create or modify a **grant** | session | global **and** target node · *planned* | yes · **built** on macOS (ADR-098) |
 | Remove (seal) a node | session | global · *planned* | yes · *planned* |
-| **Reveal orphaned data** | session | global, fresh code every time · *planned* | yes, every time · *planned* |
-| **Rotate root key** | session | global · **built** (a fresh `vault.gate_verify` elevation is required when a gate is enrolled; the check precedes presence — `ADR-076`) | yes · *planned* — the wire refuses with `presence_required` |
-| Change gate enrolment · disable 2FA | session | global · **built** for changing a confirmed gate's enrolment (a fresh `vault.gate_verify` elevation, §4); *planned* for the rest | yes · *planned* |
+| **Reveal orphaned data** | session | the vault gate, a fresh code every time · **built** (`orphan.reveal` requires a fresh second factor when one is on and drops the window afterwards, ADR-098) | yes, every time · **built** on macOS |
+| **Rotate root key** | session | global · **built** (a fresh `vault.gate_verify` elevation is required when a gate is enrolled; the check precedes presence — `ADR-076`) | yes · **built** on macOS (ADR-098); with no presence key enrolled the wire refuses with `presence_required` |
+| Change gate enrolment · disable 2FA | session | global · **built** for changing a confirmed gate's enrolment (a fresh `vault.gate_verify` elevation, §4); *planned* for the rest | yes · *planned* (the gate-enrolment ops do not ask for a presence proof) |
+| Reveal a stored **TOTP seed** · read a full **audit record** · **re-parent** a node · rebuild the registry · widen a node's reach | session | as each operation's own checks (`Reveal`, `admin`) · **built** | yes · **built** on macOS (ADR-098) |
+| Turn on / off **Touch ID** (`presence.enrol`, `device.enrol`, `device.remove`) | session, `admin` | a fresh second factor when one is on · **built** | the first key: none (nothing to prove with yet); every later change, `device.enrol` and `device.remove` once a key exists, needs a proof from an enrolled key · **built** |
 | Switch Pro / Lite | session | — | — |
 | Change a node's `agentAccess` or policy | session | node · *planned* | — |
 
-**What is true today, precisely.** The presence column is inert everywhere: `PresenceProof` and
-`PlatformKeystore::verify_presence` exist as a trait contract (`crates/keystore/src/lib.rs`), the
-only implemented tier is `SoftwareKeystore` and it reports `user_presence: false`, and no
-transport can construct a `Scope` with `presence_attested: true` (`ADR-046`). The operations that
-would sit behind presence therefore refuse rather than pretend: **six** op arms are
-capability-checked and then reach an unconditional `PresenceRequired` — `audit.get`'s full-record
-path, `totp.seed`, `node.reparent`, `grant.create`'s non-presence half,
-`maintenance.doctor --rebuild-registry`, and `maintenance.rotate_root` (after its human, Admin and
-fresh-second-factor checks, `ADR-076`; `16_CROSS_PLATFORM.md §3` names the first five by file and
-line). A seventh refusal is conditional: `node.policy` answers `PresenceRequired` only for a patch
-that widens reach (`ADR-071`). That is the honest shape, and it is deliberate — a lock icon that means less than the
-reader thinks is the failure this project refuses.
+**What is true today, precisely.** The presence column is live on macOS and inert elsewhere. The
+`SoftwareKeystore` still reports `user_presence: false` and no transport can *claim* a `Scope` with
+`presence_attested: true` (`ADR-046`); what ADR-098 added is a broker-verified proof: a Secure Enclave key signs a
+single-use challenge bound to the op, its exact params and the login session, and the broker checks it against an
+enrolled public key (`04_CRYPTO_AND_KEYS.md §5.3`). The operations behind presence — `audit.get`'s full-record
+path, `totp.seed`, `node.reparent`, `grant.create`, `maintenance.doctor --rebuild-registry`,
+`maintenance.rotate_root` (after its human, Admin and fresh-second-factor checks, `ADR-076`), a widening
+`node.policy` (`ADR-071`) and `orphan.reveal` — now execute with a proof and otherwise reach `PresenceRequired`:
+with no presence key enrolled, for an agent or fixture token, and on any platform but macOS. That is the honest
+shape, and it is deliberate — a lock icon that means less than the reader thinks is the failure this project refuses.
+Presence is a second check on the owner's login on this Mac; it is not part of the encryption, and it does not make
+the second factor stronger than two-factor ever was ("guards the door, not the safe").
 
 **Node policy `requireTwoFactor`** — **`built`** against the vault gate (ADR-085, 2026-10-24). The field is real
 (`crates/core/src/registry.rs`: `never` · `reveal`, the default · `always`), is persisted with the node, and
 `node.policy` sets it (its `notEnforced` list is now empty). `graph.snapshot` publishes a per-node `gate.twofa` value of
-`none`, `enrolled` or `required`, so the UI draws the notch honestly. It is **enforced** by `ops.rs`
+`none`, `enrolled` or `required`, so the UI draws the notch honestly: `none` when the node's policy is
+`never` or the vault has no second factor at all (the default `reveal` asks for nothing until a gate is
+confirmed), `enrolled` while an enrolment has begun and is not confirmed, `required` once the vault gate
+is confirmed under a policy that asks (ADR-115). It is **enforced** by `ops.rs`
 (`second_factor_gate`) when the vault gate is confirmed: `reveal` asks before a value leaves the vault (`entry.reveal`,
 `totp.code`); `always` asks before any read of the node as well (`entry.list`, `entry.get`, `notes.read`,
 `vault.pending_list`; `search` skips the node). The owner's own login satisfies it (it passed the gate to exist); anyone
@@ -243,8 +251,8 @@ CLI enrol command and the last door (`ADR-064`). The rest of the human-facing ha
    (`item4_an_unconfirmed_enrolment_never_activates`).
 
 Both ops require `Capability::Admin` resolved against the global node — the same substitution for
-the missing presence factor that `node.seal`, `node.restore`, and `grant.create`'s non-presence
-half already make, recorded in `ADR-056`. The confirming code is written to the replay ledger
+the stand-in for a presence factor that `node.seal`, `node.restore`, and `grant.create`'s non-presence
+half make before a presence proof exists, recorded in `ADR-056` (and, for gate enrolment, still the only gate). The confirming code is written to the replay ledger
 like any other accepted code, so
 it cannot double as the second factor of the very first real unlock.
 
@@ -324,7 +332,7 @@ refusal is still unbuilt.
 | **Rate limit** | 5 consecutive failures, then 30 s → 1 m → 2 m → 4 m → 8 m → 16 m → 32 m, capped at 1 h (`ADR-070`, superseding `ADR-044`'s 15-minute cap). Keyed by uid. `server::handle_request` treats `vault.unlock`, `vault.gate_verify` and — since `ADR-064` — `vault.gate_recover` as one auth path, so an attacker cannot alternate between factors to dodge the counter. | `built` |
 | Comparison | Constant-time over the two digit strings (`constant_time_eq_str`); a length mismatch rejects early, which leaks nothing an attacker did not already choose | `built` |
 | Elevation | A scoped window: `DEFAULT_ELEVATION_SECONDS` (5 minutes) today, applied the same way to every scope. Will be per-node configurable 0–30 minutes, `0` meaning every operation re-challenges | `partial` — `gate_verify` grants the window and `is_elevated` answers correctly, and since `ADR-064` exactly one thing consults it: re-enrolling a gate that is already confirmed (`vault.gate_enroll_begin`/`_confirm`, §4). It gates nothing else; per-node configurability is unbuilt in a stronger sense than that — `NodePolicy` (`crates/core/src/registry.rs`) has no elevation field at all, and `elevate()`'s one call site (in `BrokerState::gate_verify`, `crates/brokerd/src/state.rs`) always passes the fixed constant, so there is no 0–30 bound anywhere to consult |
-| Orphan | Never elevated. Every orphan reveal is designed to take a fresh code and a fresh presence check | `built` in the negative sense that matters: a vault gate success does not elevate the orphan scope (`item7`), and orphan reveal is R0-denied to everything without live presence |
+| Orphan | Never elevated. Every orphan reveal takes a fresh code and a fresh presence proof, and drops the elevation window afterwards | `built` (ADR-098): a vault gate success does not elevate the orphan scope (`item7`), orphan reveal is R0-denied to everything without live presence, and `orphan.reveal` requires both every time |
 
 **Backoff is deliberately two mechanisms, not one.** `auth_backoff.rs` answers "is this uid
 allowed another authentication attempt right now"; `rate_limit.rs` answers a different question —
@@ -399,8 +407,8 @@ Built, and readable in `ops::reveal_via_approval` and the `vault.approval_decide
 What is built and what is not: the broker half, the CLI (`credmgr approvals`, `credmgr approve`) and the window's
 Lock screen (the list, the passphrase, the second-factor code) are built and tested against a real daemon. **Still
 planned:** the native notification — a prompt that appears while the vault is locked without anyone looking at the
-window — and the presence check on `[ Approve ]`, which no transport can supply yet (the bridge constructs no
-`Origin::Native` and sets `presence_attested` nowhere). The description a notification would show is what
+window — and the presence check on `[ Approve ]`: a presence proof needs the owner's login session, and a locked
+vault has none, so approving from the Lock screen stays a passphrase (and authenticator code) decision. The description a notification would show is what
 `vault.approval_get` already answers; the requesting process's working directory (`PendingApproval.cwd`) is in it only
 for the owner's login, so a locked vault (no owner login) names no requester and a notification would need a
 broker-side way to show one. `credmgr_get`'s tool description will tell agents to fetch what they need early and to expect
@@ -457,17 +465,17 @@ A panic on a short seed (MX-1) is what this replaced.
 | Request | Returns | Gate | State |
 |---|---|---|---|
 | `totp.code(node, entry)` | the current digits, and only that | `Reveal` on the entry's node | `built` |
-| `totp.seed(node, entry)` | the base32 secret itself | `Reveal` **+ gate 2FA + presence** | `built as a refusal` — capability-checked, then unconditionally `PresenceRequired` |
+| `totp.seed(node, entry)` | the base32 secret itself | `Reveal` **+ gate 2FA + presence** | `built` on macOS (ADR-098) — capability-checked, then a presence proof; without one, `PresenceRequired` |
 
 An agent that has to log into a service can get a code. It cannot get the seed, so it cannot
 generate codes tomorrow, cannot exfiltrate a durable capability, and cannot clone the factor. A
 leaked code is worth 30 seconds; a leaked seed is worth forever. `totp.code`'s response object is
 asserted to have exactly the keys `code`, `entry`, `node` — there is no field under any name that
-could carry the seed. And `totp.seed` is unreachable end to end on every transport that exists:
-the MCP registry is enumerated by `crates/mcp/tests/i13_tool_registry.rs`, which asserts no
-registered tool maps to the op under any name, and the op itself refuses even a fully-capable
-caller against an unlocked vault. That is not a defensive stub; it is the correct behaviour until
-a real presence factor exists, and it is tested from both directions.
+could carry the seed. And `totp.seed` is unreachable to agents and over MCP: the MCP registry is enumerated by
+`crates/mcp/tests/i13_tool_registry.rs`, which asserts no registered tool maps to the op under any name, and an
+agent or fixture token can never hold a presence proof, so the op still refuses even a fully-capable caller. At the broker, the owner's login with a Touch ID proof gets the seed (ADR-098); with no key enrolled the op
+answers `presence_required`. The desktop app's "show seed" displays it after a Touch ID check (and a fresh second factor too, if the vault has one); it is re-masked after the reveal window, never copied, and cleared on lock (ADR-098; 2026-11-08, `d9e6c7c`). The CLI has no command for it. It is tested from both
+directions (`phase5_totp_items.rs`, `crates/brokerd/tests/presence.rs`).
 
 **What is not built, and what the finished item support will do.** Adding a seed today goes
 through the ordinary single-field add path (`08_FIELD_MODEL.md §2`), which stores the value
@@ -485,7 +493,8 @@ the stored value and base32-decodes it with fixed SHA-1 / 6 digits / 30 seconds,
 - the countdown is UI, and the desktop application draws it: a TOTP-seed field's reveal button reads
   `totp.code` (with the field's id, `ADR-078`) and shows the current code with a bar that runs to the end of
   its 30-second step; the code is shown and never copied, and the seed is never shown (its "show seed" button
-  sends `totp.seed` and is refused with `presence_required`). The concealed copy with a 30-second clear
+  sends `totp.seed`; the shell asks for Touch ID, and with no presence key enrolled the broker answers `presence_required`;
+  with a proof the broker answers and the app still does not display the seed). The concealed copy with a 30-second clear
   (`entry_copy`, `copy_text`) serves every other field's Copy button.
 
 ---
@@ -522,7 +531,7 @@ named below was located by grep in this pass; nothing here is asserted from memo
 | 4 | An unconfirmed enrolment never activates | `phase5_gate.rs::item4_an_unconfirmed_enrolment_never_activates` | `built` |
 | 5 | A recovery code works exactly once | `phase5_gate.rs::item5_a_recovery_code_works_exactly_once` | `built` |
 | 6 | `totp.seed` is unreachable from the MCP transport, for every scope and grant | `i13_tool_registry.rs::totp_seed_op_never_appears_in_the_registry_under_any_tool_name`; `phase5_totp_items.rs::totp_seed_is_unreachable_even_with_full_capabilities_and_an_unlocked_vault` | `built` |
-| 7 | Orphan reveal never accepts an elevation, only a fresh challenge | `phase5_gate.rs::item7_a_successful_vault_gate_challenge_never_elevates_orphan` covers the negative half; the positive half needs a live presence factor and a reachable orphan path, and has neither | `partial` |
+| 7 | Orphan reveal never accepts an elevation, only a fresh challenge | `phase5_gate.rs::item7_a_successful_vault_gate_challenge_never_elevates_orphan` covers the negative half; the positive half is `orphan.reveal` asking for a fresh second factor and a presence proof every time (`crates/brokerd/tests/presence.rs`, ADR-098) | `built` on macOS |
 | 8 | Lock, sleep and screen-lock each drop every elevation | `phase5_gate.rs::item8_lock_drops_the_elevation_and_any_in_flight_challenge`, `item8_external_lock_signal_drops_the_elevation_too`, `item8_lock_drops_an_in_flight_unconsumed_challenge` | `built` |
 
 Obligations this document adds. Four are **met since 2026-09-24** (`ADR-064`), each in
@@ -556,7 +565,7 @@ documents cited one for months. Do not add a row to any table above without runn
 | feeds | `10_API_AND_MCP.md §3` | the forbidden-tool list that keeps `totp.seed` off the agent surface |
 | feeds | `13_TEST_PLAN.md §4` | the isolation-suite obligations §8 reports against, including I-13's tool-registry enumeration |
 | feeds | `09_UI_UX_SPEC.md §11` | the lock and unlock screens that will present the challenge, the drift advisory and the approval prompt |
-| depends on | `16_CROSS_PLATFORM.md §3` | the platform keystore tier and its presence capability, which every presence-gated row in §2 waits on |
+| depends on | `16_CROSS_PLATFORM.md §3` | the platform keystore tier and its presence capability, which every presence-gated row in §2 uses (built on macOS, ADR-098) |
 | depends on | `14_DECISIONS.md` | `ADR-044` (the shared backoff counter), `ADR-070` (its 1-hour cap), `ADR-046` (what Phase 5 built and what it honestly deferred), `ADR-056` (a completed gate mints the session token), `ADR-059` (the status vocabulary this rewrite applies), `ADR-063` (the live unlock that loads the gate), `ADR-064` (the persisted gate, staged re-enrolment and the last door) |
 
 ---

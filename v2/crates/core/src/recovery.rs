@@ -63,18 +63,26 @@ pub fn format_recovery_code(code: &[u8; RECOVERY_CODE_LEN]) -> String {
 /// lower-case hex, since a human retyping it may not preserve either.
 /// Anything that is not exactly 64 hex digits once separators are stripped
 /// is [`CryptoError::InvalidRecoveryCode`], never a panic.
+///
+/// ADR-163: the cleaned copy of the input is wiped before this returns, and a partly decoded code is wiped
+/// on the error path, so a recovery code typed into the broker leaves no copy behind in this function.
 pub fn parse_recovery_code(input: &str) -> Result<[u8; RECOVERY_CODE_LEN], CryptoError> {
-    let cleaned: String = input
-        .chars()
-        .filter(|c| !c.is_whitespace() && *c != '-')
-        .collect();
-    if cleaned.len() != RECOVERY_CODE_LEN * 2 {
+    let cleaned: zeroize::Zeroizing<String> = zeroize::Zeroizing::new(
+        input
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != '-')
+            .collect(),
+    );
+    if cleaned.len() != RECOVERY_CODE_LEN * 2 || !cleaned.is_ascii() {
         return Err(CryptoError::InvalidRecoveryCode);
     }
     let mut code = [0u8; RECOVERY_CODE_LEN];
     for (i, byte) in code.iter_mut().enumerate() {
-        let hex_byte = &cleaned[i * 2..i * 2 + 2];
-        *byte = u8::from_str_radix(hex_byte, 16).map_err(|_| CryptoError::InvalidRecoveryCode)?;
+        let Ok(b) = u8::from_str_radix(&cleaned[i * 2..i * 2 + 2], 16) else {
+            code.zeroize();
+            return Err(CryptoError::InvalidRecoveryCode);
+        };
+        *byte = b;
     }
     Ok(code)
 }
@@ -270,6 +278,20 @@ mod tests {
     fn parse_rejects_wrong_length() {
         let err = parse_recovery_code("A1B2").unwrap_err();
         assert_eq!(err, CryptoError::InvalidRecoveryCode);
+    }
+
+    /// ADR-163: a 64-byte input with a multi-byte character used to be sliced at a byte offset inside it
+    /// (a panic); it is refused as not a code, never a panic.
+    #[test]
+    fn parse_rejects_non_ascii_without_panicking() {
+        let mut bad = "A".repeat(RECOVERY_CODE_LEN * 2 - 3);
+        bad.push('é');
+        bad.push('A');
+        assert_eq!(bad.len(), RECOVERY_CODE_LEN * 2);
+        assert_eq!(
+            parse_recovery_code(&bad).unwrap_err(),
+            CryptoError::InvalidRecoveryCode
+        );
     }
 
     #[test]

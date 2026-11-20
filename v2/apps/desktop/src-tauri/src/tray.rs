@@ -10,6 +10,7 @@
 //! | right click (or ctrl-click) | the menu: Open CredMgr · Lock vault · Quit CredMgr |
 //! | Dock icon click | show the main window ([`crate::shell::on_run_event`], `Reopen`) |
 //! | Quit CredMgr / ⌘Q | the only ways the process ends |
+//! | a number beside the icon | agent requests are waiting for a decision ([`crate::approval_notify`], ADR-173) |
 //!
 //! "Lock vault" takes the same path as a sleep or a screen lock
 //! ([`crate::autolock::on_os_trigger`]): clipboard cleared, `vault.lock` sent

@@ -5,9 +5,35 @@
   <sc-if value="{{lockNoteShow}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status" data-lock-note="true" style="max-width:420px;text-align:center">{{lockNote}}</div></sc-if>
   <sc-if value="{{lockStepPass}}" hint-placeholder-val="{{true}}">
     <div class="t-mono-label">passphrase</div>
-    <input type="password" value="{{passInput}}" onChange="{{onPassInput}}" onKeyDown="{{onPassKey}}" autoFocus="{{true}}" aria-label="passphrase" style="font-family:var(--f-mono);font-size:var(--fs-lg);text-align:center;width:260px" placeholder="enter passphrase">
+    <div style="display:flex;align-items:center;gap:8px">
+      <input type="password" value="{{passInput}}" onChange="{{onPassInput}}" onKeyDown="{{onPassKey}}" autoFocus="{{true}}" aria-label="passphrase" style="font-family:var(--f-mono);font-size:var(--fs-lg);text-align:center;width:260px" placeholder="enter passphrase">
+      <button class="k-btn" data-touch-unlock="true" data-biometric-unlock="true" data-ready="{{biometricReady}}" onClick="{{submitTouch}}" disabled="{{touchDisabled}}" aria-label="{{biometricLabel}}" title="{{biometricLabel}}" style="width:40px;height:40px;min-width:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;{{biometricStyle}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M5 11a7 7 0 0 1 14 0"></path><path d="M8 12a4 4 0 0 1 8 0v2"></path><path d="M12 11v4c0 2-.5 3.5-1.5 5"></path><path d="M8 14c0 2-.4 3.6-1.2 5"></path><path d="M16 14c0 2.4-.3 4.2-1 6"></path><path d="M19 11c0 3-.3 5.5-1 8"></path></svg></button>
+    </div>
     <sc-if value="{{lockErrPass}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert" style="max-width:420px;text-align:center">{{lockErrPass}}</div></sc-if>
     <button class="k-btn" data-variant="primary" onClick="{{submitPass}}" disabled="{{passDisabled}}" style="min-width:220px">{{lockBusyLabel}}</button>
+    <button class="k-btn" data-forgot-passphrase="true" onClick="{{gotoForgot}}" style="border:none;color:var(--mute)">Forgot passphrase? Use recovery code</button>
+  </sc-if>
+  <sc-if value="{{lockStepForgot}}" hint-placeholder-val="{{false}}">
+    <div data-screen-label="S16b Forgot passphrase" class="t-body-sm" style="max-width:420px;text-align:center">The recovery code you saved when you created this vault, or at the last passphrase change, opens it. You choose a new passphrase and get a new recovery code; the old code and the old passphrase stop working.</div>
+    <input type="password" value="{{forgotCode}}" onChange="{{onForgotCode}}" onKeyDown="{{onForgotKey}}" autoFocus="{{true}}" autoComplete="off" aria-label="recovery code" style="font-family:var(--f-mono);font-size:var(--fs-base);text-align:center;width:300px" placeholder="recovery code">
+    <input type="password" value="{{forgotPass}}" onChange="{{onForgotPass}}" onKeyDown="{{onForgotKey}}" autoComplete="new-password" aria-label="new passphrase" style="font-family:var(--f-mono);font-size:var(--fs-base);text-align:center;width:300px" placeholder="new passphrase">
+    <input type="password" value="{{forgotRepeat}}" onChange="{{onForgotRepeat}}" onKeyDown="{{onForgotKey}}" autoComplete="new-password" aria-label="repeat the new passphrase" style="font-family:var(--f-mono);font-size:var(--fs-base);text-align:center;width:300px" placeholder="repeat the new passphrase">
+    <sc-if value="{{forgotShort}}" hint-placeholder-val="{{false}}"><div class="t-caption" style="max-width:420px;text-align:center;color:var(--mute)">At least 4 characters.</div></sc-if>
+    <sc-if value="{{forgotMismatch}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" style="max-width:420px;text-align:center">The two passphrases are not the same.</div></sc-if>
+    <sc-if value="{{forgotNeedFactor}}" hint-placeholder-val="{{false}}">
+      <input value="{{forgotFactor}}" onChange="{{onForgotFactor}}" onKeyDown="{{onForgotKey}}" maxLength="48" autoComplete="off" aria-label="2FA code" style="font-family:var(--f-mono);font-size:var(--fs-base);letter-spacing:.3em;text-align:center;width:300px" placeholder="2FA code">
+      <div class="t-caption" style="max-width:420px;text-align:center;color:var(--mute)">Your second factor is still needed: the 6 digits from your authenticator, or one of its recovery codes.</div>
+    </sc-if>
+    <sc-if value="{{lockErrForgot}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert" style="max-width:420px;text-align:center">{{lockErrForgot}}</div></sc-if>
+    <button class="k-btn" data-variant="primary" onClick="{{submitForgot}}" disabled="{{forgotDisabled}}" style="min-width:220px">{{forgotLabel}}</button>
+    <button class="k-btn" onClick="{{gotoPassphrase}}" style="border:none;color:var(--mute)">back</button>
+  </sc-if>
+  <sc-if value="{{lockStepForgotDone}}" hint-placeholder-val="{{false}}">
+    <div class="t-body-sm" role="status" style="max-width:420px;text-align:center">{{forgotDoneText}}</div>
+    <sc-if value="{{forgotLockRemovedShow}}" hint-placeholder-val="{{false}}"><div class="t-body-sm" role="alert" data-machine-lock-removed="1" style="max-width:420px;text-align:center;color:var(--danger-fg)">{{forgotLockRemovedText}}</div></sc-if>
+    <div data-recovery-code="true" style="font-family:var(--f-mono);font-size:var(--fs-md);letter-spacing:.08em;padding:16px;border:1px dashed var(--faint);text-align:center;overflow-wrap:anywhere;user-select:all;max-width:420px">{{forgotNewCode}}</div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-base);color:var(--ash);cursor:pointer"><input type="checkbox" checked="{{forgotSaved}}" onChange="{{onForgotSaved}}" style="width:auto">I have saved the new recovery code</label>
+    <button class="k-btn" data-variant="primary" onClick="{{finishForgot}}" disabled="{{forgotFinishDisabled}}" style="min-width:220px">{{forgotFinishLabel}}</button>
   </sc-if>
   <sc-if value="{{lockStepCode}}" hint-placeholder-val="{{false}}">
     <div class="t-mono-label">2FA code</div>

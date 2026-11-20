@@ -201,6 +201,10 @@ test("a gate-enrolled vault and an agent: the agent is refused, the owner gives 
   await addEntry(app, "Beta", { name: "EXISTING", label: MASKED_LABEL, value: stored });
   const oracle = await app.oracle.login(() => auth.next());
   const entryId = await oracle.entryId("beta", "EXISTING");
+  // ADR-140: a node is Guarded, so an agent would wait for approval on a high entry. This test is about the second factor, so the entry is
+  // marked low (the owner's own change, through the broker) and the agent's answer is the gate's.
+  const { generation } = await oracle.call("entry.list", { node: "beta" });
+  await oracle.call("entry.update", { node: "beta", entry: entryId, generation, sensitivity: "low" });
   const agentReads = () => Oracle.agent(app.daemon.socketPath, workdir, "entry.reveal", { node: "beta", entry: entryId });
 
   await test.step("the agent's reveal is refused with two_factor_required; the value is not in the answer", async () => {

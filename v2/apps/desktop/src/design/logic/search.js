@@ -4,9 +4,12 @@
 
    Node names are matched here, against the model's view.  Entry NAMES come from the broker's `search` op, which applies the
    caller's own list permissions; it runs 150 ms after the last keystroke and an answer for an older term is dropped.  Field
-   labels and values are not searched: labels are not exposed and values are never searchable. */
+   labels and values are not searched: labels are not exposed and values are never searchable.
+   A term that is a number (`1042` or `#1042`) is also looked up as an entry's short reference (`entry.get_by_ref`, rc.2 §1 item 3), and
+   the entry it names, if the caller may list it, comes first; a number the broker does not know (or one in a node the caller cannot
+   list: the broker answers both the same) adds nothing. */
 
-import { isSessionEnded, searchEntries } from "../../vault/index";
+import { isSessionEnded, read, searchEntries } from "../../vault/index";
 
 const DEBOUNCE_MS = 150;
 
@@ -21,12 +24,15 @@ export const searchMethods = {
   },
   async runSearch(term){
     if(!this._mounted)return;
-    let rows;
-    try{ rows=await searchEntries(this.model,term); }
+    let rows, ref=null;
+    const asRef=read.REF_TERM.exec(term);
+    try{
+      [rows, ref]=await Promise.all([searchEntries(this.model,term), asRef?read.entryByRef(this.model,Number(asRef[1])):Promise.resolve(null)]);
+    }
     // An answer for an older term is dropped, EXCEPT one that says the login is gone: that is true whatever was typed since.
-    catch(e){ if(this.state.searchQ.trim()===term||isSessionEnded(e))this.routeReadError(e,{op:'search'}); return; }
+    catch(e){ if(this.state.searchQ.trim()===term||isSessionEnded(e))this.routeReadError(e,{op:asRef?'entry.get_by_ref':'search'}); return; }
     if(!this._mounted||this.state.searchQ.trim()!==term)return; // a later keystroke owns the box now
-    this.setState({searchHits:{q:term,rows}});
+    this.setState({searchHits:{q:term,rows,ref}});
   },
   rvSearch(c){
     const {isPro, s, v} = c;
@@ -40,9 +46,12 @@ export const searchMethods = {
       if(!q){ searchRows=[{glyph:'+',label:'Add new',meta:'',go:()=>{const n=this.node(s.selected); this.openAddDlg(n?n.id:'global');}}];
         if(isPro){ searchRows.push(...(s.recentNodes||[]).map(nid=>{const n=this.node(nid);return n?{glyph:'○',label:n.label,meta:'recent',go:()=>{this.select(nid);this.setState({searchOpen:false});}}:null;}).filter(Boolean)); }
       } else {
+        const ref=hits&&s.searchHits.ref;
+        if(ref) searchRows.push({glyph:'#',label:ref.name,meta:`#${ref.ref} · ${label(ref.node)}`,go:()=>{this.select(ref.node);this.setState({openEntry:ref.entry,searchOpen:false});}});
         for(const n of v.nodes) if(n.label.toLowerCase().includes(q)) searchRows.push({glyph:'○',label:n.label,meta:'node',go:()=>{this.select(n.id);this.setState({searchOpen:false});}});
         if(hits) for(const r of hits){
           if(r.node===orphanId)continue; // sealed items are listed from the orphaned node's own list, below
+          if(ref&&r.node===ref.node&&r.id===ref.entry)continue; // already first, as the reference's entry
           searchRows.push({glyph:'⌗',label:r.name,meta:label(r.node),go:()=>{this.select(r.node);this.setState({openEntry:r.id,searchOpen:false});}});
         }
         for(const o of v.orphans) if(o.name.toLowerCase().includes(q)) searchRows.push({glyph:'⌗',label:o.name,meta:'orphaned · sealed',go:()=>{this.select('__orphan');this.setState({searchOpen:false});}});

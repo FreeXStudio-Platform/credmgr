@@ -1,60 +1,560 @@
 {
-  "_comment": "Per-operation metadata for the broker's 55 operations. tools/gen_help.py holds this key set equal to the operations ops.rs dispatches, so a new operation without a row here fails the generator's --check. agent_reach: mcp = exposed as an MCP tool; capability_only = an agent-origin caller that holds the capability could send it to the broker socket, there is no MCP tool and an agent must not use it; human_only = needs Admin, the owner's login or presence, which an agent scope never carries; bootstrap = vault setup, unlock, step-up and lock operations any local process may send, which an agent never needs.",
+  "_comment": "Per-operation metadata for the broker's 111 operations. tools/gen_help.py holds this key set equal to the operations ops.rs dispatches, so a new operation without a row here fails the generator's --check. agent_reach: mcp = exposed as an MCP tool; capability_only = an agent-origin caller that holds the capability could send it to the broker socket, there is no MCP tool and an agent must not use it; human_only = needs Admin, the owner's login or presence, which an agent scope never carries; bootstrap = vault setup, unlock, step-up and lock operations any local process may send, which an agent never needs.",
   "ops": {
-    "audit.get": { "capability": "admin", "agent_reach": "human_only", "summary": "The full, unredacted record of one decision. Built, but refuses everyone with presence_required in this build." },
-    "audit.tail": { "capability": "list", "agent_reach": "mcp", "summary": "Recent audit records. For an agent the feed is redacted to id, action, time and actor." },
-    "entry.create": { "capability": "create", "agent_reach": "mcp", "summary": "Create a new entry (one value or several fields). On a locked vault it is held in the pending tray." },
-    "entry.create_batch": { "capability": "create", "agent_reach": "capability_only", "summary": "Create 1 to 500 entries in one all-or-nothing call (used by credmgr import)." },
-    "entry.get": { "capability": "read", "agent_reach": "mcp", "summary": "One entry's metadata: field ids, labels, types, masking. Never a value." },
-    "entry.list": { "capability": "list", "agent_reach": "mcp", "summary": "Entry names and ids on one node. A human session also gets type, sensitivity and counts." },
-    "entry.remove": { "capability": "update", "agent_reach": "mcp", "summary": "Soft-delete an entry into a 7-day recovery window." },
-    "entry.restore": { "capability": "update", "agent_reach": "capability_only", "summary": "Bring a removed entry back inside its recovery window." },
-    "entry.reveal": { "capability": "reveal", "agent_reach": "mcp", "summary": "Return field values. Waits for a human when the vault is locked or the node asks for a second factor." },
-    "entry.rotate": { "capability": "update", "agent_reach": "mcp", "summary": "Replace a value and keep the previous one as history." },
-    "entry.undo": { "capability": "update", "agent_reach": "mcp", "summary": "Undo a rotation, a field change or a removal, addressed by its audit record id." },
-    "entry.update": { "capability": "update", "agent_reach": "mcp", "summary": "Replace a field's value or the whole field list. Keeps no history." },
-    "field.add": { "capability": "update", "agent_reach": "mcp", "summary": "Add fields to an entry." },
-    "field.remove": { "capability": "update", "agent_reach": "mcp", "summary": "Remove one field (never the last)." },
-    "field.reorder": { "capability": "update", "agent_reach": "capability_only", "summary": "Change the order of an entry's fields. Presentation only." },
-    "field.update": { "capability": "update", "agent_reach": "mcp", "summary": "Change one field's label, value, type or masking." },
-    "grant.create": { "capability": "admin", "agent_reach": "human_only", "summary": "Create a grant between nodes. Built up to its gate, then refuses with presence_required in this build." },
-    "grant.list": { "capability": "admin", "agent_reach": "human_only", "summary": "List grants." },
-    "grant.revoke": { "capability": "admin", "agent_reach": "human_only", "summary": "Revoke a grant." },
-    "graph.snapshot": { "capability": "list", "agent_reach": "capability_only", "summary": "The node tree the desktop app draws, filtered to what the caller may list." },
-    "maintenance.backup": { "capability": "admin", "agent_reach": "human_only", "summary": "Write an encrypted backup archive under a passphrase the human chooses." },
-    "maintenance.doctor": { "capability": "admin", "agent_reach": "human_only", "summary": "Diagnose and fix safe drift; optionally purge seals older than seven days." },
-    "maintenance.rotate_root": { "capability": "admin", "agent_reach": "human_only", "summary": "Replace the root key and issue a new recovery code. Refuses with presence_required in this build." },
-    "maintenance.verify": { "capability": "admin", "agent_reach": "human_only", "summary": "Check every envelope and manifest against its digest." },
-    "node.create": { "capability": "admin", "agent_reach": "human_only", "summary": "Create a project or sub-node, optionally with work folders." },
-    "node.list": { "capability": "list", "agent_reach": "capability_only", "summary": "List nodes the caller may see." },
-    "node.policy": { "capability": "admin", "agent_reach": "human_only", "summary": "Change a node's policy by partial patch. A patch that widens reach refuses with presence_required." },
-    "node.reparent": { "capability": "admin", "agent_reach": "human_only", "summary": "Move a node under a different parent. Refuses with presence_required in this build." },
-    "node.restore": { "capability": "admin", "agent_reach": "human_only", "summary": "Restore a sealed node within seven days." },
-    "node.seal": { "capability": "admin", "agent_reach": "human_only", "summary": "Seal a node: its entries move to Orphaned, re-encrypted to the cold key." },
-    "node.set_workdirs": { "capability": "admin", "agent_reach": "human_only", "summary": "Bind directories to a node so an agent started inside is scoped to it." },
-    "node.update": { "capability": "admin", "agent_reach": "human_only", "summary": "Rename a node (the label only; the id never changes)." },
-    "notes.read": { "capability": "notes", "agent_reach": "human_only", "summary": "Read a node's markdown note. Needs the notes capability, which an agent scope never carries." },
-    "notes.write": { "capability": "notes", "agent_reach": "human_only", "summary": "Write a node's markdown note. Needs the notes capability, which an agent scope never carries." },
-    "search": { "capability": "list", "agent_reach": "mcp", "summary": "Search entry names across the nodes the caller can reach. Names only." },
-    "totp.code": { "capability": "reveal", "agent_reach": "mcp", "summary": "The current six-digit code for a stored authenticator seed. Never the seed." },
-    "totp.seed": { "capability": "reveal", "agent_reach": "human_only", "summary": "The stored seed itself. Refuses every caller with presence_required in this build." },
-    "util.generate": { "capability": "create or update", "agent_reach": "capability_only", "summary": "Generate a random password (8 to 128 characters). The value is in the answer only: not stored, not audited." },
-    "vault.approval_decide": { "capability": "admin", "agent_reach": "human_only", "summary": "Approve or deny an agent's waiting request. On a locked vault the passphrase (and the authenticator code) decide it." },
-    "vault.approval_get": { "capability": "none (read-only)", "agent_reach": "human_only", "summary": "Describe waiting agent requests. Works on a locked vault and decrypts nothing." },
-    "vault.gate_enroll_begin": { "capability": "admin", "agent_reach": "human_only", "summary": "Start setting up or replacing the vault's second factor." },
-    "vault.gate_enroll_confirm": { "capability": "admin", "agent_reach": "human_only", "summary": "Confirm the second factor with one code; issues ten recovery codes." },
-    "vault.gate_recover": { "capability": "none (passphrase + recovery code)", "agent_reach": "human_only", "summary": "Reset the second factor with the passphrase and the root recovery code. Never unlocks." },
-    "vault.gate_verify": { "capability": "none (a code)", "agent_reach": "bootstrap", "summary": "Complete an unlock that asked for a code, or, from a logged-in session, open a five-minute step-up window." },
-    "vault.init_begin": { "capability": "none", "agent_reach": "bootstrap", "summary": "Start creating the vault (only when none exists)." },
-    "vault.init_confirm": { "capability": "none", "agent_reach": "bootstrap", "summary": "Finish creating the vault by retyping the recovery code." },
-    "vault.lock": { "capability": "none", "agent_reach": "bootstrap", "summary": "Lock the vault and end every login." },
-    "vault.node_lock": { "capability": "admin", "agent_reach": "human_only", "summary": "Lock one node while the vault stays unlocked." },
-    "vault.node_unlock": { "capability": "admin", "agent_reach": "human_only", "summary": "Unlock one node." },
-    "vault.pending_accept": { "capability": "create", "agent_reach": "capability_only", "summary": "Accept a held entry into its node. This is the human's review step; an agent must not use it." },
-    "vault.pending_discard": { "capability": "create", "agent_reach": "capability_only", "summary": "Discard a held entry. This is the human's review step; an agent must not use it." },
-    "vault.pending_list": { "capability": "read", "agent_reach": "capability_only", "summary": "List entries held in the review tray (names and counts, never values)." },
-    "vault.status": { "capability": "none", "agent_reach": "bootstrap", "summary": "Whether the vault is locked, initialised, and how many agent requests wait." },
-    "vault.unlock": { "capability": "none (passphrase)", "agent_reach": "bootstrap", "summary": "Unlock with the passphrase; returns a login token, or asks for a second-factor code." },
-    "whoami": { "capability": "none", "agent_reach": "mcp", "summary": "The caller's own node, capabilities and the nodes it can reach." }
+    "agent.token_issue": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Issue a node-scoped agent token (ADR-164): one node, a subset of what the node allows agents, a mandatory expiry. The owner's login, a fresh second factor where enrolled and a Touch ID proof; the secret is in this answer only."
+    },
+    "agent.token_rotate": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Give an agent token a new secret and expiry; the old secret is refused on its next request. Same gate as agent.token_issue."
+    },
+    "agent.token_revoke": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Revoke an agent token; its next request is refused. The owner's login only."
+    },
+    "agent.token_status": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "List the live agent tokens as metadata only (never a secret). The owner's login only."
+    },
+    "audit.get": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "The full, unredacted record of one decision. Needs a Touch ID proof."
+    },
+    "audit.report": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "A summary of the audit log for a period: counts, denials, presence uses, chain check. Owner only; no values."
+    },
+    "audit.tail": {
+      "capability": "list",
+      "agent_reach": "mcp",
+      "summary": "Recent audit records. For an agent the feed is redacted to id, action, time and actor."
+    },
+    "device.enrol": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Turn on unlocking with Touch ID: the vault key is sealed in this Mac's Secure Enclave."
+    },
+    "device.remove": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Turn Touch ID unlock off."
+    },
+    "entry.alias": {
+      "capability": "update",
+      "agent_reach": "human_only",
+      "summary": "Set the other names one entry answers to (the whole list, at most 8). A name or alias another entry has is refused. Human sessions only; no value is read or rewritten."
+    },
+    "entry.create": {
+      "capability": "create",
+      "agent_reach": "mcp",
+      "summary": "Create a new entry (one value or several fields). On a locked vault it is held in the pending tray."
+    },
+    "entry.create_batch": {
+      "capability": "create",
+      "agent_reach": "capability_only",
+      "summary": "Create 1 to 500 entries in one all-or-nothing call (used by credmgr import)."
+    },
+    "entry.expiring": {
+      "capability": "list",
+      "agent_reach": "human_only",
+      "summary": "Entries that expire within N days (default 30; already expired included), across every node the caller may list or one node, soonest first. Names and dates only. Human sessions only."
+    },
+    "entry.get": {
+      "capability": "read",
+      "agent_reach": "mcp",
+      "summary": "One entry's metadata: field ids, labels, types, masking. Never a value."
+    },
+    "entry.get_by_ref": {
+      "capability": "list",
+      "agent_reach": "capability_only",
+      "summary": "Find an entry by its vault-wide short reference number. Only entries the caller could already list are found; anything else is not_found."
+    },
+    "entry.history": {
+      "capability": "list",
+      "agent_reach": "human_only",
+      "summary": "One entry's trail: the audit records that name it, oldest first, and its rotation and edit times. Never a value. Human sessions only."
+    },
+    "entry.import_env": {
+      "capability": "create",
+      "agent_reach": "capability_only",
+      "summary": "Parsed .env pairs into one node: a dry run names every pair (new, exists, duplicate, empty, invalid), the write makes each pair its own entry with its own audit record. No answer carries a value."
+    },
+    "entry.list": {
+      "capability": "list",
+      "agent_reach": "mcp",
+      "summary": "Entry names and ids on one node. A human session also gets type, sensitivity and counts."
+    },
+    "entry.move": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Move one entry to another node, re-sealed to that node's key in one crash-safe step; id, reference, name, aliases and expiry kept, grants on it revoked, Undo history dropped. Owner only, Admin on both nodes, a fresh second factor and a Touch ID check every time."
+    },
+    "entry.remove": {
+      "capability": "update",
+      "agent_reach": "mcp",
+      "summary": "Soft-delete an entry into a 7-day recovery window."
+    },
+    "entry.restore": {
+      "capability": "update",
+      "agent_reach": "capability_only",
+      "summary": "Bring a removed entry back inside its recovery window."
+    },
+    "entry.reveal": {
+      "capability": "reveal",
+      "agent_reach": "mcp",
+      "summary": "Return field values. Waits for a human when the vault is locked or the node asks for a second factor."
+    },
+    "entry.rotate": {
+      "capability": "update",
+      "agent_reach": "mcp",
+      "summary": "Replace a value and keep the previous one as history."
+    },
+    "entry.search": {
+      "capability": "list",
+      "agent_reach": "capability_only",
+      "summary": "Search names and aliases on one node. Names only, never values. The vault-wide search is the top-level search."
+    },
+    "entry.set_expiry": {
+      "capability": "update",
+      "agent_reach": "capability_only",
+      "summary": "Set or clear an entry's expiry date (clear: true). Metadata only: the sealed value is not touched. Generation-checked like entry.update."
+    },
+    "entry.similar": {
+      "capability": "list",
+      "agent_reach": "capability_only",
+      "summary": "Which names on a node look like a candidate name (same letters with other separators or case, or one letter apart), and whether it is already taken. Writes nothing."
+    },
+    "entry.undo": {
+      "capability": "update",
+      "agent_reach": "mcp",
+      "summary": "Undo a rotation, a field change or a removal, addressed by its audit record id."
+    },
+    "entry.update": {
+      "capability": "update",
+      "agent_reach": "mcp",
+      "summary": "Replace a field's value or the whole field list. Keeps no history."
+    },
+    "field.add": {
+      "capability": "update",
+      "agent_reach": "mcp",
+      "summary": "Add fields to an entry."
+    },
+    "field.remove": {
+      "capability": "update",
+      "agent_reach": "mcp",
+      "summary": "Remove one field (never the last)."
+    },
+    "field.reorder": {
+      "capability": "update",
+      "agent_reach": "capability_only",
+      "summary": "Change the order of an entry's fields. Presentation only."
+    },
+    "field.update": {
+      "capability": "update",
+      "agent_reach": "mcp",
+      "summary": "Change one field's label, value, type or masking."
+    },
+    "grant.create": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Create a grant between nodes, or from a node to one entry (read and/or reveal of that entry, which lists that entry only, one-way). Built up to its gate, then needs a Touch ID proof; refuses with presence_required without one."
+    },
+    "grant.list": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "List grants."
+    },
+    "grant.revoke": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Revoke a grant."
+    },
+    "graph.snapshot": {
+      "capability": "list",
+      "agent_reach": "capability_only",
+      "summary": "The node tree the desktop app draws, filtered to what the caller may list."
+    },
+    "keystore.bind": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Seal the passphrase file to this Mac's device key (made on first use, mode 0600, outside the vault folder). Needs the vault open and a recovery code, the way in on a new Mac. Idempotent. Refused to agents."
+    },
+    "keystore.status": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "The machine lock's honest state: whether the passphrase file is sealed to a device key, whether this Mac holds that key, and that the tier is a key file (never the Secure Enclave). Owner login only; refused to agents before anything is read."
+    },
+    "keystore.unbind": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Turn the machine lock off: the passphrase file goes back to its plain form; the device key stays. A fresh second factor and Touch ID when they are set up. Refused to agents."
+    },
+    "maintenance.backup": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Write an encrypted backup archive under a passphrase the human chooses."
+    },
+    "maintenance.doctor": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Diagnose and fix safe drift; optionally purge seals older than seven days. Rebuilding the registry needs a Touch ID proof."
+    },
+    "maintenance.rotate_root": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Replace the root key and issue a new recovery code. Needs a Touch ID proof and a fresh second factor."
+    },
+    "maintenance.verify": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Check every envelope and manifest against its digest."
+    },
+    "node.create": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Create a project or sub-node, optionally with work folders."
+    },
+    "node.export": {
+      "capability": "reveal",
+      "agent_reach": "human_only",
+      "summary": "An age-encrypted archive of a node, built inside the broker. Owner only; a fresh second factor and Touch ID; 2FA seeds are left out."
+    },
+    "node.gate_enroll_begin": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Begin giving one project a second factor of its own. Owner only."
+    },
+    "node.gate_enroll_confirm": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Confirm a project's own second factor with one code; ten recovery codes of its own come back once."
+    },
+    "node.gate_remove": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Remove a project's own second factor: its fresh code and Touch ID, or the passphrase and the root recovery code."
+    },
+    "node.gate_verify": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Give a project's own code: it opens that project only, for five minutes, the owner included."
+    },
+    "node.list": {
+      "capability": "list",
+      "agent_reach": "capability_only",
+      "summary": "List nodes the caller may see."
+    },
+    "node.policy": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Change a node's policy by partial patch. A patch that widens reach needs a Touch ID proof and refuses with presence_required without one."
+    },
+    "node.rekey": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "A new key for one node, every file re-sealed to it. Owner only; a fresh second factor, a Touch ID check, one at a time."
+    },
+    "node.reparent": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Move a node under a different parent. Needs a Touch ID proof and a fresh second factor."
+    },
+    "node.restore": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Restore a sealed node within seven days."
+    },
+    "node.seal": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Seal a node: its entries move to Orphaned, re-encrypted to the cold key."
+    },
+    "node.set_workdirs": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Bind directories to a node so an agent started inside is scoped to it."
+    },
+    "node.update": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Rename a node (the label only; the id never changes)."
+    },
+    "notes.read": {
+      "capability": "notes",
+      "agent_reach": "human_only",
+      "summary": "Read a node's markdown note. Needs the notes capability, which an agent scope never carries."
+    },
+    "notes.write": {
+      "capability": "notes",
+      "agent_reach": "human_only",
+      "summary": "Write a node's markdown note. Needs the notes capability, which an agent scope never carries."
+    },
+    "orphan.destroy": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Permanently destroy sealed entries and the archives behind them. Owner only; the confirmation word, the count, a fresh second factor and Touch ID."
+    },
+    "orphan.list": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "The sealed (Orphaned) entries, names only."
+    },
+    "orphan.reveal": {
+      "capability": "reveal",
+      "agent_reach": "human_only",
+      "summary": "Read one sealed entry. Costs a fresh second factor and a Touch ID check every time; app only."
+    },
+    "presence.challenge": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "A single-use challenge for a Touch ID check on one operation. The app and the CLI ask for it themselves."
+    },
+    "presence.enrol": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Enrol this Mac's Secure Enclave key. The first needs a fresh second factor; later ones need a Touch ID proof."
+    },
+    "presence.status": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "What this Mac can do for Touch ID and what is set up. The owner's login only."
+    },
+    "presence.unenrol": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Remove an enrolled presence key. Needs a Touch ID proof."
+    },
+    "search": {
+      "capability": "list",
+      "agent_reach": "mcp",
+      "summary": "Search entry names across the nodes the caller can reach. Names only."
+    },
+    "search.content": {
+      "capability": "reveal",
+      "agent_reach": "capability_only",
+      "summary": "Find entries by what their field values contain; answers node, id and name only. Needs reveal; 12 a minute; never on a private node for an agent. Not an MCP tool."
+    },
+    "session.confirm": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Confirm it is you (Touch ID, or the vault passphrase) so the vault's 'confirm before showing secrets' rule lets this login see secrets for its trust window, or for one request. The owner's own login only; a wrong passphrase counts like a wrong unlock."
+    },
+    "totp.code": {
+      "capability": "reveal",
+      "agent_reach": "mcp",
+      "summary": "The current six-digit code for a stored authenticator seed. Never the seed."
+    },
+    "totp.seed": {
+      "capability": "reveal",
+      "agent_reach": "human_only",
+      "summary": "The stored seed itself. Refuses every caller without a Touch ID proof; no agent ever holds one, and no shipped client displays the answer."
+    },
+    "util.generate": {
+      "capability": "create or update",
+      "agent_reach": "capability_only",
+      "summary": "Generate a random password (8 to 128 characters). The value is in the answer only: not stored, not audited."
+    },
+    "vault.approval_decide": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Approve or deny an agent's waiting request. On a locked vault the passphrase (and the authenticator code) decide it; from a login, approving needs a Touch ID proof once a presence key is enrolled (denying never does)."
+    },
+    "vault.approval_get": {
+      "capability": "none (read-only)",
+      "agent_reach": "human_only",
+      "summary": "Describe waiting agent requests. Works on a locked vault and decrypts nothing."
+    },
+    "vault.doctor_apply": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Apply every move of one tidy-up plan in one request: the exact moves the scan showed (entry, from, to, generation), each through entry.move's crash-safe commit, with one fresh second factor and one Touch ID check for the whole plan. Stops at the first move that fails and says what moved. Never returns a value. Owner only, Admin on every node it names."
+    },
+    "vault.doctor_scan": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "The tidy-up scan: shared values, near-identical names, misfiled, weak, mistyped, expired, expiring and stale entries, each with a proposal; a move proposal carries the exact entry.move parameters. Writes nothing and never returns a value or a hash. Owner only, Admin on global."
+    },
+    "vault.gate_enroll_begin": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Start setting up or replacing the vault's second factor."
+    },
+    "vault.gate_enroll_confirm": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Confirm the second factor with one code; issues ten recovery codes."
+    },
+    "vault.gate_recover": {
+      "capability": "none (passphrase + recovery code)",
+      "agent_reach": "human_only",
+      "summary": "Reset the second factor with the passphrase and the root recovery code. Never unlocks."
+    },
+    "vault.gate_verify": {
+      "capability": "none (a code)",
+      "agent_reach": "bootstrap",
+      "summary": "Complete an unlock that asked for a code, or, from a logged-in session, open a five-minute step-up window."
+    },
+    "vault.init_begin": {
+      "capability": "none",
+      "agent_reach": "bootstrap",
+      "summary": "Start creating the vault (only when none exists)."
+    },
+    "vault.init_confirm": {
+      "capability": "none",
+      "agent_reach": "bootstrap",
+      "summary": "Finish creating the vault by retyping the recovery code."
+    },
+    "vault.lock": {
+      "capability": "none",
+      "agent_reach": "bootstrap",
+      "summary": "Lock the vault and end every login."
+    },
+    "vault.node_lock": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Lock one node while the vault stays unlocked."
+    },
+    "vault.node_unlock": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Unlock one node."
+    },
+    "vault.pending_accept": {
+      "capability": "create",
+      "agent_reach": "capability_only",
+      "summary": "Accept a held entry into its node. This is the human's review step; an agent must not use it."
+    },
+    "vault.pending_discard": {
+      "capability": "create",
+      "agent_reach": "capability_only",
+      "summary": "Discard a held entry. This is the human's review step; an agent must not use it."
+    },
+    "vault.pending_list": {
+      "capability": "read",
+      "agent_reach": "capability_only",
+      "summary": "List entries held in the review tray (names and counts, never values)."
+    },
+    "vault.recover": {
+      "capability": "none (recovery code)",
+      "agent_reach": "human_only",
+      "summary": "The passphrase is forgotten: open a locked vault with the recovery code, set a new passphrase and answer a new recovery code, shown once; the used code stops working. A second factor when one is on; never Touch ID. Refused to agents."
+    },
+    "vault.set_passphrase": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Change the vault passphrase (current and new). Replaces the root key and answers a new recovery code, shown once. A fresh second factor and Touch ID when they are set up."
+    },
+    "vault.status": {
+      "capability": "none",
+      "agent_reach": "bootstrap",
+      "summary": "Whether the vault is locked, initialised, and how many agent requests wait."
+    },
+    "vault.unlock": {
+      "capability": "none (passphrase)",
+      "agent_reach": "bootstrap",
+      "summary": "Unlock with the passphrase; returns a login token, or asks for a second-factor code."
+    },
+    "whoami": {
+      "capability": "none",
+      "agent_reach": "mcp",
+      "summary": "The caller's own node, capabilities and the nodes it can reach."
+    },
+    "settings.list": {
+      "capability": "none (read-only)",
+      "agent_reach": "mcp",
+      "summary": "Every setting with its value, default, accepted values, what it is for, where it is stored, its risk and the rule for you. Pass node to include that project's settings (an agent only for a project it reaches)."
+    },
+    "settings.get": {
+      "capability": "none (read-only)",
+      "agent_reach": "mcp",
+      "summary": "One setting in full, with its last ten recorded changes (each with the value it replaced)."
+    },
+    "settings.set": {
+      "capability": "admin",
+      "agent_reach": "mcp",
+      "summary": "Change a setting. The owner: the rules the app always had. An agent: a cosmetic or stricter change applies at once; a weaker one waits for the owner's approval as a request."
+    },
+    "settings.revert": {
+      "capability": "admin",
+      "agent_reach": "mcp",
+      "summary": "Put back the value a recorded change replaced, under the same rules as settings.set."
+    },
+    "settings.request_get": {
+      "capability": "none (read-only)",
+      "agent_reach": "mcp",
+      "summary": "The state of one agent request: pending, approved, denied or expired. Only its requester and the owner read it."
+    },
+    "settings.request_list": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Every agent request waiting for or past the owner's decision, with the folder each was asked from. The owner only."
+    },
+    "settings.request_decide": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Approve or deny an agent's request. Approving a change that weakens the vault needs a fresh confirmation (Touch ID or passphrase). The owner only."
+    },
+    "settings.kb": {
+      "capability": "none (read-only)",
+      "agent_reach": "mcp",
+      "summary": "The knowledge base for language models (docs/LLM_KB.md), generated from the settings table."
+    },
+    "vault.anomalies_ack": {
+      "capability": "none",
+      "agent_reach": "human_only",
+      "summary": "Mark the anomaly alarm as seen, so vault.status stops counting it in anomaliesUnseen. Owner only."
+    },
+    "entry.tag_set": {
+      "capability": "update",
+      "agent_reach": "human_only",
+      "summary": "Replace one entry's tags (the whole set, at most 16; [] clears). Each is lower-cased, inner spaces become '-', letters, digits and - _ . : / only, 1-32 characters. Read like names; entry.list and entry.search filter one node by a tag. Human sessions only; no value is read or rewritten."
+    },
+    "merge.suggestions": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Merge suggestions inside one node: identical values, a value in common, or names one letter apart, each with a key and the entry proposed to keep. Values are compared inside the broker under a key made for that call. Owner only, Admin on the node; one node at a time, never across a boundary; no value is ever returned."
+    },
+    "merge.apply": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Keep one entry and fold others into it: their names become its aliases, their tags join its tags, and they are removed (each undoable for 7 days with entry.undo). A fresh second factor. Owner only, Admin on the node; one node at a time, never across a boundary; no value is ever returned."
+    },
+    "merge.auto": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Merge one open suggestion, only when its entries' values are all identical. A fresh second factor. Owner only, Admin on the node; one node at a time, never across a boundary; no value is ever returned."
+    },
+    "merge.auto_all": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Every open identical suggestion: a dry run that writes nothing unless apply is true (then a generation and a fresh second factor). Owner only, Admin on the node; one node at a time, never across a boundary; no value is ever returned."
+    },
+    "merge.dismiss": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Remember that a merge suggestion was rejected, so it is not suggested again; kept per node, sealed to the node's key. Owner only, Admin on the node; one node at a time, never across a boundary; no value is ever returned."
+    },
+    "merge.undismiss": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Forget one dismissed merge suggestion, so it is suggested again. Owner only, Admin on the node; one node at a time, never across a boundary; no value is ever returned."
+    },
+    "merge.dismissed_list": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "The merge suggestions a node remembers as dismissed, newest first, with their entries' names. Owner only, Admin on the node; one node at a time, never across a boundary; no value is ever returned."
+    },
+    "merge.restore_all": {
+      "capability": "admin",
+      "agent_reach": "human_only",
+      "summary": "Forget every dismissed merge suggestion on a node. Owner only, Admin on the node; one node at a time, never across a boundary; no value is ever returned."
+    }
   }
 }

@@ -33,7 +33,7 @@ test("Help opens on a labelled search box, the short sections and the whole list
   // the short sections that were always there are still there
   await expect(help(app)).toContainText("reading the graph");
   await expect(help(app)).toContainText("writing while locked");
-  await expect(help(app)).toContainText("needs presence (Touch ID), which this beta cannot attest yet");
+  await expect(help(app)).toContainText("opening one needs Touch ID");
   // each topic shows its title, where it is and what it does
   const first = topics(app).first();
   await expect(first).toContainText("Create the vault: choose a passphrase");
@@ -50,7 +50,7 @@ test("typing filters the list live, ranks a title match first, and hides the sho
   expect(n).toBeGreaterThan(2);
   expect(n).toBeLessThan(TOTAL);
   await expect(topics(app)).toHaveCount(n); // the announced number is the number shown
-  await expect(topics(app).first()).toContainText("Backup retention"); // a title match outranks one that only has the word in its search terms
+  await expect(topics(app).first()).toContainText(/Backup retention|Restore a backup/); // a title match (either title says backup) outranks one that only has the word in its search terms
   await expect(topics(app).filter({ hasText: "Back up the vault" })).toHaveCount(1); // found through its search terms
   await expect(help(app)).not.toContainText("reading the graph"); // the short sections give way to the results
   await expect(help(app)).not.toContainText("Shortcut: T toggle graph and tree");
@@ -59,7 +59,9 @@ test("typing filters the list live, ranks a title match first, and hides the sho
   await box(app).fill("vault back");
   await expect(topics(app).filter({ hasText: "Back up the vault" })).toHaveCount(1);
   await box(app).fill("RECOVERY   code");
-  await expect(topics(app).first()).toContainText("Recovery code, shown once");
+  // two titles hold both words since ADR-163 added the recovery-code unlock; either is a title match and may rank first
+  await expect(topics(app).first()).toContainText(/Recovery code, shown once|Open the vault with the recovery code/);
+  await expect(topics(app).filter({ hasText: "Recovery code, shown once" })).toHaveCount(1);
 
   // a synonym that appears only in the search terms still finds the topic
   await box(app).fill("yubikey");
@@ -69,8 +71,8 @@ test("typing filters the list live, ranks a title match first, and hides the sho
 
 test("a topic that does not exist yet says so, and a search with no match says so and can be cleared", async ({ app }) => {
   await openHelp(app);
-  await box(app).fill("touch id");
-  const row = topics(app).filter({ hasText: "Touch ID and presence checks" });
+  await box(app).fill("windows");
+  const row = topics(app).filter({ hasText: "Windows and Linux builds" });
   await expect(row).toHaveCount(1);
   await expect(row).toContainText("planned"); // the badge says it is not there yet
 

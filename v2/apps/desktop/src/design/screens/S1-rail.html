@@ -1,5 +1,10 @@
   <nav class="cm-rail {{railOpenClass}}" data-screen-label="S25 Worktree rail">
     <div style="padding:16px 16px 8px;display:flex;justify-content:space-between;align-items:center"><span class="t-mono-label">worktree</span><button class="k-btn cm-hamburger" onClick="{{closeRail}}" style="min-width:24px;border:none;padding:2px 6px" aria-label="close menu">✕</button></div>
+    <div style="padding:0 12px 8px;display:flex;gap:6px;align-items:center" role="search">
+      <input class="cm-nodefilter" aria-label="filter nodes by name" value="{{nodeFilter}}" onChange="{{onNodeFilter}}" autocomplete="off" spellcheck="false" placeholder="filter nodes" style="flex:1;min-width:0;font-family:var(--f-mono);font-size:var(--fs-sm);padding:4px 8px">
+      <sc-if value="{{nodeFilterOn}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{clearNodeFilter}}" aria-label="clear the node filter" style="border:none;padding:2px 6px">✕</button></sc-if>
+    </div>
+    <sc-if value="{{nodeFilterNone}}" hint-placeholder-val="{{false}}"><div class="t-caption" role="status" data-nodefilter-none="true" style="padding:0 16px 8px">No node is called that.</div></sc-if>
     <ul class="k-tree" style="flex:1">
       <sc-for list="{{railRows}}" as="r" hint-placeholder-count="8">
         <li style="padding-left:{{r.indent}}">

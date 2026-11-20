@@ -116,3 +116,41 @@ fn the_value_reaches_a_field_only_through_the_broker_and_never_the_audit_log() {
     );
     assert!(feed.contains("util.generate"), "the call itself is");
 }
+
+#[test]
+fn hex_makes_lower_case_hex_of_the_asked_length_and_refuses_a_contradiction() {
+    let (f, owner, _) = with_acme();
+    for length in [8usize, 20, 64, 128] {
+        let r = gen_as_owner(&f, &owner, json!({ "hex": true, "length": length })).unwrap();
+        let v = r["value"].as_str().unwrap();
+        assert_eq!(v.len(), length);
+        assert!(
+            v.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+            "{v}"
+        );
+        assert_eq!(r["hex"], true);
+        assert_eq!(r["symbols"], false, "hex carries no symbols");
+        assert_eq!(r["pronounceable"], false);
+        assert_eq!(r["entropyBits"], (length * 4) as u64);
+    }
+    // The default length applies, `symbols: false` is no contradiction, and a normal call reports hex false.
+    let d = gen_as_owner(&f, &owner, json!({ "hex": true, "symbols": false })).unwrap();
+    assert_eq!(d["value"].as_str().unwrap().len(), 20);
+    assert_eq!(gen_as_owner(&f, &owner, json!({})).unwrap()["hex"], false);
+    // Same bounds as every other mode; contradictions are refused.
+    for bad in [
+        json!({ "hex": true, "length": 7 }),
+        json!({ "hex": true, "length": 129 }),
+        json!({ "hex": "yes" }),
+        json!({ "hex": true, "pronounceable": true }),
+        json!({ "hex": true, "symbols": true }),
+        json!({ "hex": true, "symbols": "yes" }),
+    ] {
+        let r = gen_as_owner(&f, &owner, bad.clone());
+        assert!(matches!(r, Err(OpError::Malformed(_))), "{bad}: {r:?}");
+    }
+    let a = gen_as_owner(&f, &owner, json!({ "hex": true })).unwrap();
+    let b = gen_as_owner(&f, &owner, json!({ "hex": true })).unwrap();
+    assert_ne!(a["value"], b["value"]);
+}

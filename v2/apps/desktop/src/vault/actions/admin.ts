@@ -22,14 +22,15 @@ import { thenReread, type Written } from "./written";
 
 // ─────────────────────────────── redaction ───────────────────────────────
 
-/** A bearer token is `cmt_` and at least eight hex digits (the same shape `crates/brokerd/src/token.rs` redacts). */
-const BEARER = /cmt_[0-9a-fA-F]{8,}/g;
+/** A bearer token is `cmt_` (a login) or `cma_` (an agent token, ADR-164) and at least eight hex digits (the shapes
+ *  `crates/brokerd/src/token.rs` redacts). */
+const BEARER = /cm[ta]_[0-9a-fA-F]{8,}/g;
 const MAX_TEXT = 300;
 
 /** Replace anything shaped like a session token, and bound the length, so nothing a record carries can flood or leak into the page. */
-export function redactTokens(text: string): string {
+export function redactTokens(text: string, max: number = MAX_TEXT): string {
   const clean = text.replace(BEARER, "[redacted-token]");
-  return clean.length > MAX_TEXT ? `${clean.slice(0, MAX_TEXT)}…` : clean;
+  return clean.length > max ? `${clean.slice(0, max)}…` : clean;
 }
 
 const text = (v: unknown): string | undefined => (typeof v === "string" ? redactTokens(v) : undefined);
@@ -69,6 +70,28 @@ const scrubProblem = (p: Problem): Problem => ({ node: typeof p?.node === "strin
 export async function createGrant(m: VaultModel, from: string, to: live.GrantTarget, scope: Array<"read" | "reveal" | "notes">, reason: string): Promise<Written<Awaited<ReturnType<typeof live.grantCreate>>>> {
   const r = await live.grantCreate(from, to, scope, reason);
   return thenReread(m, r, { grants: true });
+}
+
+// ─────────────────────────────── agent tokens (ADR-164) ───────────────────────────────
+// The owner's login only.  Issue and rotate never hand the page the secret: the shell puts it on the concealed clipboard
+// (cleared after 30 seconds and at lock) and answers `copied` with the metadata, as the login never reaches the page
+// (ADR-057).
+
+/** The live agent tokens, metadata only. */
+export function agentTokens(node?: string) {
+  return live.agentTokenStatus(node);
+}
+/** Issue a token for one node.  The shell asks for Touch ID; the broker refuses an agent. */
+export function issueAgentToken(node: string, label: string, capabilities: live.AgentTokenCapability[], expiresIn?: number) {
+  return live.agentTokenIssue(node, label, capabilities, expiresIn);
+}
+/** A new secret for a token; the old one stops working. */
+export function rotateAgentToken(id: string, expiresIn?: number) {
+  return live.agentTokenRotate(id, expiresIn);
+}
+/** End a token now. */
+export function revokeAgentToken(id: string) {
+  return live.agentTokenRevoke(id);
 }
 
 /** Revocation is safety, not a lever: it works in both modes.  The grant list (and the graph's edges) are read again. */
@@ -119,9 +142,27 @@ export async function runDoctor(m: VaultModel, opts: { apply: boolean; rebuildRe
 }
 
 /** `passphrase` encrypts the archive and is needed to open it again; it is not stored anywhere. */
-export async function backupVault(_m: VaultModel, passphrase: string, retain?: number): Promise<{ path: string; retain: number; pruned: number }> {
+export async function backupVault(_m: VaultModel, passphrase: string, retain?: number): Promise<{ path: string; retain: number; pruned: number; outsideVaultFolder: boolean }> {
   const r = await live.maintenanceBackup(passphrase, retain);
-  return { path: text(r.path) ?? "", retain: r.retain, pruned: r.pruned.length };
+  return { path: text(r.path) ?? "", retain: r.retain, pruned: r.pruned.length, outsideVaultFolder: r.outsideVaultFolder === true };
+}
+
+/**
+ * Restores a backup archive into an empty folder (ADR-166): the shell runs the bundled `credmgr restore --json`, so the refusals are the
+ * command line's (`broker_running` while a broker answers on the vault's socket, `restore_target_not_empty`, `restore_failed`,
+ * `restore_unavailable`).  It talks to no broker and touches no view: there is nothing to re-read, and the vault this window shows is not the
+ * one written.  `passphrase` is the BACKUP's, sent once and not kept.
+ */
+export async function restoreBackup(archive: string, passphrase: string, target?: string): Promise<live.RestoreDone> {
+  const r = await live.backupRestore(archive, passphrase, target);
+  return {
+    target: text(r.target) ?? "",
+    stateDir: text(r.stateDir) ?? "",
+    files: typeof r.files === "number" ? r.files : 0,
+    bytes: typeof r.bytes === "number" ? r.bytes : 0,
+    counter: text(r.counter) ?? "",
+    complete: r.complete === true,
+  };
 }
 
 /**
@@ -131,6 +172,23 @@ export async function backupVault(_m: VaultModel, passphrase: string, retain?: n
  */
 export async function rotateRootKey(_m: VaultModel, passphrase: string): Promise<live.RotateRootResult> {
   return live.maintenanceRotateRoot(passphrase);
+}
+
+/**
+ * ADR-156: change the vault passphrase.  `passphrase` is the current one, `newPassphrase` the one that protects the root key from
+ * now on.  It is a root rotation, so the answer carries a NEW recovery code exactly as {@link rotateRootKey} does: show it once,
+ * make the user save it, let it go out of scope.  Both passphrases are used for this one call and never kept.  Do NOT read the
+ * model after this, for the same reason as a rotation.
+ */
+export async function changePassphrase(_m: VaultModel, passphrase: string, newPassphrase: string): Promise<live.SetPassphraseResult> {
+  return live.vaultSetPassphrase(passphrase, newPassphrase);
+}
+
+/** ADR-156: the owner has seen the cross-node anomaly alarm.  Resets the broker's count, and the model's, so the notice goes. */
+export async function acknowledgeAnomalies(m: VaultModel): Promise<number> {
+  const r = await live.vaultAnomaliesAck();
+  m.setAnomaliesUnseen(0);
+  return r.acknowledged;
 }
 
 // ─────────────────────────────── the shell ───────────────────────────────
@@ -147,6 +205,31 @@ const inShell = (): boolean => typeof window !== "undefined" && "__TAURI_INTERNA
 export async function copyPlainText(value: string): Promise<void> {
   if (!inShell()) throw new Error("copying needs the CredMgr app: there is no shell to write the clipboard with");
   await live.copyText(value);
+}
+
+// ─────────────────────────────── agents (ADR-143) ───────────────────────────────
+// Local to the shell; nothing here reaches the broker, and nothing is a secret.  With no shell each resolves `null`.
+
+/** Which assistants are on this Mac and whether CredMgr is wired into each.  Reads files, writes none. */
+export async function agentDetect(): Promise<live.AgentDetect | null> {
+  return inShell() ? live.agentDetect() : null;
+}
+/** The configuration to copy for a client (`generic` for any other). */
+export async function agentSnippet(client: string) {
+  return inShell() ? live.agentSnippet(client) : null;
+}
+/** The change a connect or disconnect would make: the file, a diff, a token.  Writes nothing. */
+export async function agentPlan(client: string, action: "connect" | "disconnect") {
+  return inShell() ? live.agentPlan(client, action) : null;
+}
+/** Write the planned change.  Called from the dialog's Write button only. */
+export async function agentApply(client: string, action: "connect" | "disconnect", token: string) {
+  if (!inShell()) throw new Error("writing needs the CredMgr app");
+  return live.agentApply(client, action, token);
+}
+/** The Vault Protocol prompt, or the text of CREDMGR.md, for a node: names and structure only. */
+export async function agentPrompt(node: string, reachable: string[], level: live.SecurityLevel, format: "prompt" | "md") {
+  return inShell() ? live.agentPrompt(node, reachable, level, format) : null;
 }
 
 /**
@@ -176,6 +259,134 @@ export async function setCaptureProtection(enabled: boolean): Promise<live.Captu
   return live.captureProtectionSet(enabled);
 }
 
+/**
+ * Whether the window was put away (minimised, or hidden with the app) rather than merely out of sight (covered by another window,
+ * or on a display that went dark). `null` with no shell (the browser preview, a test build): the caller then treats a hidden page
+ * as put away, as before. A shell that cannot answer resolves `null` too.
+ */
+export async function windowPutAway(): Promise<boolean | null> {
+  if (!inShell()) return null;
+  try {
+    const s = await live.windowState();
+    return s.minimized || !s.visible;
+  } catch {
+    return null;
+  }
+}
+
+// ─────────────────────────────── Touch ID (ADR-098) ─────────────────────
+
+/** What this Mac can do and what is set up, or `null` when there is no shell to ask. */
+export async function touchIdState(): Promise<{ probe: live.PresenceProbe; status: live.PresenceStatus } | null> {
+  if (!inShell()) return null;
+  const [probe, status] = await Promise.all([live.presenceProbe(), live.presenceStatus()]);
+  return { probe, status };
+}
+
+/**
+ * Turn Touch ID on for this vault: create this Mac's Secure Enclave key (no prompt), enrol its public half, and turn on
+ * unlocking with it.  Needs the vault open and, when a second factor is on, a fresh code (the router asks for it).  Each
+ * step that already holds is skipped, so running it again finishes what a refused attempt left.
+ */
+export async function touchIdSetUp(): Promise<void> {
+  const { probe, status } = (await touchIdState()) ?? {};
+  if (!probe || !status) return;
+  if (status.enrolled.length === 0 || !probe.keyOnThisMac) {
+    const publicKey = await live.presenceKeyCreate();
+    await live.presenceEnrol(publicKey, "This Mac");
+  }
+  if (!status.touchIdUnlock) await live.deviceEnrol();
+}
+
+/** Turn Touch ID off: stop unlocking with it and forget this Mac's presence key (each needs a Touch ID check). */
+export async function touchIdTurnOff(): Promise<void> {
+  const state = await touchIdState();
+  if (!state) return;
+  if (state.status.touchIdUnlock) await live.deviceRemove();
+  for (const key of state.status.enrolled) await live.presenceUnenrol(key.id);
+}
+
+// ─────────────────────────────── start at login (ADR-156) ──────────────
+
+export type LoginAgentStatus = live.LoginAgentStatus;
+
+/**
+ * Whether the launch agent that starts the broker at login is in place, or `null` when there is no shell to ask or this platform
+ * has no launchd (`platform_unsupported`): the screens then offer nothing.  Any other refusal is thrown.
+ */
+export async function loginAgentState(): Promise<LoginAgentStatus | null> {
+  if (!inShell()) return null;
+  try {
+    return await live.loginAgentStatus();
+  } catch (e) {
+    if (live.isBridgeError(e) && e.code === "platform_unsupported") return null;
+    throw e;
+  }
+}
+
+/** Write and load the launch agent (starts the broker now and at every login).  Idempotent. */
+export async function loginAgentTurnOn(): Promise<LoginAgentStatus> {
+  return live.loginAgentInstall();
+}
+
+/** Unload the launch agent (stops the broker it started, which locks the vault) and remove it.  Idempotent. */
+export async function loginAgentTurnOff(): Promise<LoginAgentStatus> {
+  return live.loginAgentUninstall();
+}
+
+// ─────────────────────────────── machine lock (ADR-165) ──────────────
+
+export type MachineLockStatus = live.KeystoreStatus;
+
+/**
+ * Whether the passphrase file is sealed to this Mac, or `null` when there is no shell to ask.  The broker's own `protects` /
+ * `doesNotProtect` sentences pass through {@link redactTokens} like every other string shown from it.
+ */
+export async function machineLockState(): Promise<MachineLockStatus | null> {
+  if (!inShell()) return null;
+  return cleanMachineLock(await live.keystoreStatus());
+}
+
+/**
+ * Turning the machine lock on, step one (review N1).  The vault passphrase and the CURRENT recovery code both prove it is the owner
+ * (review P1-1); nothing changes yet.  The answer carries the NEW recovery code the bind will make the only one that works: show it,
+ * have the person type it back ({@link machineLockConfirm}), and let it go out of scope.  Both typed values are used for this one call
+ * and never kept.  An already-bound vault answers `already: true` and no code.
+ */
+export async function machineLockPrepare(passphrase: string, recoveryCode: string): Promise<live.KeystorePrepared> {
+  return cleanMachineLock(await live.keystoreBindPrepare(passphrase, recoveryCode.trim()));
+}
+
+/**
+ * Step two: the new code typed back (nothing for an already-bound vault).  Only now is the root key replaced, every project re-keyed and
+ * the passphrase file sealed to this Mac (the broker makes the device key on first use).
+ */
+export async function machineLockConfirm(newRecoveryCode?: string): Promise<live.KeystoreChange> {
+  return cleanMachineLock(await live.keystoreBindCommit(newRecoveryCode ? newRecoveryCode.trim() : undefined));
+}
+
+/** The dialog closed between the steps: the broker forgets the prepared bind.  Nothing had changed. */
+export async function machineLockCancel(): Promise<void> {
+  await live.keystoreBindCancel();
+}
+
+/**
+ * Turn the machine lock off (a fresh second factor and Touch ID where they are on; the vault passphrase where neither is).  The device
+ * key stays.  Idempotent.
+ */
+export async function machineLockTurnOff(passphrase?: string): Promise<live.KeystoreChange> {
+  return cleanMachineLock(await live.keystoreUnbind(passphrase || undefined));
+}
+
+function cleanMachineLock<T extends MachineLockStatus>(st: T): T {
+  return {
+    ...st,
+    protects: redactTokens(String(st.protects ?? "")),
+    doesNotProtect: redactTokens(String(st.doesNotProtect ?? "")),
+    ...(typeof st.warning === "string" ? { warning: redactTokens(st.warning) } : {}),
+  };
+}
+
 /** The app's own version, from the shell (`tauri.conf.json`), or `null` when there is no shell to ask. */
 export async function appVersion(): Promise<string | null> {
   if (!inShell()) return null;
@@ -185,4 +396,63 @@ export async function appVersion(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// ─────────────── Confirm before showing secrets (ADR-150) ───────────────
+
+/** The policy as the broker stores it (`off` when the broker says nothing: an older vault, or not the owner's login). */
+export type RevealConfirm = live.RevealConfirm;
+/** What a vault reads as when the broker says nothing (kept here, so this module reads nothing from the bridge at import time). */
+const REVEAL_CONFIRM_OFF: RevealConfirm = { mode: "off", windowSeconds: 300, scope: "all" };
+export type ConfirmationAsk = live.ConfirmationAsk;
+
+/** The vault's "Confirm before showing secrets" policy, read from the broker's graph snapshot. `null` without a shell. */
+export async function revealConfirmPolicy(): Promise<RevealConfirm | null> {
+  if (!inShell()) return null;
+  const snap = await live.graphSnapshot();
+  return { ...REVEAL_CONFIRM_OFF, ...(snap.revealConfirm ?? {}) };
+}
+
+/**
+ * Change the policy (`node.policy` on the global node, with a reason for the audit record).  Turning it on or making it stricter
+ * needs nothing; turning it off or loosening it is refused with `confirmation_required` until the person confirms, which the
+ * bridge asks for and then retries once (src/lib/bridge.ts).  Resolves with the policy the broker now holds.
+ */
+export async function setRevealConfirm(next: RevealConfirm): Promise<RevealConfirm> {
+  const r = await live.nodePolicy("global", "Settings: confirm before showing secrets", { revealConfirm: next });
+  return { ...REVEAL_CONFIRM_OFF, ...(r.policy.revealConfirm ?? next) };
+}
+
+/** Confirm it is the owner: Touch ID (no passphrase: the shell shows the prompt) or the vault passphrase.  Nothing is kept. */
+export async function confirmIdentity(passphrase?: string): Promise<{ method: "passphrase" | "presence"; expiresIn: number }> {
+  const r = await live.sessionConfirm(passphrase);
+  return { method: r.method, expiresIn: r.expiresIn };
+}
+
+/** Install the screens' confirm dialog as the bridge's confirmation handler.  Returns the function that removes it. */
+export function onConfirmationNeeded(handler: ((ask: ConfirmationAsk) => Promise<boolean>) | null): () => void {
+  return live.setConfirmationHandler(handler);
+}
+
+// ─────────────────────────────── the doctor's tidy-up scan (ADR-161) ───────────────────────────────
+
+export type DoctorReport = live.DoctorReport;
+export type DoctorFinding = live.DoctorFinding;
+
+/**
+ * Runs the tidy-up scan (`vault.doctor_scan`).  A read: nothing in the vault changes, so nothing is re-read.  Names and labels the
+ * broker returns are shown to a person, so each passes through {@link redactTokens} like an audit record's strings.
+ */
+export async function doctorScan(opts: { staleDays?: number; expiringDays?: number } = {}): Promise<DoctorReport> {
+  const r = await live.vaultDoctorScan(opts.staleDays, opts.expiringDays);
+  const clean = (v: unknown) => (typeof v === "string" ? redactTokens(v, 200) : v);
+  return {
+    ...r,
+    findings: (Array.isArray(r.findings) ? r.findings : []).map((f) => ({
+      ...f,
+      fieldLabel: f.fieldLabel === undefined ? undefined : (clean(f.fieldLabel) as string),
+      entries: (Array.isArray(f.entries) ? f.entries : []).map((e) => ({ ...e, name: clean(e.name) as string, nodeLabel: (clean(e.nodeLabel) as string | null) ?? null })),
+    })),
+    skipped: Array.isArray(r.skipped) ? r.skipped : [],
+  };
 }

@@ -144,12 +144,12 @@ describe("includes", () => {
 });
 
 describe("the real design", () => {
-  it("compiles to exactly 630 bindings and one build-time hover rule, from the split template", () => {
+  it("compiles to exactly 1072 bindings and one build-time hover rule, from the split template", () => {
     // PINNED, measured on the merged tree (the hosting baseline was 348; the five wiring lanes moved it).  A change that adds or removes a
     // binding changes this number on purpose, in the same commit; "more than 300" let a lane drop bindings unnoticed.
     const r = compileFile("src/design/app.template.html");
     expect(new Set(r.bindings).size).toBe(r.bindings.length);
-    expect(r.bindings.length).toBe(630);
+    expect(r.bindings.length).toBe(1072); // +12: ADR-169 (Tidy up's Apply all moves and its confirm list); +9: ADR-167 and ADR-168 (tag chips in the inspector, Merge and Dismiss in Tidy up); +30: ADR-164 (the Agent tokens section and its Issue dialog); +3: ADR-165 re-review N1 (the bind dialog's second step: the new code shown, its retype field and the step flag); +6: ADR-165 review (the bind dialog's passphrase and recovery-code fields, its error line, the Lock screen's "lock removed" line); +16: ADR-165 (the machine lock row and its dialog); +26: ADR-163 (the Lock screen's "Forgot passphrase?" steps); +42: rc.2 item 3 (the rail filter, Find in this node, the Audit report section); +19: ADR-166 (Restore from a backup: its dialog, the Settings row, the broker-down button); +49: rc.2 item 1 (Rotate…, Remove…, their dialogs, the removed-entry Undo bar, the audit view's removed list); +7: ADR-160 (the QR-image control in Add entry); +14: ADR-161 (Tidy up: its overlay, the Maintenance button); +14: ADR-158 (Move to project… and its dialog); +46: ADR-157 (the expiry chip and dialog, the Fields and History tabs); +28 before it: ADR-156
     expect(r.css.split("\n").filter(Boolean).length).toBe(1);
     expect(r.files.length).toBeGreaterThan(15);
   });

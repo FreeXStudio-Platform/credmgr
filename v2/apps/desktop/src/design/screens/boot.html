@@ -6,8 +6,13 @@
 <sc-if value="{{isBrokerDown}}" hint-placeholder-val="{{false}}">
 <div data-screen-label="S16 Broker unreachable" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:var(--void);text-align:center;padding:24px">
   <div style="font-family:var(--f-mono);font-size:var(--fs-base);color:var(--ash)">credmgr cannot reach its broker</div>
-  <div class="t-body-sm" style="max-width:420px">The broker (<span style="font-family:var(--f-mono)">credmgrd</span>) is not running, or its socket is not where this app looks for it. Run <span style="font-family:var(--f-mono)">credmgrd</span> in a terminal, or let launchd keep it running (see the install guide, RELEASE.md section 3), then retry. Nothing from your last session is shown here.</div>
-  <button class="k-btn" data-variant="primary" onClick="{{retryBoot}}" style="min-width:160px">Retry</button>
+  <div class="t-body-sm" style="max-width:420px">The broker (<span style="font-family:var(--f-mono)">credmgrd</span>) is not running, or its socket is not where this app looks for it. Run <span style="font-family:var(--f-mono)">credmgrd</span> in a terminal, or let launchd keep it running (see the install guide, RELEASE.md section 3), then retry. If you started the app from a terminal by running its executable, quit it and open the app the usual way (the Applications folder, or open CredMgr.app): the bare executable has no link to the broker. Nothing from your last session is shown here.</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+    <button class="k-btn" data-variant="primary" onClick="{{retryBoot}}" style="min-width:160px">Retry</button>
+    <button class="k-btn cm-restore-btn" onClick="{{openRestore}}" style="min-width:160px" title="credmgr restore: rebuild a vault from a backup archive, while no broker is running">Restore from a backup…</button>
+    <sc-if value="{{bootLoginAgentShow}}" hint-placeholder-val="{{false}}"><button class="k-btn" data-boot-login-agent="1" onClick="{{bootLoginAgent}}" disabled="{{bootLoginAgentDisabled}}" style="min-width:160px">{{bootLoginAgentLabel}}</button></sc-if>
+  </div>
+  <sc-if value="{{bootLoginAgentShow}}" hint-placeholder-val="{{false}}"><div class="t-caption" style="max-width:420px">Start the broker at login writes a launchd agent for your user only (never root) that starts credmgrd now and every time you log in. Turn it off in Settings, Security.</div></sc-if>
 </div>
 </sc-if>
 <sc-if value="{{isBootFailed}}" hint-placeholder-val="{{false}}">

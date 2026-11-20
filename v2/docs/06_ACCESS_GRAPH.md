@@ -10,7 +10,7 @@ surface: repo
 last_reviewed: 2026-08-19
 ---
 
-<!-- artifact-hardened: NEEDS RE-HARDENING — rewritten to ultimate-destination state on
+<!-- artifact-hardened: NEEDS RE-HARDENING — edited 2026-11-06 for ADR-098 (Touch ID honesty pass). Earlier note: rewritten to ultimate-destination state on
      2026-08-18 (Session 21). Every rule, capability, error field and worked trace below was
      re-derived from `crates/core/src/access.rs`, `crates/brokerd/src/{scope,ops,protocol}.rs`
      and the tests named in §12, and eleven claims were corrected (the rule table omitted the
@@ -74,17 +74,17 @@ last_reviewed: 2026-08-19
 > covered by the worked matrix in `crates/core/tests/access_matrix.rs`, by P-9/P-10 in
 > `crates/core/tests/properties.rs`, by I-17's independent rule re-derivation over random 30-node
 > graphs, and by the isolation tests named in §12. What is **partial** is the
-> machinery around it: grants can be listed and revoked but **`grant.create` refuses on every
-> transport that exists** (`presence_required`), node policies can be changed by `node.policy`
-> (ADR-071) only in the tightening direction — a widening patch refuses for want of presence;
-> `requireTwoFactor` and `privateNames` are enforced since 2026-10-24 (ADR-085, ADR-083; against the vault gate's
-> one scope — a per-node gate secret is still unbuilt) — the
-> native presence origin is unwired, and the
+> machinery around it: grants can be listed, revoked and — since ADR-098, on a Mac with an enrolled presence key —
+> **created** (`grant.create` needs a Touch ID proof and answers `presence_required` without one), node policies
+> can be changed by `node.policy` (ADR-071) in the tightening direction freely and in the widening direction only
+> with a presence proof; `requireTwoFactor` and `privateNames` are enforced since 2026-10-24 (ADR-085, ADR-083; against the vault gate's
+> one scope — a per-node gate secret is still unbuilt) — the native presence origin is **built for exactly one
+> caller**, `orphan.reveal`, which builds the native subject itself after verifying a proof (§4, §10.3) — and the
 > cross-node-denial counter trips without emitting anything. The desktop app's grant surfaces are
 > **wired**: Settings → Grants lists what `grant.list` returns, revokes with `grant.revoke`, and its
-> "New grant" dialog sends `grant.create`, which the broker refuses with `presence_required` (the app says
-> so and changes nothing) — a human still cannot create a grant on any surface, because nothing can attest
-> presence (`19_FRONTEND_DELIVERY_SCOPE.md`).
+> "New grant" dialog sends `grant.create`; the shell asks for Touch ID and the grant is written, or, with no presence key
+> enrolled, the broker refuses with `presence_required`, the app says so and changes nothing
+> (`19_FRONTEND_DELIVERY_SCOPE.md`). Agents never hold a proof, so an agent still cannot create a grant on any surface.
 > Each section below carries its own status and its own evidence; §10 collects the target design
 > for the parts that exist nowhere yet.
 
@@ -118,7 +118,7 @@ Evaluated top to bottom; the first rule that matches decides. **Default is deny.
 | # | Rule | Effect |
 |---|---|---|
 | **pre** | The **subject** is the orphan node | **DENY**, reported as R8, before R0 is considered. Orphan is a place data goes, never a caller. The broker is expected never to mint such a scope; this is the pure-function backstop for that expectation. |
-| **R0** | Target node is `orphan` | **DENY** for every subject and every transport, except a subject whose `origin` is `native` **and** which carries a live presence attestation. No grant, policy, or token can override it. |
+| **R0** | Target node is `orphan` | **DENY** for every subject and every transport, except a subject whose `origin` is `native` **and** which carries a live presence attestation. No grant, policy, or token can override it. Since ADR-098 the one place that builds that subject is `orphan.reveal`, after the owner's session, a fresh second factor and a verified presence proof (§4, §10.3). |
 | **R1** | Target is locked — **vault locked**, or **node-level lock** (§1a) | **DENY** `reveal` and `update` only; `list`/`read` still resolve through the later rules. A `reveal` that would otherwise have been allowed returns `approval_pending` rather than a flat denial (§5, `07_TWO_FACTOR.md §5a`). |
 | **R2** | Subject node **is** the target node | **ALLOW** |
 | **R3** | Target is `global` | **ALLOW** — global is readable by every node, by definition |
@@ -194,7 +194,13 @@ usual, and the broker then re-runs the same function once per manifest entry wit
 (`narrow_entries` in `crates/brokerd/src/ops.rs`). If none does, the caller gets the ordinary
 denial of §5 rather than an empty list — empty means "nothing there", denied means "not yours".
 
-**One honest seam.** The narrowing needs the grant's `scope` to contain `list`, and
+**The seam, resolved (ADR-172, 2026-11-20).** An entry grant whose scope holds `read` or `reveal` now carries an implied
+`list` of exactly its entry, inside `resolve()`, so a grant minted by `grant.create` (which still refuses `list` in a requested
+scope) lists its entry and no other; `entry.reveal`, `entry.get` and `totp.code` consult the entry-level decision when the
+node-level one denies for a reason other than a lock; and an entry grant is one-way (`grant.create` refuses `mutual`, and
+`resolve()` ignores the mirror of one already stored). The paragraph below is the record of the seam as it was.
+
+**One honest seam (history).** The narrowing needs the grant's `scope` to contain `list`, and
 `grant.create` refuses any scope outside `read`/`reveal`/`notes` (`03_DATA_MODEL.md §6` types it
 that way, and the op enforces it). So the exact grant shape I-24 proves the narrowing against —
 `scope: [list, read]` on an entry target — cannot currently be minted through the built operation;
@@ -285,11 +291,11 @@ against the one it needs.
 |---|---|---|
 | `list` | entry names, refs, types, counts — no values, no field labels | **built** — gates `entry.list`, `search`, `node.list`, `graph.snapshot`, `audit.tail` |
 | `read` | full metadata incl. field **labels**, still no values | **built** — gates `entry.get` (ADR-078: field ids, labels, types, masking and the entry's metadata, never a value; needs the node unlocked, so R1 → `vault_locked` / `node_locked` with no approval path) and `vault.pending_list`. `notes.read` gates on `notes`, not `read` (below) |
-| `reveal` | the actual secret values | **built** — gates `entry.reveal`, `totp.code`, `totp.seed`, the last of which then refuses unconditionally for want of presence, same carve-out as three of the `admin` row's ops below (§4, §10.3) |
+| `reveal` | the actual secret values | **built** — gates `entry.reveal`, `totp.code`, `totp.seed`, the last of which then requires a presence proof (ADR-098) and refuses with `presence_required` without one, same carve-out as three of the `admin` row's ops below (§4, §10.3) |
 | `create` | add a **new** entry (a name not already in the node) — **does not imply read** | **built** — gates `entry.create`, which works while locked and lands in the pending tray |
 | `update` | modify an existing entry or field | **built** — gates `entry.update`, `entry.rotate`, `entry.remove`, `entry.undo`, `entry.restore` and, since ADR-078, `field.add`, `field.update`, `field.remove`, `field.reorder`; **requires the vault unlocked**, via R1 |
 | `notes` | the node's markdown | **built** — gates `notes.read` and `notes.write` (ADR-072), resolved against the node; the note is sealed under the node key and bound to its manifest digest (`03_DATA_MODEL.md §4`). Evidence: `durable_vault.rs::a_note_is_sealed_capability_gated_digest_bound_and_survives_a_restart` |
-| `admin` | node lifecycle, grants, seal/restore, reparent | **built** — gates eighteen distinct op arms (eighteen `scope.holds(Capability::Admin)` call sites — `maintenance.doctor` checks it twice, once per internal path, and `node.update`/`node.policy` share one in `human_admin_on`, which also refuses `Origin::Agent`; recounted 2026-09-24 for ADR-071 — fifteen arms and sixteen sites before `node.set_workdirs`, ADR-066); three of the eighteen (`audit.get`, `node.reparent`, `grant.create`) then refuse unconditionally for want of presence (§4, §6, §6a). A fourth, `maintenance.doctor --rebuild-registry`, refuses the same way but only on that one path — its ordinary path does not require presence. Together with `totp.seed` above, those are five of the broker's six `presence_required` return sites (§10.3); the sixth is `node.policy`'s refusal of a patch that widens reach (ADR-071, §10.1). |
+| `admin` | node lifecycle, grants, seal/restore, reparent | **built** — gates eighteen distinct op arms (eighteen `scope.holds(Capability::Admin)` call sites — `maintenance.doctor` checks it twice, once per internal path, and `node.update`/`node.policy` share one in `human_admin_on`, which also refuses `Origin::Agent`; recounted 2026-09-24 for ADR-071 — fifteen arms and sixteen sites before `node.set_workdirs`, ADR-066); three of the eighteen (`audit.get`, `node.reparent`, `grant.create`) then require a presence proof (ADR-098) and refuse with `presence_required` without one (§4, §6, §6a). A fourth, `maintenance.doctor --rebuild-registry`, refuses the same way but only on that one path — its ordinary path does not require presence. Together with `totp.seed` above, those are five of the broker's six `presence_required` return sites (§10.3); the sixth is `node.policy`'s refusal of a patch that widens reach (ADR-071, §10.1). |
 
 `notes` deliberately does **not** ride along with `read`. Context is separately sensitive
 (`01_CONCEPT.md §3`), so it is separately requested.
@@ -303,7 +309,7 @@ legitimate update implies you could have read what you are replacing. See `04_CR
 There is no `write` capability anywhere in the codebase; earlier text in this document and in §7's
 traces still named one, and that is corrected here.
 
-**What a caller can hold, and where it comes from.** Two shapes exist today, and only two:
+**What a caller can hold, and where it comes from.** Three shapes exist today, and only three (the third since ADR-164):
 
 - A **cwd-derived scope** (no token) gets capabilities from the target node's `agentAccess`
   policy: `read-write` yields `list, read, reveal, create, update`; `read-only` yields
@@ -315,6 +321,12 @@ traces still named one, and that is corrected here.
   ALLOW is inert in practice: an `admin`-holding subject scoped to global resolves `admin` against
   global through R2, never R3. If a future session ever mints an `admin` token scoped to a
   non-global node, R3 is the rule that must be revisited first (ADR-056 records this explicitly).
+- An **agent token** (ADR-164), issued only by the owner's login with a fresh second factor and a Touch ID proof,
+  carries `origin: agent` at exactly one node, with a fixed subset of `list, read, reveal, create, update` that is
+  intersected at every request with what that node's `agentAccess` gives agents now. It reaches **only** its node:
+  the broker denies every other target as R8 before `resolve()` could apply R3 (global), R4 (ancestors), descendant
+  read or a grant (`ops.rs::token_confined_away`). It expires (one day by default, seven at most), lives in memory
+  only, and a revoked or expired one is refused as `session_expired` (step 1 of §4), never demoted to step 2.
 
 **A real login is evaluated as the target node — `built` since 2026-09-24 (ADR-065).** A token
 still minted global-scoped would, under R8, let its owner list, read or write nothing but
@@ -370,11 +382,13 @@ Resolution order when a client connects (`crates/brokerd/src/scope.rs::resolve_s
 3. **No token, cwd unknown** → scope `global`, capability `list` only. A stranger sees that the
    vault exists and nothing else. **built**
 4. **Native app with presence attestation** → `origin: 'native'`, the only origin allowed to reach
-   the orphan node. **planned** — and this is the single most consequential unbuilt thing in this
-   document. `resolve_scope` has no fourth branch, and every call site in the broker constructs
-   its subject with `presence_attested: false` hard-coded. R0's allow branch and every op that
-   ends in `presence_required` are therefore unreachable end to end on every transport that
-   exists. The target design is in §10.3.
+   the orphan node. **built since ADR-098** — but not as a fourth `resolve_scope` branch: `resolve_scope` still
+   has only the three branches above and `resolve_capability` still hard-codes `presence_attested: false`, so no
+   transport can *claim* the native origin. What changed is that the broker constructs the native subject itself,
+   inside `orphan.reveal`, after verifying a presence proof (§10.3). The ops that end in `presence_required`
+   (`audit.get`, `totp.seed`, `node.reparent`, `grant.create`, `maintenance.doctor --rebuild-registry`,
+   `maintenance.rotate_root`, a widening `node.policy`) check the same proof and execute with one. **Without an
+   enrolled presence key, and off macOS, all of it is still unreachable end to end.**
 
 If the presenting process's cwd disagrees with the token's `boundWorkdir`, the request still
 proceeds under the token — the token is the authority — but the mismatch is recorded to the audit
@@ -452,23 +466,22 @@ whose `expiresAt` has passed simply stops matching R7, with no sweep, timer or b
 involved. `reason` is validated at eight characters minimum, and a grant naming `orphan` at either
 endpoint is rejected outright.
 
-**What is not built, and must not be read as though it were.** `grant.create` validates
-everything it can — the endpoints, the reason length, that the requested scope contains only
-`read`, `reveal` or `notes`, that the caller holds `admin` and that `resolve` allows `admin`
-against the target — and then returns `presence_required` unconditionally. **No grant has ever
-been created through a shipped surface.** Every grant in every test is injected into the registry
-directly. The refusal is correct rather than incomplete: creating a grant is the one operation in
-this system that widens what existing data is reachable, `07_TWO_FACTOR.md §2` names it as
-requiring presence, and no transport can supply presence yet (§4, step 4). But a reader who takes
-this section's diagram as a description of something that runs would be wrong, and this paragraph
-exists so they cannot be.
+**What `grant.create` needs, and when it refuses.** It validates everything it can — the endpoints, the
+reason length, that the requested scope contains only `read`, `reveal` or `notes`, that the caller holds `admin`
+and that `resolve` allows `admin` against the target — and then requires a presence proof (ADR-098, §10.3). On a
+Mac with an enrolled presence key the owner's Touch ID produces it and the grant is written; **with no enrolled key,
+for an agent or fixture token, and on any other platform, it returns `presence_required` and writes nothing.**
+The gate is correct rather than incomplete: creating a grant is the one operation in this system that widens what
+existing data is reachable, and `07_TWO_FACTOR.md §2` names it as requiring presence. The route is proved end to
+end by `crates/brokerd/tests/presence.rs` and `scripts/e2e-presence.sh`; the sensor itself, a human finger, is the
+one thing a script cannot press, so the tests use an unattended helper in its place.
 
-**Target design for the parts that are `planned`.** When the desktop shell exists:
+**Target design for the parts that are `planned`.**
 
 - **Proposal will be cheap, creation will not.** Dragging X onto B will open a pre-filled dialog.
   The dialog will require a capability set, a reason of at least eight characters, an expiry
   choice, a TOTP code, and a biometric prompt — the same four inputs `grant.create` already
-  validates, plus the presence attestation it currently waits for.
+  validates, plus the presence proof (built, ADR-098).
 - **Default expiry will be 30 days.** "Never" will be offered and will render with a warning chip.
 - **Revocation will be one click**, and will remain reachable in both Pro and Lite: creating a
   grant is a lever and is Pro-only; removing one is safety and is always reachable.
@@ -485,7 +498,7 @@ earlier in this section: no code ever moves a grant into a distinct "historical"
 revoked grant is deleted outright (`state.revoke_grant`), and an expired one simply sits inert,
 unswept, forever. The figure names only the two terminal states the code actually produces.*
 
-### 6a · Re-parenting is a scope-widening operation — **partial**
+### 6a · Re-parenting is a scope-widening operation — **built** on macOS (ADR-098), refused elsewhere
 
 Moving a node to a different parent changes its ancestor set, and R4 therefore changes what it can
 read — the same effect as creating a grant, achieved through what looks like an ordinary edit.
@@ -496,10 +509,12 @@ reason, and an audit record.
 
 **Built:** `node.reparent` refuses `global` and `orphan` as targets, enforces the eight-character
 reason, requires `Capability::Admin` as a ceiling, and resolves `admin` against the node being
-moved — then returns `presence_required`. Nothing about the arm needs to change when presence
-becomes available; the refusal is the last statement, not a stub in place of the checks.
+moved — then requires a presence proof. With one (ADR-098) it re-parents (depth and kind follow; a cycle and
+`orphan` are refused); with none it returns `presence_required`. The arm did not need to change when presence
+arrived; the refusal is the last statement, not a stub in place of the checks.
 `crates/brokerd/tests/isolation.rs::i23_reparent_refuses_on_every_phase3_surface_admin_included`
-asserts the refusal holds even for a caller holding `admin`.
+asserts the refusal holds even for a caller holding `admin` when no proof comes with the request, and
+`crates/brokerd/tests/presence.rs` proves the proof-carrying path.
 
 **Planned:** the confirmation dialog, which will enumerate by name exactly which nodes become
 newly readable and which become unreadable before the operator commits:
@@ -553,11 +568,12 @@ R4 matches (A is a strict ancestor) → ALLOW. Proven by
 `requireTwoFactor` consultation described for (a) is **built** since 2026-10-24 (§10.4).
 
 **(d) Anything requests an orphaned entry.** — **built** (the denial); **planned** (the exception)
-R0 → DENY before any other consideration, on every transport that exists. The response says the
+R0 → DENY before any other consideration, on every ordinary request. The response says the
 entry exists, is sealed, and can only be opened by a human at the machine. Names are not hidden;
-values are not reachable. The native-app-with-presence exception in R0 is real code and is fuzzed
-by I-17, but no transport can reach it (§4, step 4), so today R0 is a total denial with a
-documented door that nothing can open yet.
+values are not reachable. The native-app-with-presence exception in R0 is real code, fuzzed
+by I-17, and since ADR-098 it has one caller: `orphan.reveal` builds the native subject only after the owner's
+session, a fresh second factor and a verified Touch ID proof (§4, step 4). For every other request, and for
+the owner on a vault with no presence key enrolled, R0 is a total denial.
 
 **(e) A locked vault, and a reveal that would otherwise be allowed.** — **built**
 R1 denies. The broker then re-runs the same request with the lock ignored; if that would have been
@@ -614,8 +630,9 @@ file asking every agent nicely not to touch it — a convention, not a boundary.
 3. **One grant**, `fabrikam → legacy-box`, drawn by the operator on the graph or with
    `credmgr grant fabrikam --to legacy-box --scope read,reveal --reason "…"`, behind 2FA and
    presence (§6). This is the *only* path by which `fabrikam` — or anything else — ever reaches
-   `legacy-box`. **This step is the one that does not execute today**: the command reaches
-   `grant.create`, which validates it and answers `presence_required`.
+   `legacy-box`. **This step needs a presence proof**: the command reaches `grant.create`, which validates it and,
+   on a Mac with an enrolled key, asks for Touch ID (the CLI does this itself) and writes the grant; with no key
+   enrolled it answers `presence_required`.
 4. No other node ever gets access without its own separate grant. `acme` requesting anything on
    `legacy-box` hits R8 exactly as trace (b) above, with `subject: acme, target: legacy-box,
    rule: R8` in the denial — indistinguishable from any other cross-project request, because that
@@ -640,7 +657,8 @@ be insufficient.
 Removing a node does not delete it. It **seals** it: the node's entries are re-encrypted to the
 orphan node's public key (the private half is the cold key, `04 §5.2`), its registry entry is removed and
 replaced by a signed seal record (ADR-079), and its own key is retained in the 7-day archive. Names survive;
-values become reachable only by a human at the machine, through R0's native-plus-presence door.
+values become reachable only by a human at the machine, through R0's native-plus-presence door
+(`orphan.reveal`, ADR-098: Touch ID and a fresh second factor, one entry at a time, in the desktop app).
 Sealing is one of the four promises the product makes, which is why R0 sits above every other rule
 and why no grant, policy or token can override it.
 
@@ -702,47 +720,52 @@ only place any op returns it; `node.create` still applies the defaults, and
 `node.set_workdirs` edits `workdirs`, not policy. The sibling op `node.update` (ADR-071) renames a
 node — any but Global and Orphan — and touches no policy field.
 
-**What is not built.** The two fields that widen reachability — turning `descendantRead` on, or
+**What needs a proof.** The two fields that widen reachability — turning `descendantRead` on, or
 `siblingVisibility` to `shared` — need the full presence gate, because turning either on has
-precisely the effect §6a describes for re-parenting. Presence is not attestable on any transport
-yet (§10.3), so such a patch answers `presence_required` and **nothing in it is applied** — the
-patch is all-or-nothing. `requireTwoFactor` and `privateNames` are enforced since 2026-10-24
+precisely the effect §6a describes for re-parenting. With a presence proof (ADR-098, §10.3) the patch applies;
+without one — no key enrolled, an agent, off macOS — such a patch answers `presence_required` and **nothing in it
+is applied**: the patch is all-or-nothing. `requireTwoFactor` and `privateNames` are enforced since 2026-10-24
 (§10.4, ADR-085, ADR-083); the response's `notEnforced` list is therefore empty (the key stays for clients
 that read it). The confirmation dialog
 will enumerate the newly-readable and newly-unreadable nodes the same way §6a's does, computed the
 same way: `resolve` against a scratch clone, differenced. So R5 and R6 can be narrowed by an
-operation today, and widened only in tests and by editing `registry.json` by hand.
+operation today, and widened by one only with a presence proof; without a presence key they can be widened only
+in tests and by editing `registry.json` by hand.
 
 **Evidence.** `crates/brokerd/tests/durable_vault.rs::node_policy_tightens_at_once_refuses_a_widening_without_presence_and_records_why`
 and `::node_update_renames_a_node_and_the_label_survives_a_restart`.
 
-### 10.2 `grant.create` will execute — `planned`
+### 10.2 `grant.create` executes — `built` on macOS via the presence proof (ADR-098)
 
-The operation is written and refuses only for want of presence (§6). When §10.3 lands, the terminal
-`PresenceRequired` will be replaced by the write path: append the `Grant` to the registry with
-`createdBy: 'human'`, persist, and audit. Two follow-on decisions belong to that session rather
-than this document: whether `list` becomes a grantable scope so that entry-level grants can be
-minted through the operation that §1b's narrowing already honours, and whether `direction:
-'mutual'` is exposed in the dialog at all or remains a registry-level shape only.
+The operation is written and, with a verified presence proof (§10.3), takes its write path: it appends the
+`Grant` to the registry with `createdBy: 'human'`, persists, and audits; without a proof it still refuses with
+`presence_required` (§6). Two follow-on decisions were left to a later session; the
+entry-level half of both is ADR-172 (2026-11-20): `list` is not grantable, an entry grant holding `read` or `reveal`
+lists its entry by implication, and an entry grant is never `mutual`. Whether `direction: 'mutual'` is exposed in the
+dialog for node grants stays open.
 
-### 10.3 The native origin and presence attestation — `planned`
+### 10.3 The native origin and presence attestation — `built` on macOS (ADR-098); the transport-level fourth branch stays `planned`
 
-`resolve_scope` will gain a fourth branch: a request arriving over the desktop shell's own channel,
-carrying a presence proof produced by the platform biometric API immediately before the call, will
-resolve to `origin: 'native'` with `presence_attested: true`. Everything downstream already exists —
-R0's exception; five of the six `presence_required` return sites (`audit.get`, `totp.seed`,
-`node.reparent`, `grant.create`, `maintenance.doctor --rebuild-registry` — §3) — the sixth,
-`node.policy`'s refusal of a widening patch (§10.1), does not consult `presence_attested` yet and
-will need its refusal replaced by that check; and the
-`PresenceProof` type, already defined as part of the `PlatformKeystore` trait contract in
-`crates/keystore`. The Tauri bridge's own command surface carries no `PresenceProof` today —
-only the literal error string `"presence_required"` in its error mapper — because there is nothing
-for the bridge to hold until this branch exists. The proof will be verified by the broker, not
-trusted from the client:
-the desktop shell holds its session token in Rust and never lets the webview see it (ADR-057), and
-presence will follow the same custody rule. Until this lands, every lock icon that implies presence
-is doing less than a reader would assume, which is why this document says so in four places rather
-than once.
+**What is built.** R0's exception is satisfied by an **owner session plus a verified presence proof**, and by
+nothing else. The proof is a Secure Enclave signature the broker checks itself (`04_CRYPTO_AND_KEYS.md §5.3`):
+`presence.challenge {op, params}` returns a single-use nonce bound to the op, the exact params and the login session;
+the Enclave key signs `SHA-256(domain ‖ nonce ‖ op ‖ canonical-JSON(params))` after Touch ID; the request is
+repeated with `params.presence = {nonce, signature}`; the broker re-derives the digest, verifies it against an
+enrolled public key and burns the nonce. Every `presence_required` return site now calls the same
+`require_presence` check — `audit.get`, `totp.seed`, `node.reparent`, `grant.create`,
+`maintenance.doctor --rebuild-registry`, `maintenance.rotate_root`, and `node.policy`'s widening branch (§10.1) —
+and `orphan.reveal` additionally builds the `Origin::Native` / `presence_attested: true` subject R0 asks for, which
+is what lets the pure resolver allow the one sealed read. A bad proof answers `presence_failed` with a reason.
+**Agents and fixture tokens can never hold a proof**, so they still get `presence_required`.
+The proof is verified by the broker, not trusted from the client: the desktop shell holds its session token in
+Rust and never lets the webview see it (ADR-057), the CLI and the shell answer a `presence_required` themselves
+(challenge, sign, retry), and the page never sees a nonce, digest or signature.
+
+**What is not built.** `resolve_scope` has **no** fourth, transport-derived native branch, and no transport can
+claim `origin: 'native'`: the design in which a request arriving over the shell's channel would resolve to the
+native origin on its own was replaced by per-operation proofs. Windows Hello, TPM and Linux have no presence
+backend, so off macOS the gated operations stay refused. Without an enrolled presence key on a Mac, the lock icons
+that imply presence are doing less than a reader would assume: the app says so and offers to set Touch ID up.
 
 ### 10.4 Per-node two-factor on reveal — `built` against the vault gate (ADR-085); a per-node gate `planned`
 
@@ -814,9 +837,9 @@ the mutual branch. `crates/core/src/registry.rs` — `Capability`, `NodePolicy` 
 `Direction`, `GrantTarget`, `is_strict_ancestor`, `are_shared_depth2_siblings`.
 `crates/brokerd/src/scope.rs` — `resolve_scope`'s three built branches and
 `capabilities_for_agent_access`. `crates/brokerd/src/ops.rs` — `resolve_capability` (which
-hard-codes `presence_attested: false`), `subject_for` (ADR-065's owner-session subject),
+hard-codes `presence_attested: false`; the native subject is built only in `orphan.reveal`, after `require_presence`, ADR-098), `subject_for` (ADR-065's owner-session subject),
 `canonical_workdirs` and the `node.set_workdirs` arm (ADR-066), `narrow_entries`,
-`access_denied_error`, `human_admin_on` and `PolicyPatch` (ADR-071), `notes_gate` (ADR-072), and the 53 dispatched ops. `crates/brokerd/src/protocol.rs` — the `node_access_denied` serialisation §5 quotes.
+`access_denied_error`, `human_admin_on` and `PolicyPatch` (ADR-071), `notes_gate` (ADR-072), and the 63 dispatched ops. `crates/core/src/presence.rs` (the digest and verifier) and `crates/brokerd/tests/presence.rs` (ADR-098). `crates/brokerd/src/protocol.rs` — the `node_access_denied` serialisation §5 quotes.
 `crates/brokerd/src/rate_limit.rs` and `crates/brokerd/src/server.rs` — the denial counter and the
 call site that discards its trip.
 

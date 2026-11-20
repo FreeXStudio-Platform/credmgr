@@ -14,6 +14,49 @@
 </div>
 </sc-if>
 
+<!-- ADR-165: the machine lock.  Both directions are asked here first, and each says what happens if this Mac is replaced: the passphrase alone
+     no longer opens the vault there, the recovery code does (and seals it to the new Mac).  The words never claim the Secure Enclave.
+     Review P0-1 / P1-1: turning it on asks for the passphrase and the CURRENT recovery code, replaces the root key and every project key, and
+     shows a NEW recovery code once; what copies made before it already held stays readable in them, and the dialog says so.
+     Review N1: two steps in this dialog.  "Next" sends the passphrase and the current code and changes nothing; the dialog then shows the NEW
+     code and asks for it typed back, and only "Turn the lock on" with the right code changes anything.  Closing it in between changes nothing. -->
+<sc-if value="{{dlgMachineLock}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:90;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{cancelMachineLock}}">
+  <div class="cm-modal-panel" data-screen-label="Machine lock" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-machinelock-title" style="width:480px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px">
+    <span id="dlg-machinelock-title" class="t-eyebrow">{{machineLockTitle}}</span>
+    <sc-if value="{{machineLockBind}}" hint-placeholder-val="{{true}}">
+      <div class="t-body-sm">The passphrase file is sealed with a device key kept on this Mac, outside the vault folder, and the root key and every project key are replaced. A copy of the vault folder made <strong>from now on</strong> (a synced folder, a copied directory, a USB disk) then does not open on another computer with the passphrase alone.</div>
+      <div class="t-body-sm" data-machine-lock-before="1"><strong>Copies made before now</strong> still open with the passphrase, and still show what they held then. Nothing written after this is readable in them.</div>
+      <div class="t-body-sm" data-machine-lock-replaced="1"><strong>If you replace this Mac</strong>, or the key file is lost, the passphrase will not open the vault there. Open it with your recovery code instead ("Forgot passphrase? Use recovery code" on the Lock screen); that also locks it to the new Mac. Another Mac sharing this vault folder needs the recovery code too. Turning this on gives you a <strong>new</strong> recovery code: the one you type below stops working. You are shown the new one and asked to type it back <strong>before</strong> anything changes.</div>
+      <div class="t-caption">This does not protect a stolen or unlocked Mac, Time Machine, a whole-disk image or Migration Assistant (they carry the device key with the folder), or CredMgr backups (while the lock is on they are kept outside the vault folder, in CredMgr's state folder; they open with their backup passphrase and the vault passphrase). The device key is a file your user account can read, not a key sealed in the Secure Enclave.</div>
+      <div class="t-mono-label">vault passphrase</div>
+      <input type="password" data-machine-lock-secret="1" data-machine-lock-pass="1" aria-label="vault passphrase" autoComplete="off" onChange="{{onMachineLockPass}}" onKeyDown="{{machineLockKey}}" style="font-family:var(--f-mono)" placeholder="passphrase">
+      <div class="t-mono-label">current recovery code</div>
+      <input type="password" data-machine-lock-secret="1" data-machine-lock-code="1" aria-label="current recovery code" autoComplete="off" onChange="{{onMachineLockCode}}" onKeyDown="{{machineLockKey}}" style="font-family:var(--f-mono)" placeholder="recovery code">
+    </sc-if>
+    <sc-if value="{{machineLockConfirmStep}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm" data-machine-lock-confirm-step="1"><strong>Nothing has changed yet.</strong> Turning the lock on makes this the vault's recovery code: the code you just typed stops working, and this one is the only way to open the vault on another Mac or after this Mac's device key is lost. Write it down now, somewhere safe, away from this computer.</div>
+      <div class="t-mono-label">new recovery code</div>
+      <div data-machine-lock-new-code="1" style="font-family:var(--f-mono);font-size:var(--fs-md);user-select:all;word-break:break-all;color:var(--bone)">{{machineLockNewCode}}</div>
+      <div class="t-mono-label">type the new recovery code back</div>
+      <input type="text" data-machine-lock-secret="1" data-machine-lock-retype="1" aria-label="new recovery code, typed back" autoComplete="off" spellcheck="false" onChange="{{onMachineLockRetype}}" onKeyDown="{{machineLockKey}}" style="font-family:var(--f-mono)" placeholder="new recovery code">
+      <div class="t-caption">Cancel, or closing this, changes nothing: your current recovery code keeps working.</div>
+    </sc-if>
+    <sc-if value="{{machineLockUnbind}}" hint-placeholder-val="{{false}}">
+      <div class="t-body-sm">The passphrase file goes back to its plain form: a copy of the vault folder opens on any computer with the passphrase again. The device key stays on this Mac, so turning the lock on again reuses it.</div>
+      <div class="t-caption">Needs Touch ID where it is set up, and a fresh second factor where one is on. Where neither is set up, it needs the vault passphrase.</div>
+      <div class="t-mono-label">vault passphrase (only when Touch ID and a second factor are not set up)</div>
+      <input type="password" data-machine-lock-secret="1" data-machine-lock-pass="1" aria-label="vault passphrase" autoComplete="off" onChange="{{onMachineLockPass}}" onKeyDown="{{machineLockKey}}" style="font-family:var(--f-mono)" placeholder="passphrase">
+    </sc-if>
+    <div class="t-caption" role="alert" style="color:var(--danger-fg);min-height:1.2em">{{machineLockError}}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="k-btn" data-machine-lock-confirm="1" onClick="{{confirmMachineLock}}">{{machineLockConfirmLabel}}</button>
+      <button class="k-btn" data-variant="primary" data-machine-lock-cancel="1" onClick="{{cancelMachineLock}}">{{machineLockCancelLabel}}</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
 <sc-if value="{{ovSettings}}" hint-placeholder-val="{{false}}">
 <div style="position:fixed;inset:0;z-index:75;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
   <div class="cm-modal-panel cm-settings" data-screen-label="S12 Settings" onClick="{{stop}}" role="dialog" aria-modal="true" aria-label="Settings" style="width:min(920px,94vw);height:min(640px,90vh);background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);display:grid;grid-template-columns:220px 1fr;overflow:hidden">
@@ -29,13 +72,36 @@
       <sc-if value="{{setSecurity}}" hint-placeholder-val="{{true}}">
         <span class="t-eyebrow" style="display:block;margin-bottom:16px">security</span>
         <div style="display:flex;flex-direction:column;gap:16px;max-width:520px">
+          <sc-if value="{{protectionShow}}" hint-placeholder-val="{{false}}"><div data-protection-line="1" class="t-body-sm" style="border:1px solid var(--hair);border-radius:var(--r-sm);padding:8px 12px">{{protectionLine}}</div></sc-if>
+          <span class="t-mono-label" style="margin-top:4px">unlock and confirmation</span>
+          <div data-screen-label="S12g Passphrase" style="display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Passphrase</div><div class="t-caption">{{passphraseCaption}}</div></div><button class="k-btn" data-change-passphrase="1" onClick="{{openChangePassphrase}}" disabled="{{adminBusy}}" style="flex:none">Change…</button></div>
+          <sc-if value="{{touchShow}}" hint-placeholder-val="{{false}}"><div data-screen-label="S12d Touch ID" data-touch-no-enclave="{{touchNoEnclave}}" aria-disabled="{{touchNoEnclave}}" style="display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--hair);padding-bottom:12px;{{touchRowStyle}}"><div><div style="font-size:var(--fs-md)">Touch ID</div><div class="t-caption">{{touchCaption}}</div></div><div style="display:flex;gap:8px;align-items:center;flex:none"><span class="k-chip" data-state="{{touchChipState}}">{{touchChipLabel}}</span><sc-if value="{{touchOn}}" hint-placeholder-val="{{false}}"><button class="k-btn" data-touch-off="1" onClick="{{touchTurnOff}}" disabled="{{touchBusy}}">Turn off</button></sc-if><sc-if value="{{touchOff}}" hint-placeholder-val="{{true}}"><button class="k-btn" data-variant="primary" data-touch-setup="1" onClick="{{touchSetUp}}" disabled="{{touchSetupDisabled}}">Set up</button></sc-if></div></div></sc-if>
+          <sc-if value="{{rcShow}}" hint-placeholder-val="{{false}}"><div data-screen-label="S12e Confirm before showing secrets" style="display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--hair);padding-bottom:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:16px"><div><div style="font-size:var(--fs-md)">Confirm before showing secrets</div><div class="t-caption">{{rcCaption}}</div></div><button class="k-btn" data-rc-toggle="1" onClick="{{toggleRevealConfirm}}" disabled="{{rcBusy}}" aria-label="Confirm before showing secrets" aria-pressed="{{rcOn}}" style="flex:none">{{rcToggleLabel}}</button></div>
+            <sc-if value="{{rcWindowShow}}" hint-placeholder-val="{{false}}"><div style="display:flex;justify-content:space-between;align-items:center;gap:16px"><div><div style="font-size:var(--fs-base)">Trust window</div><div class="t-caption">after you confirm, secrets show without asking for this long · locking ends it</div></div><select aria-label="trust window" value="{{rcWindowVal}}" onChange="{{onRcWindow}}" disabled="{{rcBusy}}" style="font-family:var(--f-mono)"><sc-for list="{{rcWindowOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div></sc-if>
+            <sc-if value="{{rcEveryNote}}" hint-placeholder-val="{{false}}"><div class="t-caption">set to ask every time · change it in Pro mode</div></sc-if>
+            <sc-if value="{{rcProShow}}" hint-placeholder-val="{{false}}"><div data-screen-label="S12f Confirm options (Pro)" style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:16px"><div><div style="font-size:var(--fs-base)">When to ask</div><div class="t-caption">pro · every time asks before each secret, with no trust window</div></div><select aria-label="when to ask" value="{{rcModeVal}}" onChange="{{onRcMode}}" disabled="{{rcBusy}}" style="font-family:var(--f-mono)"><option value="window">once per trust window</option><option value="everyTime">every time</option></select></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:16px"><div><div style="font-size:var(--fs-base)">Which secrets</div><div class="t-caption">pro · only high and critical lets low and medium values show without asking</div></div><select aria-label="which secrets" value="{{rcScopeVal}}" onChange="{{onRcScope}}" disabled="{{rcBusy}}" style="font-family:var(--f-mono)"><option value="all">all secrets</option><option value="high">only high and critical</option></select></div>
+            </div></sc-if>
+          </div></sc-if>
+          <sc-if value="{{machineLockShow}}" hint-placeholder-val="{{false}}"><div data-screen-label="S12i Machine lock" style="display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--hair);padding-bottom:12px"><div style="min-width:0"><div style="font-size:var(--fs-md)">Machine lock</div><div class="t-caption" data-machine-lock-status="1">{{machineLockCaption}}</div></div><div style="display:flex;gap:8px;align-items:center;flex:none"><span class="k-chip" data-state="{{machineLockChipState}}">{{machineLockChipLabel}}</span><button class="k-btn" data-machine-lock-toggle="1" onClick="{{toggleMachineLock}}" disabled="{{machineLockDisabled}}" aria-label="Machine lock" aria-pressed="{{machineLockOn}}">{{machineLockLabel}}</button></div></div></sc-if>
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Auto-lock</div><div class="t-caption">after this much idle time, and on ⌘L · the broker also locks on its own idle timer</div></div><select aria-label="auto-lock after" value="{{autoLockVal}}" onChange="{{onAutoLock}}" style="font-family:var(--f-mono)"><sc-for list="{{autoLockOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Two-factor gate</div><div class="t-caption">{{gateCaption}}</div></div><div style="display:flex;gap:8px;align-items:center;flex:none"><span class="k-chip" data-state="{{gateChipState}}">{{gateChipLabel}}</span><button class="k-btn" onClick="{{openGateEnrol}}" disabled="{{gateActionDisabled}}">{{gateActionLabel}}</button></div></div>
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Reveal window</div><div class="t-caption">values re-mask after</div></div><select aria-label="reveal window" value="{{revealWindowVal}}" onChange="{{onRevealWindow}}" style="font-family:var(--f-mono)"><sc-for list="{{revealOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Concealed clipboard</div><div class="t-caption">a copied secret is cleared after 30 s and when the vault locks</div></div><span class="k-chip" data-state="ok">on</span></div>
-          <div data-screen-label="S12c Screen capture" style="display:flex;justify-content:space-between;align-items:center;gap:16px"><div><div style="font-size:var(--fs-md)">Hide the window from screen capture and screen sharing</div><div class="t-caption">on by default · screenshots, recordings and screen shares show this window blank · a request to the operating system, not a guarantee against every capture method</div></div><div style="display:flex;gap:8px;align-items:center;flex:none"><sc-if value="{{captureAllowedShow}}" hint-placeholder-val="{{false}}"><span class="k-chip" data-state="warn" data-capture-chip="1">capture allowed</span></sc-if><button class="k-btn" onClick="{{toggleCaptureProtection}}" aria-label="Hide the window from screen capture and screen sharing" aria-pressed="{{captureProtectionOn}}">{{captureProtectionLabel}}</button></div></div>
+          <span class="t-mono-label" style="margin-top:4px">on this screen</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Concealed clipboard</div><div class="t-caption">a copied secret is cleared after 30 s and when the vault locks</div></div><span class="k-chip" data-state="ok" style="flex:none;white-space:nowrap">on</span></div>
+          <div data-screen-label="S12c Screen capture" style="display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Hide the window from screen capture and screen sharing</div><div class="t-caption">on by default · screenshots, recordings and screen shares show this window blank · a request to the operating system, not a guarantee against every capture method</div></div><div style="display:flex;gap:8px;align-items:center;flex:none"><sc-if value="{{captureAllowedShow}}" hint-placeholder-val="{{false}}"><span class="k-chip" data-state="warn" data-capture-chip="1">capture allowed</span></sc-if><button class="k-btn" onClick="{{toggleCaptureProtection}}" aria-label="Hide the window from screen capture and screen sharing" aria-pressed="{{captureProtectionOn}}">{{captureProtectionLabel}}</button></div></div>
+          <sc-if value="{{loginAgentShow}}" hint-placeholder-val="{{false}}"><span class="t-mono-label" style="margin-top:4px">the broker</span>
+          <div data-screen-label="S12h Start at login" style="display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--hair);padding-bottom:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:16px"><div style="min-width:0"><div style="font-size:var(--fs-md)">Start the broker at login</div><div class="t-caption" style="overflow-wrap:anywhere">{{loginAgentCaption}}</div></div><button class="k-btn" data-login-agent-toggle="1" onClick="{{toggleLoginAgent}}" disabled="{{loginAgentDisabled}}" aria-label="Start the broker at login" aria-pressed="{{loginAgentOn}}" style="flex:none">{{loginAgentLabel}}</button></div>
+            <sc-if value="{{loginAgentOffAsk}}" hint-placeholder-val="{{false}}"><div data-login-agent-ask="1" role="alert" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div class="t-caption">Turning this off also stops the broker the agent started, which locks the vault. Start credmgrd yourself next time.</div><div style="display:flex;gap:8px;flex:none"><button class="k-btn" data-login-agent-off="1" onClick="{{confirmLoginAgentOff}}">Turn off</button><button class="k-btn" data-variant="primary" onClick="{{keepLoginAgent}}">Keep it</button></div></div></sc-if>
+          </div></sc-if>
+          <span class="t-mono-label" style="margin-top:4px">who can read</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px"><div><div style="font-size:var(--fs-md)">Two-factor gate</div><div class="t-caption">{{gateCaption}}</div></div><div style="display:flex;gap:8px;align-items:center;flex:none"><span class="k-chip" data-state="{{gateChipState}}">{{gateChipLabel}}</span><button class="k-btn" onClick="{{openGateEnrol}}" disabled="{{gateActionDisabled}}">{{gateActionLabel}}</button></div></div>
         </div>
       </sc-if>
+
+      <sc-include src="./S21-agents.html"></sc-include>
 
       <sc-if value="{{setAppearance}}" hint-placeholder-val="{{false}}">
         <span class="t-eyebrow" style="display:block;margin-bottom:16px">appearance</span>
@@ -118,6 +184,7 @@
           <sc-if value="{{isPro}}" hint-placeholder-val="{{false}}">
             <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:var(--fs-md)">Retention</div><select aria-label="backup retention" value="{{retainVal}}" onChange="{{onRetain}}" style="font-family:var(--f-mono)"><sc-for list="{{retainOpts}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
           </sc-if>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:1px solid var(--hair);padding-top:12px"><div><div style="font-size:var(--fs-md)">Restore from a backup</div><div class="t-caption">rebuilds a vault from an archive into an empty folder; it never runs beside a running broker, so quit CredMgr first</div></div><button class="k-btn cm-restore-btn" onClick="{{openRestore}}" style="flex:none">Restore…</button></div>
           <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:1px solid var(--hair);padding-top:12px"><div><div style="font-size:var(--fs-md)">Integrity</div><div class="t-caption">{{integrityDesc}}</div></div><div style="display:flex;gap:8px;align-items:center;flex:none"><span class="k-chip" data-state="{{verifyChipState}}" style="{{verifyChipStyle}}">{{verifyChipLabel}}</span><button class="k-btn" onClick="{{runVerify}}" disabled="{{adminBusy}}">Verify now</button></div></div>
         </div>
       </sc-if>
@@ -182,8 +249,11 @@
 
       <sc-if value="{{setMaint}}" hint-placeholder-val="{{false}}">
         <span class="t-eyebrow" style="display:block;margin-bottom:16px">maintenance</span>
-        <div class="t-body-sm" style="max-width:520px">Verify, Doctor, backup and root-key rotation live in the Operations panel (⌘⇧O).</div>
-        <button class="k-btn" onClick="{{openOps}}" style="margin-top:16px">Open Operations panel</button>
+        <div class="t-body-sm" style="max-width:520px">Verify, Doctor, backup and root-key rotation live in the Operations panel (⌘⇧O). Tidy up looks for shared values, near-identical names and entries filed in the wrong place, and changes nothing until you move one.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+          <button class="k-btn" onClick="{{openOps}}">Open Operations panel</button>
+          <button class="k-btn" onClick="{{openTidy}}">Tidy up…</button>
+        </div>
       </sc-if>
 
       <sc-if value="{{setAudit}}" hint-placeholder-val="{{false}}">
@@ -196,15 +266,53 @@
             </button>
           </sc-for>
           <sc-if value="{{auditEmpty}}" hint-placeholder-val="{{false}}"><div class="k-empty">The audit trail is empty.</div></sc-if>
-          <div class="t-caption" style="margin-top:12px">Newest first, from the broker’s audit trail. This session sees time, actor and action, and the node, entry and decision when the broker includes them. The full record (audit.get) needs presence, which this beta cannot attest yet.</div>
+          <sc-if value="{{auditRemovedShow}}" hint-placeholder-val="{{false}}"><div data-audit-removed="true" style="margin-top:16px;display:flex;flex-direction:column">
+            <span class="t-mono-label" style="margin-bottom:6px">removed in the last 7 days</span>
+            <sc-for list="{{auditRemoved}}" as="r" hint-placeholder-count="2">
+              <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:6px 0;border-bottom:1px solid var(--hair);font-family:var(--f-mono);font-size:var(--fs-xs)">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.what}}</span><span style="color:var(--mute)">{{r.left}}</span>
+                <span style="display:flex;gap:6px"><button class="k-btn" onClick="{{r.restore}}" disabled="{{adminBusy}}" title="entry.restore: brings the entry back as it was" style="padding:2px 8px;font-size:var(--fs-xs)">Restore</button><sc-if value="{{r.copyShow}}" hint-placeholder-val="{{false}}"><button class="k-btn" onClick="{{r.copy}}" title="entry.restore with keep-both" style="padding:2px 8px;font-size:var(--fs-xs)">Restore as a copy</button></sc-if></span>
+              </div>
+            </sc-for>
+          </div></sc-if>
+          <div class="t-caption" style="margin-top:12px">Newest first, from the broker’s audit trail. This session sees time, actor and action, and the node, entry and decision when the broker includes them. The full record (audit.get) asks for Touch ID.</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{setReport}}" hint-placeholder-val="{{false}}">
+        <span class="t-eyebrow" style="display:block;margin-bottom:16px">audit report</span>
+        <div data-screen-label="S13b Audit report" style="display:flex;flex-direction:column;gap:14px;max-width:640px">
+          <div class="t-caption">A summary of the audit trail: what was asked, by whom (a session's public id, never its token), on which node, and what was refused and why. No value and no entry name is in it.</div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center">
+            <label style="display:flex;gap:6px;align-items:center"><span class="t-caption">range</span><select aria-label="report range" value="{{arRange}}" onChange="{{onArRange}}" style="font-family:var(--f-mono)"><sc-for list="{{arRangeOpts}}" as="o" hint-placeholder-count="6"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></label>
+            <label style="display:flex;gap:6px;align-items:center"><span class="t-caption">node</span><select aria-label="report node" value="{{arNode}}" onChange="{{onArNode}}" style="font-family:var(--f-mono)"><sc-for list="{{arNodeOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.id}}">{{o.label}}</option></sc-for></select></label>
+            <button class="k-btn" data-variant="primary" onClick="{{arRun}}" disabled="{{arRunDisabled}}">{{arRunLabel}}</button>
+          </div>
+          <sc-if value="{{arDatesShow}}" hint-placeholder-val="{{false}}"><div style="display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center">
+            <label style="display:flex;gap:6px;align-items:center"><span class="t-caption">from</span><input aria-label="report from date" value="{{arFrom}}" onChange="{{onArFrom}}" placeholder="YYYY-MM-DD" style="width:120px;font-family:var(--f-mono)"></label>
+            <label style="display:flex;gap:6px;align-items:center"><span class="t-caption">to</span><input aria-label="report to date" value="{{arTo}}" onChange="{{onArTo}}" placeholder="YYYY-MM-DD" style="width:120px;font-family:var(--f-mono)"></label>
+          </div></sc-if>
+          <sc-if value="{{arErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{arErr}}</div></sc-if>
+          <sc-if value="{{arShow}}" hint-placeholder-val="{{false}}"><div data-audit-report="true" style="display:flex;flex-direction:column;gap:14px">
+            <div class="k-note" role="status" style="margin:0;display:flex;flex-direction:column;gap:4px"><span style="font-family:var(--f-mono);font-size:var(--fs-xs);overflow-wrap:anywhere">{{arSummary}}</span><span style="font-family:var(--f-mono);font-size:var(--fs-xs);color:{{arChainColor}};overflow-wrap:anywhere">{{arChain}}</span><span style="font-family:var(--f-mono);font-size:var(--fs-xs);overflow-wrap:anywhere">{{arPresence}}</span></div>
+            <sc-if value="{{arEmpty}}" hint-placeholder-val="{{false}}"><div class="k-empty">Nothing was recorded in this range.</div></sc-if>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) 56px 56px 56px;gap:4px 12px;font-family:var(--f-mono);font-size:var(--fs-xs)"><span class="t-mono-label">by action</span><span class="t-mono-label" style="text-align:right">all</span><span class="t-mono-label" style="text-align:right">allowed</span><span class="t-mono-label" style="text-align:right">refused</span><sc-for list="{{arByAction}}" as="x" hint-placeholder-count="3"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{x.name}}</span><span style="text-align:right">{{x.count}}</span><span style="text-align:right">{{x.allow}}</span><span style="text-align:right;color:{{x.denyColor}}">{{x.deny}}</span></sc-for></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) 56px 56px 56px;gap:4px 12px;font-family:var(--f-mono);font-size:var(--fs-xs)"><span class="t-mono-label">by session</span><span class="t-mono-label" style="text-align:right">all</span><span class="t-mono-label" style="text-align:right">allowed</span><span class="t-mono-label" style="text-align:right">refused</span><sc-for list="{{arByActor}}" as="x" hint-placeholder-count="3"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{x.name}}</span><span style="text-align:right">{{x.count}}</span><span style="text-align:right">{{x.allow}}</span><span style="text-align:right;color:{{x.denyColor}}">{{x.deny}}</span></sc-for></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) 56px 56px 56px;gap:4px 12px;font-family:var(--f-mono);font-size:var(--fs-xs)"><span class="t-mono-label">by node</span><span class="t-mono-label" style="text-align:right">all</span><span class="t-mono-label" style="text-align:right">allowed</span><span class="t-mono-label" style="text-align:right">refused</span><sc-for list="{{arByNode}}" as="x" hint-placeholder-count="3"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{x.name}}</span><span style="text-align:right">{{x.count}}</span><span style="text-align:right">{{x.allow}}</span><span style="text-align:right;color:{{x.denyColor}}">{{x.deny}}</span></sc-for></div>
+            <sc-if value="{{arDenialsShow}}" hint-placeholder-val="{{false}}"><div style="display:flex;flex-direction:column;gap:4px">
+              <span class="t-mono-label">refused, most recent first</span>
+              <sc-for list="{{arDenials}}" as="d" hint-placeholder-count="3"><div style="display:grid;grid-template-columns:118px minmax(0,1fr) minmax(0,1fr);gap:8px;font-family:var(--f-mono);font-size:var(--fs-xs);border-bottom:1px solid var(--hair);padding:3px 0"><span style="color:var(--mute)">{{d.time}}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{d.action}} · {{d.node}}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{d.actor}}">{{d.reason}} · {{d.actor}}</span></div></sc-for>
+              <sc-for list="{{arReasons}}" as="x" hint-placeholder-count="2"><div class="t-caption" style="overflow-wrap:anywhere">{{x.text}}</div></sc-for>
+            </div></sc-if>
+          </div></sc-if>
         </div>
       </sc-if>
 
       <sc-if value="{{setAdvanced}}" hint-placeholder-val="{{false}}">
         <span class="t-eyebrow" style="display:block;margin-bottom:16px">advanced</span>
         <div style="display:flex;flex-direction:column;gap:14px;max-width:520px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Rotate root key</div><div class="t-caption">a new root key and a new recovery code · needs presence (Touch ID), which this beta cannot attest yet, so the broker refuses it today</div></div><button class="k-btn" onClick="{{openRotatePrompt}}" disabled="{{adminBusy}}" style="flex:none">Rotate…</button></div>
-          <div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:var(--fs-md)">Socket</div><div class="t-caption">newline-delimited JSON over a Unix domain socket — no HTTP, ever</div></div><span style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">~/…/credmgrd.sock</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--hair);padding-bottom:12px"><div><div style="font-size:var(--fs-md)">Rotate root key</div><div class="t-caption">a new root key and a new recovery code · asks for Touch ID (and a fresh second factor when one is on)</div></div><button class="k-btn" onClick="{{openRotatePrompt}}" disabled="{{adminBusy}}" style="flex:none">Rotate…</button></div>
+          <div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:var(--fs-md)">Socket</div><div class="t-caption">newline-delimited JSON over a Unix domain socket — no HTTP, ever</div></div><span style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute);text-align:right;overflow-wrap:anywhere">&lt;vault folder&gt;/run/broker.sock</span></div>
         </div>
       </sc-if>
 

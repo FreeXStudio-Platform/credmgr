@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "CredMgr",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-rc.2",
   "identifier": "com.credmgr.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -22,7 +22,8 @@
         "center": true,
         "resizable": true,
         "backgroundColor": "#050506",
-        "contentProtected": true
+        "contentProtected": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {
@@ -55,7 +56,12 @@
     "active": true,
     "targets": "all",
     "macOS": {
-      "minimumSystemVersion": "13.1"
+      "minimumSystemVersion": "13.1",
+      "files": {
+        "MacOS/credmgr-presence": "../../../target/native/credmgr-presence",
+        "MacOS/credmgrd": "../../../target/release/credmgrd",
+        "MacOS/credmgr": "../../../target/release/credmgr"
+      }
     },
     "icon": [
       "icons/32x32.png",

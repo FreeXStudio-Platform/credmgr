@@ -22,13 +22,19 @@
       nodes: S.nodes.map(function (n) {
         var es = list(n.id);
         // `counts.totp` counts the entries that carry a TOTP seed (`hasTotp`), whatever their type.
-        return { id: n.id, label: n.label, kind: n.kind, depth: n.depth, parentId: n.parentId, counts: { entries: es.length, totp: es.filter(function (e) { return B.hasTotp(e); }).length }, gate: { locked: n.gate.locked, twofa: n.gate.twofa }, health: null, ...(n.policy && n.policy.privateNames ? { nameHidden: true } : {}) };
+        return { id: n.id, label: n.label, kind: n.kind, depth: n.depth, parentId: n.parentId, counts: { entries: es.length, totp: es.filter(function (e) { return B.hasTotp(e); }).length }, gate: { locked: n.gate.locked, twofa: n.gate.twofa }, health: null, securityLevel: (n.policy && n.policy.securityLevel) || "guarded", ...(n.policy && n.policy.privateNames ? { nameHidden: true } : {}) };
       }),
       links: S.nodes.filter(function (n) { return n.parentId; }).map(function (n) { return { source: n.parentId, target: n.id, kind: "structural", direction: "down" }; }),
       meta: (function () {
         var m = { generatedAt: B.now() * 1000, vaultLocked: S.locked };
         // ADR-080: absent for an agent / a non-Admin (rehearsed with broker.set({ sealedListAbsent: true })); [] for the owner when nothing is sealed
         if (!S.sealedListAbsent) m.sealed = S.sealedExpired ? [] : Object.keys(S.sealed || {}).map(function (id) { var s = S.sealed[id]; return { id: id, label: s.node.label, sealedAt: s.sealedAt, expiresAt: s.sealedAt + 7 * 24 * 60 * 60 }; });
+        // ADR-120: what is in Orphaned, by name, for the owner's login (the node's own list is refused, R0).  Absent for a broker that predates it
+        // (rehearsed with broker.set({ orphanedMetaAbsent: true })).
+        if (!S.orphanedMetaAbsent) {
+          var orph = S.nodes.filter(function (n) { return n.kind === "orphan"; })[0];
+          m.orphaned = orph ? (S.entries[orph.id] || []).map(function (e) { return { id: e.id, name: e.name }; }) : [];
+        }
         return m;
       })(),
     };
@@ -40,11 +46,16 @@
     B.requireNode(a.node);
     B.needFactor(a.node, "always");
     var es = list(a.node);
+    // ADR-167: `tag` narrows one node's list (the fixture stores tags already normalised).
+    if (typeof a.tag === "string") {
+      var want = a.tag.trim().toLowerCase().replace(/\s+/g, "-");
+      es = es.filter(function (e) { return (e.tags || []).indexOf(want) >= 0; });
+    }
     return {
       node: a.node,
       ids: es.map(function (e) { return e.id; }),
       names: es.map(function (e) { return e.name; }),
-      entries: es.map(function (e) { return { id: e.id, name: e.name, type: e.type, sensitivity: e.sensitivity, fieldCount: B.fieldsOf(e).length, hasTotp: B.hasTotp(e), modified: e.modified, rotatedAt: e.rotatedAt, expiresAt: e.expiresAt }; }),
+      entries: es.map(function (e) { return { id: e.id, name: e.name, type: e.type, sensitivity: e.sensitivity, fieldCount: B.fieldsOf(e).length, hasTotp: B.hasTotp(e), modified: e.modified, rotatedAt: e.rotatedAt, expiresAt: e.expiresAt, aliases: e.aliases && e.aliases.length ? e.aliases.slice() : undefined, tags: e.tags && e.tags.length ? e.tags.slice() : undefined }; }),
       generation: generation(a.node),
     };
   };
@@ -63,6 +74,8 @@
       node: a.node, entry: e.id, name: e.name, ref: list(a.node).indexOf(e) + 1, type: e.type, sensitivity: e.sensitivity, fieldCount: fs.length,
       hasTotp: B.hasTotp(e), modified: e.modified, rotatedAt: e.rotatedAt, expiresAt: e.expiresAt, generation: generation(a.node),
       typeOverridden: !!e.typePin, sensitivityOverridden: !!e.sensPin, fields: fs.map(B.fieldMeta),
+      aliases: e.aliases && e.aliases.length ? e.aliases.slice() : undefined,
+      tags: e.tags && e.tags.length ? e.tags.slice() : undefined,
     };
   };
 
@@ -129,12 +142,17 @@
     return { node: a.node, entry: a.entry, code: "123456" };
   };
 
-  // The seed is never returned to a webview: presence cannot be attested on any transport yet (ADR-047).
+  // Presence-gated (ADR-047, ADR-098): the shell attaches a Touch ID proof when there is one.  With `touchId` the seed (the field's value) is
+  // answered as the broker does, `{ node, entry, seed }`; without it, or when the prompt is cancelled, `presence_required`.
   H.totp_seed = function (a) {
     B.requireLogin();
     var n = B.requireNode(a.node);
     if (n.gate.locked) throw B.error("node_access_denied", "access denied", { rule: "R1", node: a.node });
-    seedField(findEntry(a.node, a.entry), a.field, a.node);
+    var f = seedField(findEntry(a.node, a.entry), a.field, a.node);
+    if (B.S.touchId) {
+      B.audit("totp_seed", a.node, a.entry, "allow");
+      return { node: a.node, entry: a.entry, seed: f.value };
+    }
     B.audit("totp_seed", a.node, a.entry, "deny");
     throw B.error("presence_required", "presence is required", { operation: "totp.seed" });
   };
@@ -190,7 +208,12 @@
     B.S.nodes.forEach(function (n) {
       if (n.kind === "orphan") return;
       list(n.id).forEach(function (e) {
-        if (term && e.name.toLowerCase().indexOf(term) >= 0) out.push({ node: n.id, id: e.id, name: e.name });
+        if (!term) return;
+        if (e.name.toLowerCase().indexOf(term) >= 0) out.push({ node: n.id, id: e.id, name: e.name });
+        else {
+          var al = (e.aliases || []).filter(function (x) { return x.toLowerCase().indexOf(term) >= 0; })[0];
+          if (al !== undefined) out.push({ node: n.id, id: e.id, name: e.name, alias: al });
+        }
       });
     });
     return { results: out };
@@ -252,8 +275,9 @@
     { reset: OPEN, args: { node: "cobalt", entry: "e-c1" }, error: "node_access_denied" },
     { reset: OPEN, args: { node: "atlas", entry: "e-a2", field: "f_00a20004" }, error: "malformed_request" },
   ];
-  // The seed is never returned (presence cannot be attested, ADR-047): the only declared answer is the refusal.
+  // Without Touch ID the answer is the refusal; with it, the seed (declared once below).
   E.totp_seed = [
+    { reset: { locked: false, touchId: true }, args: { node: "atlas", entry: "e-a3" } },
     { reset: OPEN, args: { node: "atlas", entry: "e-a3" }, error: "presence_required" },
     { reset: OPEN, args: { node: "atlas", entry: "e-a3", field: "f_00000000" }, error: "presence_required" },
   ];

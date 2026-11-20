@@ -518,6 +518,15 @@ pub fn effective_type(field: &FieldDoc) -> FieldType {
         .unwrap_or_else(|| infer_field_type(&field.label, &field.value))
 }
 
+/// Issue #40: this field is not typed by its owner, is not recognised as a TOTP
+/// seed, and yet looks as though it could be one (see
+/// [`crate::inference::looks_like_possible_totp_seed`]). A field its owner typed -
+/// to anything - is never flagged: the owner has answered.
+pub fn possible_totp_seed(field: &FieldDoc) -> bool {
+    field.field_type.is_none()
+        && crate::inference::looks_like_possible_totp_seed(&field.label, &field.value)
+}
+
 /// `(type, masked)`: the override, else the inference — and masking follows the
 /// *effective* type when it is not itself overridden.
 pub fn effective(field: &FieldDoc) -> (FieldType, bool) {

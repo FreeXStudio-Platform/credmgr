@@ -279,6 +279,12 @@ def _set_eq(*items: Any) -> Callable[[Any], bool]:
     return lambda v: isinstance(v, list) and set(v) == set(items)
 
 
+def _no_value(v: Any, marker: str) -> None:
+    """An answer that must carry names and counts only: the marker (part of a value that was sent) must not come back."""
+    if marker in json.dumps(v):
+        raise Mismatch(f"a value reached the answer: {_clip(v)}")
+
+
 def _positive(v: Any) -> bool:
     return isinstance(v, int) and not isinstance(v, bool) and v >= 1
 
@@ -565,6 +571,67 @@ def build_steps() -> list[Step]:
     add(S("util.generate", "an option the generator does not have is refused, not ignored", {"colour": "red"},
           refuse("malformed_request")))
     add(S("search", "term missing", {}, refuse("malformed_request")))
+    # ADR-121: near-duplicate names and aliases. The node is back to its six entries by the last row of this group.
+    add(S("entry.similar", "a name that differs only in separators is listed, and says why", {"node": "acme", "name": "api-key"},
+          ok("{taken:false, similar ∋ API_KEY (separators)}", shape(
+              node="acme", taken=False,
+              similar=lambda s: any(x.get("name") == "API_KEY" and x.get("reason") == "separators" for x in s))),
+          primary=True))
+    add(S("entry.similar", "the same name once folded is taken, not 'similar to itself'", {"node": "acme", "name": "api_key"},
+          ok("{taken:true, similar:[]}", shape(taken=True, similar=[]))))
+    add(S("entry.similar", "a name with nothing alike is an empty list", {"node": "acme", "name": "wholly-unrelated"},
+          ok("{taken:false, similar:[]}", shape(taken=False, similar=[]))))
+    add(S("entry.similar", "name missing", {"node": "acme"}, refuse("malformed_request")))
+    add(S("entry.alias", "give an entry another name (generation-checked)",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": c.gen("acme"), "aliases": ["legacy-api", "payments key"]},
+          ok("{aliases:2, generation}", shape(node="acme", aliases=["legacy-api", "payments key"], generation=_positive)),
+          primary=True))
+    add(S("search", "an alias finds the entry and says which alias matched", {"term": "payments"},
+          ok("{results ∋ acme/API_KEY via alias}", shape(
+              results=lambda r: any(x.get("name") == "API_KEY" and x.get("alias") == "payments key" for x in r)))))
+    add(S("entry.alias", "a name another entry has is refused, in any case",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": c.gen("acme"), "aliases": ["db_url"]},
+          refuse("entry_exists")))
+    add(S("entry.create", "a new entry cannot take a name an alias already holds",
+          {"node": "acme", "name": "LEGACY-API", "value": "x"}, refuse("entry_exists")))
+    add(S("entry.alias", "a stale generation is a conflict",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": 0, "aliases": []},
+          refuse("conflict", expectedGeneration=0, currentGeneration=_positive)))
+    add(S("entry.alias", "more than eight aliases are refused",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": c.gen("acme"),
+                     "aliases": [f"alias-number-{i}" for i in range(9)]},
+          refuse("malformed_request")))
+    add(S("entry.alias", "an empty list clears them",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": c.gen("acme"), "aliases": []},
+          ok("{aliases:[]}", shape(aliases=[], generation=_positive))))
+    # ADR-122: the .env import. Values never appear in an answer; the entry it makes is removed again.
+    add(S("entry.import_env", "a dry run names each pair's status and writes nothing",
+          {"node": "acme", "dryRun": True,
+           "entries": [{"name": "MATRIX_IMPORT", "value": "matrix-import-value-1"},
+                       {"name": "api_key", "value": "matrix-import-value-2"}]},
+          ok("{items: new, exists; counts}", lambda v, c: (
+              shape(node="acme", dryRun=True, total=2,
+                    items=lambda i: [x.get("status") for x in i] == ["new", "exists"],
+                    counts=lambda k: k.get("new") == 1 and k.get("exists") == 1)(v, c),
+              _no_value(v, "matrix-import-value"))), primary=True))
+    add(S("entry.import_env", "a conflict refuses the whole import by default",
+          {"node": "acme", "entries": [{"name": "MATRIX_IMPORT", "value": "matrix-import-value-1"},
+                                       {"name": "api_key", "value": "matrix-import-value-2"}]},
+          refuse("entry_exists")))
+    add(S("entry.import_env", "with onConflict skip the new pair is written, the conflict is reported",
+          {"node": "acme", "onConflict": "skip",
+           "entries": [{"name": "MATRIX_IMPORT", "value": "matrix-import-value-1"},
+                       {"name": "api_key", "value": "matrix-import-value-2"}]},
+          ok("{created:1, skipped:1, complete}", lambda v, c: (
+              shape(node="acme", complete=True, total=2,
+                    created=lambda cr: len(cr) == 1 and cr[0].get("name") == "MATRIX_IMPORT",
+                    skipped=lambda sk: [(x.get("name"), x.get("status")) for x in sk] == [("api_key", "exists")])(v, c),
+              _no_value(v, "matrix-import-value")), audit=True),
+          save=_save(e_import=lambda v: v["created"][0]["entry"])))
+    add(S("entry.import_env", "an empty list of pairs is refused", {"node": "acme", "entries": []}, refuse("malformed_request")))
+    add(S("entry.remove", "remove the imported entry again (the later rows count six entries)",
+          lambda c: {"node": "acme", "entry": c["e_import"], "generation": c.gen("acme")},
+          ok("{removed:true}", shape(removed=True))))
     add(S("entry.reveal", "the owner reads back the value it sealed",
           lambda c: {"node": "acme", "entry": c["e_api"]},
           ok("{value == sealed value}",
@@ -624,6 +691,110 @@ def build_steps() -> list[Step]:
           lambda c: {"node": "acme", "id": c["a_create"], "generation": c.gen("acme")}, refuse("not_undoable")))
     add(S("entry.undo", "an unknown audit id", lambda c: {"node": "acme", "id": "a_nope", "generation": c.gen("acme")},
           refuse("not_found")))
+    # ---- ADR-156: expiry, lookup by reference, history, search within one project ------------
+    # Rules per caller, restart and refusals in depth: brokerd/tests/quick_wins.rs. The expiry is cleared
+    # again at the end so later rows see the entries as they were.
+    add(S("entry.set_expiry", "API_KEY expires in thirty days (generation-checked)",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": c.gen("acme"),
+                     "expiresAt": int(time.time()) + 30 * 86400},
+          ok("{expiresAt, generation}", shape(node="acme", expiresAt=int, generation=_positive)), primary=True))
+    add(S("entry.set_expiry", "neither expiresAt nor clear: a missing value never clears",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": c.gen("acme")}, refuse("malformed_request")))
+    add(S("entry.set_expiry", "a stale generation", lambda c: {"node": "acme", "entry": c["e_api"], "generation": 0,
+                                                               "clear": True},
+          refuse("conflict", expectedGeneration=0)))
+    add(S("entry.expiring", "API_KEY is listed within sixty days, not yet expired, with its ref", {"days": 60},
+          ok("{entries:[API_KEY]}", lambda v, c: (
+              shape(days=60, entries=lambda rows: any(r["name"] == "API_KEY" and r["expired"] is False for r in rows))(v, c),
+              c.__setitem__("r_api", next(r["ref"] for r in v["entries"] if r["name"] == "API_KEY")))),
+          primary=True))
+    add(S("entry.expiring", "an agent is not shown expiry dates", {},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    # ADR-161: vault.doctor_scan. Every finding kind, the move that applies a proposal and the audit record are in
+    # brokerd/tests/doctor_scan.rs; here the owner's answer carries no value this run generated, and the refusals.
+    add(S("vault.doctor_scan", "the owner gets a report naming entries, never a value this run generated", {},
+          ok("{entriesScanned, counts, findings; no value}", lambda v, c: (
+              shape(staleDays=365, expiringDays=30, entriesScanned=_positive, nodesScanned=_positive, truncated=False,
+                    counts=lambda k: isinstance(k, dict) and "duplicate_value" in k, findings=list, skipped=list)(v, c),
+              [_no_value(v, sv) for sv in c.secrets])), primary=True))
+    add(S("vault.doctor_scan", "a window of zero days", {"staleDays": 0}, refuse("malformed_request")))
+    add(S("vault.doctor_scan", "an agent never scans the vault", {}, refuse("capability_not_held"), "agent:acme"))
+    # ADR-167: tags. Normalising, limits, agents and the cross-node rule in depth: brokerd/tests/tags.rs. Cleared again
+    # at the end of the group so later rows see API_KEY as it was.
+    add(S("entry.list", "acme's first two ids, for the merge rows", {"node": "acme"},
+          ok("{ids}", shape(node="acme", ids=lambda i: len(i) >= 2)),
+          save=_save(acme_two=lambda v: "+".join(sorted(v["ids"][:2])))))
+    add(S("entry.tag_set", "tag API_KEY (normalised, generation-checked)",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": c.gen("acme"), "tags": ["Matrix Tag", "prod", "PROD"]},
+          ok("{tags:[matrix-tag, prod], generation}", shape(node="acme", tags=["matrix-tag", "prod"], generation=_positive)),
+          primary=True))
+    add(S("entry.list", "a tag narrows one node's list", {"node": "acme", "tag": "Matrix Tag"},
+          ok("{names:[API_KEY], tag}", shape(node="acme", tag="matrix-tag", names=["API_KEY"]))))
+    add(S("entry.tag_set", "a tag with a comma is refused",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": c.gen("acme"), "tags": ["no,commas"]},
+          refuse("malformed_request")))
+    add(S("entry.tag_set", "a stale generation",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": 0, "tags": []}, refuse("conflict")))
+    add(S("entry.tag_set", "an agent never tags",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": c.gen("acme"), "tags": ["x"]},
+          refuse("capability_not_held"), "agent:acme"))
+    add(S("entry.tag_set", "an empty list clears them",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": c.gen("acme"), "tags": []},
+          ok("{tags:[]}", shape(tags=[], generation=_positive))))
+    # ADR-168: merge.* inside one node. Every kind, apply and its undo, the sealed memory and the boundary are in
+    # brokerd/tests/merge.rs and isolation.rs; here the shapes, the decision memory round trip and the refusals.
+    add(S("merge.suggestions", "the owner's suggestions for acme name entries, never a value", {"node": "acme"},
+          ok("{suggestions, valuesCompared; no value}", lambda v, c: (
+              shape(node="acme", suggestions=list, truncated=bool, generation=_positive)(v, c),
+              [_no_value(v, sv) for sv in c.secrets])), primary=True))
+    add(S("merge.suggestions", "an agent never sees merge suggestions", {"node": "acme"},
+          refuse("capability_not_held"), "agent:acme"))
+    add(S("merge.dismiss", "dismiss a group of two acme entries", lambda c: {"node": "acme", "key": c["acme_two"]},
+          ok("{dismissed:true, generation}", shape(node="acme", dismissed=True, generation=_positive)), primary=True))
+    add(S("merge.dismissed_list", "the dismissed group is remembered, with its entries' names", {"node": "acme"},
+          ok("{dismissed ∋ the key}", lambda v, c: shape(
+              node="acme", dismissed=lambda d: any(x.get("key") == c["acme_two"] for x in d))(v, c)), primary=True))
+    add(S("merge.undismiss", "undismiss it", lambda c: {"node": "acme", "key": c["acme_two"]},
+          ok("{restored:true}", shape(restored=True)), primary=True))
+    add(S("merge.dismiss", "a key that names one entry is refused", lambda c: {"node": "acme", "key": c["e_api"]},
+          refuse("malformed_request")))
+    add(S("merge.restore_all", "nothing left to restore", {"node": "acme"},
+          ok("{restored:0}", shape(node="acme", restored=0)), primary=True))
+    add(S("merge.auto_all", "a dry run plans and writes nothing", {"node": "acme"},
+          ok("{dryRun:true, planned, skipped}", shape(node="acme", dryRun=True, planned=list, skipped=list)), primary=True))
+    add(S("merge.auto", "a key that is not an open identical suggestion is refused",
+          lambda c: {"node": "acme", "key": c["acme_two"], "generation": c.gen("acme")}, refuse("malformed_request"),
+          primary=True))
+    add(S("merge.apply", "a stale generation merges nothing",
+          lambda c: {"node": "acme", "keep": c["e_api"], "drop": [c["acme_two"].split("+")[0]], "generation": 0},
+          refuse("conflict"), primary=True))
+    add(S("merge.apply", "the kept entry cannot also be dropped",
+          lambda c: {"node": "acme", "keep": c["e_api"], "drop": [c["e_api"]], "generation": c.gen("acme")},
+          refuse("malformed_request")))
+    add(S("merge.apply", "an agent never merges",
+          lambda c: {"node": "acme", "keep": c["e_api"], "drop": ["e_000000000000"], "generation": c.gen("acme")},
+          refuse("capability_not_held"), "agent:acme"))
+    add(S("entry.get_by_ref", "API_KEY's short reference resolves to it", lambda c: {"reference": c["r_api"]},
+          ok("{node, entry, name}", lambda v, c: shape(node="acme", entry=c["e_api"], name="API_KEY")(v, c)),
+          primary=True))
+    add(S("entry.get_by_ref", "a number no entry holds", {"reference": 999999999}, refuse("not_found")))
+    add(S("entry.get_by_ref", "a reference that is not a number", {"reference": "x"}, refuse("malformed_request")))
+    add(S("entry.set_expiry", "clear it again (later rows read no expiry)",
+          lambda c: {"node": "acme", "entry": c["e_api"], "generation": c.gen("acme"), "clear": True},
+          ok("{expiresAt:null}", shape(node="acme", expiresAt=None))))
+    add(S("entry.history", "API_KEY's decisions in order, and no value",
+          lambda c: {"node": "acme", "entry": c["e_api"]},
+          ok("{records, truncated:false}", shape(node="acme", truncated=False, records=lambda rs: (
+              isinstance(rs, list) and any(r.get("action") == "entry.rotate" for r in rs)
+              and all("value" not in r for r in rs)))),
+          primary=True))
+    add(S("entry.history", "entry missing", {"node": "acme"}, refuse("malformed_request")))
+    add(S("entry.history", "an agent is not shown history", lambda c: {"node": "acme", "entry": c["e_api"]},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("entry.search", "names and aliases on one project", {"node": "acme", "term": "api"},
+          ok("{results:[API_KEY]}", shape(node="acme", results=lambda rs: any(r.get("name") == "API_KEY" for r in rs))),
+          primary=True))
+    add(S("entry.search", "an empty term", {"node": "acme", "term": ""}, refuse("malformed_request")))
     add(S("entry.remove", "soft-delete SPARE_A into the 7-day archive",
           lambda c: {"node": "acme", "entry": c["e_spare_a"], "generation": c.gen("acme")},
           ok("{removed:true}", shape(node="acme", removed=True, generation=_positive), audit=True),
@@ -822,6 +993,74 @@ def build_steps() -> list[Step]:
           refuse("presence_required", operation="audit.get"), primary=True))
     add(S("audit.get", "an agent never holds admin", lambda c: {"id": c["a_create"]},
           refuse("capability_not_held", capability="admin"), "agent:acme"))
+    # ---- the 2.0.0 broker batch (ADR-130...135): every one costs the owner's finger or is the owner's alone ----
+    add(S("node.rekey", "the owner, after every check that needs no finger, is asked for presence",
+          {"node": "acme"}, refuse("presence_required", operation="node.rekey"), primary=True))
+    add(S("node.rekey", "an agent is not the owner", {"node": "acme"}, refuse("capability_not_held"), "agent:acme"))
+    add(S("node.rekey", "the orphan node's cold key is not re-keyed", {"node": "orphan"}, refuse("malformed_request")))
+    add(S("node.rekey", "node missing", {}, refuse("malformed_request")))
+    # ADR-158: entry.move. The success path, the crash table, collisions and grants are in brokerd/tests/entry_move.rs
+    # (it needs a presence proof, which this transport cannot give); here the refusals and the gate order.
+    add(S("entry.move", "the owner, after every check that needs no finger, is asked for presence",
+          lambda c: {"node": "acme", "entry": c["e_api"], "to": "beta", "generation": c.gen("acme")},
+          refuse("presence_required", operation="entry.move"), primary=True))
+    add(S("entry.move", "a stale generation costs no finger", lambda c: {"node": "acme", "entry": c["e_api"], "to": "beta",
+                                                                          "generation": 0},
+          refuse("conflict", expectedGeneration=0)))
+    add(S("entry.move", "the node it is already in", lambda c: {"node": "acme", "entry": c["e_api"], "to": "acme",
+                                                                 "generation": c.gen("acme")}, refuse("malformed_request")))
+    add(S("entry.move", "an agent never moves an entry", lambda c: {"node": "acme", "entry": c["e_api"], "to": "beta",
+                                                                     "generation": c.gen("acme")},
+          refuse("capability_not_held"), "agent:acme"))
+    # ADR-169: vault.doctor_apply. The applied plan, the generation chain, the stop-at-first-failure report and the
+    # factors asked once are in brokerd/tests/doctor_apply.rs (a presence proof this transport cannot give); here the
+    # refusals that come before any finger, and the gate order.
+    add(S("vault.doctor_apply", "the owner, after every check that needs no finger, is asked for presence once for the plan",
+          lambda c: {"moves": [{"node": "acme", "entry": c["e_api"], "to": "beta", "generation": c.gen("acme")}]},
+          refuse("presence_required", operation="vault.doctor_apply"), primary=True))
+    add(S("vault.doctor_apply", "a stale generation in the plan costs no finger",
+          lambda c: {"moves": [{"node": "acme", "entry": c["e_api"], "to": "beta", "generation": 0}]},
+          refuse("conflict", expectedGeneration=0)))
+    add(S("vault.doctor_apply", "the same entry twice in one plan",
+          lambda c: {"moves": [{"node": "acme", "entry": c["e_api"], "to": "beta", "generation": c.gen("acme")},
+                               {"node": "acme", "entry": c["e_api"], "to": "global", "generation": c.gen("acme")}]},
+          refuse("malformed_request")))
+    add(S("vault.doctor_apply", "an empty plan", {"moves": []}, refuse("malformed_request")))
+    add(S("vault.doctor_apply", "an agent never applies a plan",
+          lambda c: {"moves": [{"node": "acme", "entry": c["e_api"], "to": "beta", "generation": c.gen("acme")}]},
+          refuse("capability_not_held"), "agent:acme"))
+    add(S("orphan.destroy", "with the word and the right count, presence is what is missing",
+          {"confirm": "destroy-sealed-entries", "count": 0},
+          refuse("presence_required", operation="orphan.destroy"), primary=True))
+    add(S("orphan.destroy", "the confirmation word is exact", {"confirm": "yes", "count": 0}, refuse("malformed_request")))
+    add(S("orphan.destroy", "an agent is not the owner", {"confirm": "destroy-sealed-entries", "count": 0},
+          refuse("capability_not_held"), "agent:acme"))
+    add(S("orphan.destroy", "count missing", {"confirm": "destroy-sealed-entries"}, refuse("malformed_request")))
+    add(S("search.content", "a value nothing holds finds nothing", {"term": "zzz-no-such-value"},
+          ok("{results:[], truncated:false}", shape(results=[], truncated=False)), primary=True))
+    add(S("search.content", "a term under three characters is refused", {"term": "ab"}, refuse("malformed_request")))
+    add(S("search.content", "term missing", {}, refuse("malformed_request")))
+    add(S("search.content", "an unknown node", {"term": "abcdef", "node": "nowhere"}, refuse("not_found")))
+    add(S("node.export", "a passphrase export needs presence", {"node": "acme", "passphrase": "a long export passphrase"},
+          refuse("presence_required", operation="node.export"), primary=True))
+    add(S("node.export", "an export is always encrypted", {"node": "acme"}, refuse("malformed_request")))
+    add(S("node.export", "an agent is not the owner", {"node": "acme", "passphrase": "a long export passphrase"},
+          refuse("capability_not_held"), "agent:acme"))
+    add(S("audit.report", "an empty period reports zero records and an intact chain",
+          {"from": 1700000000, "to": 1700864000},
+          ok("{records:0, chain.verified}", shape(records=0, chain=lambda ch: ch.get("verified") is True)), primary=True))
+    add(S("audit.report", "from must precede to", {"from": 10, "to": 5}, refuse("malformed_request")))
+    add(S("audit.report", "an agent is not the owner", {"from": 1700000000, "to": 1700864000},
+          refuse("capability_not_held"), "agent:acme"))
+    add(S("node.gate_verify", "a node with no gate of its own has nothing to verify", {"node": "acme", "code": "000000"},
+          refuse("malformed_request"), primary=True))
+    add(S("node.gate_remove", "a node with no gate of its own has nothing to remove", {"node": "acme"},
+          refuse("malformed_request"), primary=True))
+    add(S("node.gate_enroll_confirm", "confirming without beginning enrols nothing", {"node": "acme", "code": "123456"},
+          refuse("gate_not_enrolling"), primary=True))
+    add(S("node.gate_enroll_begin", "the vault's own gate is not a node gate", {"node": "global"}, refuse("malformed_request")))
+    add(S("node.gate_enroll_begin", "begin answers the secret's URI", {"node": "acme"},
+          ok("{node, otpauthUri}", shape(node="acme", otpauthUri=_is_str(10))), primary=True))
     add(S("grant.list", "no grant can exist yet", {}, ok("{grants:[]}", shape(grants=[])), primary=True))
     add(S("grant.list", "an agent never holds admin", {}, refuse("capability_not_held", capability="admin"),
           "agent:acme"))
@@ -1049,6 +1288,214 @@ def build_steps() -> list[Step]:
           refuse("capability_not_held", capability="admin"), "agent:acme"))
     add(S("maintenance.rotate_root", "an unscoped process is never an admin", {"passphrase": "x"},
           refuse("capability_not_held", capability="admin"), "anon"))
+
+    # ADR-156: changing the passphrase is a root rotation (brokerd/tests/set_passphrase.rs); these rows rotate
+    # nothing, so the passphrase the later rows use still opens the vault.
+    add(S("vault.set_passphrase", "newPassphrase missing", {"passphrase": "x"}, refuse("malformed_request"), primary=True))
+    add(S("vault.set_passphrase", "the same passphrase again is refused and nothing rotates",
+          lambda c: {"passphrase": c["pw"], "newPassphrase": c["pw"]}, refuse("malformed_request")))
+    add(S("vault.set_passphrase", "an agent never holds admin", {"passphrase": "x", "newPassphrase": "y"},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("vault.anomalies_ack", "the owner clears the anomaly notice", {},
+          ok("{acknowledged}", shape(acknowledged=ANY)), primary=True))
+    add(S("vault.anomalies_ack", "an agent never holds a login", {},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+
+    # ADR-164: node-scoped agent tokens. No presence key is enrolled here, so issuing stops at the Touch ID
+    # gate after every check that needs no finger; brokerd/tests/agent_tokens.rs and isolation I-30 cover the
+    # token itself. No vault gate is enrolled yet at this point, so the second factor is not asked.
+    add(S("agent.token_issue", "a valid request stops at the Touch ID gate, nothing minted",
+          {"node": "acme", "label": "matrix agent", "capabilities": ["list"], "expiresIn": 3600},
+          refuse("presence_required", operation="agent.token_issue"), primary=True))
+    add(S("agent.token_issue", "admin is never an agent token's",
+          {"node": "acme", "label": "matrix agent", "capabilities": ["admin"]}, refuse("malformed_request")))
+    add(S("agent.token_issue", "an expiry beyond seven days",
+          {"node": "acme", "label": "matrix agent", "capabilities": ["list"], "expiresIn": 604801},
+          refuse("malformed_request")))
+    add(S("agent.token_issue", "label missing", {"node": "acme", "capabilities": ["list"]},
+          refuse("malformed_request")))
+    add(S("agent.token_issue", "never for Global: a token is for one project (review P2-7)",
+          {"node": "global", "label": "matrix agent", "capabilities": ["list"]}, refuse("malformed_request")))
+    add(S("agent.token_issue", "an agent never mints a token",
+          {"node": "acme", "label": "self", "capabilities": ["list"]},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("agent.token_status", "no token is live, metadata only", {},
+          ok("{tokens:[], max, defaultExpiresIn, maxExpiresIn}",
+             shape(tokens=[], max=32, defaultExpiresIn=86400, maxExpiresIn=604800)), primary=True))
+    add(S("agent.token_status", "an agent never lists tokens", {},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("agent.token_rotate", "no token exists to rotate", {"id": "a_0000000000000000"},
+          refuse("not_found"), primary=True))
+    add(S("agent.token_rotate", "an agent never rotates a token", {"id": "a_0000000000000000"},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("agent.token_revoke", "no token exists to revoke", {"id": "a_0000000000000000"},
+          refuse("not_found"), primary=True))
+    add(S("agent.token_revoke", "id missing", {}, refuse("malformed_request")))
+    add(S("agent.token_revoke", "an agent never revokes a token", {"id": "a_0000000000000000"},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+
+    # ---- 8b. presence, Touch ID unlock and sealed entries (ADR-098) -----------------------------
+    # The daemon here has no Secure Enclave helper beside it and no key is enrolled, so these rows pin
+    # the refusals and the empty states; the proofs themselves are exercised by brokerd/tests/presence.rs
+    # and scripts/e2e-presence.sh against the real Enclave.
+    add(S("presence.status", "nothing enrolled, Touch ID unlock off",
+          {}, ok("{enrolled:[], touchIdUnlock:false}", shape(enrolled=[], touchIdUnlock=False, helper=ANY,
+                                                           secureEnclave=ANY, biometry=ANY, passcode=ANY)),
+          primary=True))
+    add(S("presence.status", "an agent never holds a login", {},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("presence.challenge", "no presence key enrolled yet", {"op": "audit.get", "params": {}},
+          refuse("presence_failed", reason="not_enrolled"), primary=True))
+    add(S("presence.challenge", "an op that takes no proof gets no challenge", {"op": "entry.list", "params": {}},
+          refuse("malformed_request")))
+    add(S("presence.challenge", "op missing", {}, refuse("malformed_request")))
+    add(S("presence.challenge", "an agent never holds a login", {"op": "audit.get", "params": {}},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("presence.enrol", "publicKey missing", {}, refuse("malformed_request"), primary=True))
+    add(S("presence.enrol", "a key that is not a P-256 point", {"publicKey": "AAAA"}, refuse("malformed_request")))
+    add(S("presence.enrol", "an agent never holds admin", {"publicKey": "AAAA"},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("presence.unenrol", "id missing", {}, refuse("malformed_request"), primary=True))
+    add(S("presence.unenrol", "an agent never holds admin", {"id": "x"},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("device.enrol", "no Secure Enclave helper beside this daemon", {},
+          refuse("presence_failed", reason="unavailable"), primary=True))
+    add(S("device.enrol", "an agent never holds admin", {},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("device.remove", "removing what is not there is not an error", {},
+          ok("{touchIdUnlock:false}", shape(touchIdUnlock=False)), primary=True))
+    add(S("device.remove", "an agent never holds admin", {},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    # ADR-163: the recovery-code unlock is for a LOCKED vault; on this open one it is refused before any code is read
+    # and nothing rotates (the success path and its crash points are brokerd/tests/recover_unlock.rs).
+    add(S("vault.recover", "an open vault is refused: change the passphrase instead",
+          {"recoveryCode": "0" * 64, "newPassphrase": "a new passphrase"}, refuse("malformed_request"), primary=True))
+    add(S("vault.recover", "an agent is refused before any code is read",
+          {"recoveryCode": "0" * 64, "newPassphrase": "a new passphrase"},
+          refuse("capability_not_held"), "agent:acme"))
+    # ---- 8b'. the machine lock (ADR-165): bind (two phases since review N1: prepare shows the new code and changes nothing,
+    # commit takes it typed back) proves the passphrase and the current recovery code, rotates the root key,
+    # re-keys every project and seals root.wrap.pass under a device key in the state directory (review P0-1, P1-1); its
+    # NEW recovery code replaces "rc" for the rows after it. Unbind puts the plain wrap back; with no gate and no presence
+    # key yet it needs the passphrase (review P2-4). The refusals on another machine, the swap attack and the recovery
+    # path are brokerd/tests/machine_lock.rs.
+    ML = dict(bound=ANY, tier=ANY, secureEnclave=False, opensHere=True, sealedKeyId=ANY, damaged=False,
+              deviceKeyPresent=ANY, deviceKeyId=ANY, deviceKeyUnreadable=False, deviceKeyModeOpen=False,
+              deviceKeyForeignOwner=False, recoveryUnlock=True, plainWhileBound=False, preBindNodes=[],
+              protects=_is_str(20), doesNotProtect=_is_str(20))
+    add(S("keystore.status", "off on a new vault: the honest tier, never the Secure Enclave", {},
+          ok("{bound:false, tier:off, secureEnclave:false}", shape(**{**ML, "bound": False, "tier": "off"})), primary=True))
+    add(S("keystore.status", "an agent is refused before anything is read", {},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("keystore.bind", "an agent never holds admin",
+          {"phase": "prepare", "passphrase": "x", "recoveryCode": "0" * 64},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("keystore.bind", "phase is required (prepare, commit or cancel)", {}, refuse("malformed_request")))
+    add(S("keystore.bind", "prepare: passphrase and recoveryCode are required", {"phase": "prepare"},
+          refuse("malformed_request")))
+    add(S("keystore.bind", "prepare: a recovery code that is not the current one changes nothing (a counted guess)",
+          lambda c: {"phase": "prepare", "passphrase": c["pw"],
+                     "recoveryCode": "0000-0000-0000-0000-0000-0000-0000-0000"},
+          refuse("recovery_code_mismatch")))
+    add(S("keystore.bind", "commit with nothing prepared changes nothing", lambda c: {"phase": "commit", "recoveryCode": c["rc"]},
+          refuse("malformed_request")))
+    # Review N1: prepare changes nothing and shows the new code; the commit takes it typed back.
+    add(S("keystore.bind", "prepare: changes nothing, shows the NEW recovery code the commit will install",
+          lambda c: {"phase": "prepare", "passphrase": c["pw"], "recoveryCode": c["rc"]},
+          ok("{bound:false, phase:prepare, changed:false, already:false, newRecoveryCode, expiresIn}",
+             shape(**{**ML, "bound": False, "tier": "off", "phase": "prepare", "changed": False, "already": False,
+                      "newRecoveryCode": _is_str(20), "expiresIn": ANY, "nodesToRekey": ANY})),
+          save=_save_secret("rc_new", lambda v: v["newRecoveryCode"])))
+    add(S("keystore.bind", "commit: the OLD code typed back is not the one shown (not counted; the bind still waits)",
+          lambda c: {"phase": "commit", "recoveryCode": c["rc"]}, refuse("recovery_code_mismatch")))
+    add(S("keystore.bind", "commit: rotates the root key, re-keys every project and seals to a new device key file",
+          lambda c: {"phase": "commit", "recoveryCode": c["rc_new"]},
+          ok("{bound:true, tier:file, changed:true, deviceKeyCreated:true, nodesRekeyed}",
+             shape(**{**ML, "bound": True, "tier": "file", "changed": True, "deviceKeyCreated": True,
+                      "markedBound": True, "nodesRekeyed": ANY, "rekeyFailed": [], "orphanKeyReplaced": ANY,
+                      "rotation": ANY})), primary=True,
+          save=lambda c, v, resp: c.set_secret("rc", c["rc_new"])))
+    add(S("keystore.bind", "a second prepare on a bound vault draws no code",
+          lambda c: {"phase": "prepare", "passphrase": c["pw"], "recoveryCode": c["rc"]},
+          ok("{bound:true, already:true, newRecoveryCode:null}",
+             shape(**{**ML, "bound": True, "tier": "file", "phase": "prepare", "already": True,
+                      "newRecoveryCode": None}))))
+    add(S("keystore.bind", "and its commit changes nothing and reuses the key",
+          {"phase": "commit"},
+          ok("{bound:true, changed:false, deviceKeyCreated:false}",
+             shape(**{**ML, "bound": True, "tier": "file", "changed": False, "deviceKeyCreated": False}))))
+    add(S("keystore.bind", "cancel with nothing prepared is not an error", {"phase": "cancel"},
+          ok("{changed:false}", shape(**{**ML, "bound": True, "tier": "file", "changed": False}))))
+    add(S("keystore.status", "bound, and this machine holds the key", {},
+          ok("{bound:true, tier:file, opensHere:true}", shape(**{**ML, "bound": True, "tier": "file"}))))
+    add(S("keystore.unbind", "an agent never holds admin", {},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("keystore.unbind", "with no gate and no presence key the passphrase is required", {},
+          refuse("malformed_request")))
+    add(S("keystore.unbind", "puts the plain passphrase file back; the device key stays",
+          lambda c: {"passphrase": c["pw"]},
+          ok("{bound:false, tier:off, changed:true, deviceKeyPresent:true}",
+             shape(**{**ML, "bound": False, "tier": "off", "changed": True, "deviceKeyPresent": True})), primary=True))
+    add(S("keystore.unbind", "unbinding what is not bound is not an error", lambda c: {"passphrase": c["pw"]},
+          ok("{bound:false, changed:false}", shape(**{**ML, "bound": False, "tier": "off", "changed": False}))))
+    add(S("orphan.list", "names only", {}, ok("{entries:[...]}", shape(entries=ANY)), primary=True))
+    add(S("orphan.list", "an agent never holds a login", {},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("orphan.reveal", "entry missing", {}, refuse("malformed_request"), primary=True))
+    add(S("orphan.reveal", "an entry that is not sealed", {"entry": "e_000000000000"}, refuse("not_found")))
+    add(S("orphan.reveal", "an agent never holds a login", {"entry": "e_000000000000"},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+
+    # ---- 8c. confirm before showing secrets (ADR-150) -----------------------------------------
+    # The policy is off on this vault, so reveals elsewhere in the table are unaffected; these rows pin the
+    # confirmation op itself. Policy on/off, refusals and windows: brokerd/tests/reveal_confirm.rs.
+    add(S("session.confirm", "the vault passphrase confirms the owner's login",
+          lambda c: {"passphrase": c["pw"]},
+          ok("{confirmed:true, method:passphrase}", shape(confirmed=True, method="passphrase", expiresIn=ANY)),
+          primary=True))
+    add(S("session.confirm", "no passphrase means Touch ID, and no proof is presence_required", {},
+          refuse("presence_required", operation="session.confirm")))
+    add(S("session.confirm", "a passphrase that is not text", {"passphrase": 7}, refuse("malformed_request")))
+    add(S("session.confirm", "an agent never holds a login", {"passphrase": "x"},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+
+    # ---- 8d. the switchboard (ADR-155) -------------------------------------------------------
+    # Every row runs on the real socket; the rules per caller are in brokerd/tests/switchboard.rs.
+    add(S("settings.list", "every vault setting with its value and the owner's rule", {},
+          ok("{caller:owner, settings}", shape(caller="owner", settings=lambda l: isinstance(l, list) and len(l) >= 15)),
+          primary=True))
+    add(S("settings.list", "an agent sees its own project's settings too", {"node": "acme"},
+          ok("{caller:agent, settings}", shape(caller="agent", settings=lambda l: any(x.get("id") == "node.securityLevel" for x in l))),
+          "agent:acme"))
+    add(S("settings.get", "one setting in full", {"id": "app.autoLockMins"},
+          ok("{id, value, recentChanges}", shape(id="app.autoLockMins", value=int, recentChanges=list)), primary=True))
+    add(S("settings.get", "an unknown setting", {"id": "no.such"}, refuse("not_found")))
+    add(S("settings.set", "the owner changes a cosmetic setting", {"id": "app.theme", "value": "dark", "reason": "matrix: theme"},
+          ok("{applied:true, changeId}", lambda v, c: (shape(applied=True, change="cosmetic", changeId=_is_str(3))(v, c),
+                                                        c.__setitem__("sc_theme", v["changeId"]))),
+          primary=True))
+    add(S("settings.set", "a value the setting does not take", {"id": "app.autoLockMins", "value": 7, "reason": "matrix: bad"},
+          refuse("malformed_request")))
+    add(S("settings.revert", "the owner puts the theme back", lambda c: {"change": c["sc_theme"]},
+          ok("{applied:true}", shape(applied=True)), primary=True))
+    add(S("settings.revert", "an unknown change", {"change": "sc-0000000000000000"}, refuse("not_found")))
+    add(S("settings.set", "an agent's weakening change waits for the owner",
+          {"id": "app.autoLockMins", "value": 0, "reason": "matrix: agent asks"},
+          ok("{state:pending, request}", lambda v, c: (shape(applied=False, state="pending", request=_is_str(3))(v, c),
+                                                         c.__setitem__("sr_lock", v["request"]))),
+          "agent:acme"))
+    add(S("settings.request_get", "the agent reads its own request", lambda c: {"request": c["sr_lock"]},
+          ok("{state:pending}", shape(state="pending")), "agent:acme", primary=True))
+    add(S("settings.request_list", "the owner sees the waiting request", {},
+          ok("{requests}", shape(requests=lambda l: isinstance(l, list) and len(l) >= 1)), primary=True))
+    add(S("settings.request_list", "an agent never lists requests", {},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("settings.request_decide", "an agent never decides", lambda c: {"request": c["sr_lock"], "approve": True},
+          refuse("capability_not_held", capability="admin"), "agent:acme"))
+    add(S("settings.request_decide", "the owner denies it: nothing changes", lambda c: {"request": c["sr_lock"], "approve": False},
+          ok("{state:denied}", shape(state="denied", applied=False)), primary=True))
+    add(S("settings.kb", "the LLM knowledge base", {},
+          ok("{markdown}", shape(markdown=lambda m: isinstance(m, str) and "credmgr_settings_set" in m)), "agent:acme", primary=True))
 
     # ---- 9. two-factor gate, lock, recovery --------------------------------------------------
     add(S("vault.gate_enroll_begin", "an agent never holds admin", {},

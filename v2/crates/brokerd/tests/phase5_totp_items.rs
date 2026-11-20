@@ -61,6 +61,7 @@ fn manifest_with(entries: Vec<ManifestEntry>) -> ManifestBody {
         },
         notes_sha256: None,
         generation: 1,
+        merge_sha256: None,
     }
 }
 
@@ -113,6 +114,8 @@ fn build_fixture() -> Fixture {
                 expires_at: None,
                 rotated_at: None,
                 has_totp: false,
+                aliases: Vec::new(),
+                tags: Vec::new(),
             },
             ManifestEntry {
                 id: "e_totp1".to_string(),
@@ -126,6 +129,8 @@ fn build_fixture() -> Fixture {
                 expires_at: None,
                 rotated_at: None,
                 has_totp: false,
+                aliases: Vec::new(),
+                tags: Vec::new(),
             },
         ]),
     );
@@ -178,7 +183,7 @@ fn totp_code_returns_the_current_code_and_never_the_seed() {
     let obj = response.as_object().expect("object response");
     let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
     keys.sort_unstable();
-    assert_eq!(keys, ["code", "entry", "node"]);
+    assert_eq!(keys, ["code", "entry", "node", "validForSeconds"]);
 }
 
 #[test]

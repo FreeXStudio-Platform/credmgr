@@ -1,0 +1,21 @@
+<sc-if value="{{dlgMove}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:80;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{scrimClose}}">
+  <div class="cm-modal-panel" data-screen-label="S5f Move" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-move-title" style="width:480px;max-width:calc(100vw - 32px);max-height:86vh;overflow-y:auto;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div id="dlg-move-title" class="t-h3" style="font-family:var(--f-mono)">Move to project</div>
+      <div class="t-caption" style="overflow-wrap:anywhere">the entry “{{mvEntry}}”, now in {{mvFrom}}</div>
+    </div>
+    <label style="display:flex;flex-direction:column;gap:6px">
+      <span class="t-caption">Move it to</span>
+      <select aria-label="move to node" value="{{mvTo}}" onChange="{{onMvTo}}" style="font-family:var(--f-mono)"><sc-for list="{{mvOpts}}" as="o" hint-placeholder-count="6"><option value="{{o.id}}">{{o.label}}</option></sc-for></select>
+    </label>
+    <div class="t-body-sm">The value is sealed again with that project’s key, in one step: if anything stops part-way, the entry stays where it is. Its name, other names, expiry and reference number go with it. Grants on this entry are revoked, and earlier values kept for Undo are dropped. Agents that could read it here lose it; agents of the new project gain it.</div>
+    <div class="t-caption">Touch ID is asked for, and a fresh code when a second factor is on.</div>
+    <sc-if value="{{mvErrShow}}" hint-placeholder-val="{{false}}"><div class="t-caption is-danger" role="alert">{{mvErr}}</div></sc-if>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="k-btn" onClick="{{cancelMoveDlg}}">Cancel</button>
+      <button class="k-btn" data-variant="primary" onClick="{{saveMoveForm}}" disabled="{{mvSaveDisabled}}">{{mvSaveLabel}}</button>
+    </div>
+  </div>
+</div>
+</sc-if>

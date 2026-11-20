@@ -283,8 +283,8 @@ fn totp_code_on_an_unusable_seed_is_a_typed_refusal_never_a_dropped_connection()
         );
         assert_eq!(
             ok.as_object().unwrap().len(),
-            3,
-            "{what}: exactly node, entry, code - never the seed"
+            4,
+            "{what}: exactly node, entry, code, validForSeconds - never the seed"
         );
     }
     // The daemon is fine afterwards, and every refused request was audited.

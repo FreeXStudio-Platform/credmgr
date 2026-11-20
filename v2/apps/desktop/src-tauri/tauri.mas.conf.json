@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "category": "DeveloperTool",
+    "macOS": {
+      "minimumSystemVersion": "13.1",
+      "files": {
+        "MacOS/credmgrd": "../../../target/mas/release/credmgrd",
+        "MacOS/credmgr": "../../../target/mas/release/credmgr",
+        "Library/LaunchAgents/com.credmgr.brokerd.plist": "../../../packaging/mas/LaunchAgents/com.credmgr.brokerd.plist",
+        "Resources/PrivacyInfo.xcprivacy": "../../../packaging/mas/PrivacyInfo.xcprivacy"
+      }
+    }
+  }
+}

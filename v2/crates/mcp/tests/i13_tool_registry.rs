@@ -28,6 +28,8 @@ const FORBIDDEN_NAME_FRAGMENTS: &[&str] = &[
     "purge",
     "recovery_window",
     "force_purge",
+    // ADR-164: no tool issues, rotates, lists or revokes an agent token.
+    "token",
 ];
 
 #[test]
@@ -72,6 +74,36 @@ fn rotate_root_is_on_the_forbidden_list_and_no_tool_maps_to_it() {
         registry().iter().all(|t| !t.name.contains("rotate_root")),
         "no MCP tool may even be named for it"
     );
+}
+
+/// ADR-163: the recovery-code unlock is absent from MCP, like the rotation it performs: on the forbidden list,
+/// mapped by no tool, and no tool is named for it.
+#[test]
+fn the_recovery_code_unlock_is_on_the_forbidden_list_and_no_tool_maps_to_it() {
+    assert!(
+        FORBIDDEN_OPS.contains(&"vault.recover"),
+        "vault.recover must be named in FORBIDDEN_OPS (10_API_AND_MCP.md §3.2)"
+    );
+    assert!(registry().iter().all(|t| t.op != "vault.recover"));
+    assert!(registry()
+        .iter()
+        .all(|t| !t.name.contains("recover") && !t.description.contains("recovery code")));
+}
+
+/// ADR-165: the machine lock's three ops are absent from MCP: on the forbidden list, mapped by no tool, and no
+/// tool is named for them.
+#[test]
+fn the_machine_lock_ops_are_on_the_forbidden_list_and_no_tool_maps_to_them() {
+    for op in ["keystore.status", "keystore.bind", "keystore.unbind"] {
+        assert!(
+            FORBIDDEN_OPS.contains(&op),
+            "{op} must be named in FORBIDDEN_OPS (10_API_AND_MCP.md §3.2)"
+        );
+        assert!(registry().iter().all(|t| t.op != op), "{op} maps to a tool");
+    }
+    assert!(registry()
+        .iter()
+        .all(|t| !t.op.starts_with("keystore.") && !t.name.contains("keystore")));
 }
 
 /// The registry is not empty and not accidentally trivial — a would-be
@@ -123,6 +155,13 @@ const REVIEWED_TOOLS: &[(&str, &str)] = &[
     ("credmgr_undo", "entry.undo"),
     ("credmgr_totp_code", "totp.code"),
     ("credmgr_recent_changes", "audit.tail"),
+    // ADR-155: the switchboard. settings.request_list and settings.request_decide stay owner-only (FORBIDDEN_OPS).
+    ("credmgr_settings_list", "settings.list"),
+    ("credmgr_settings_get", "settings.get"),
+    ("credmgr_settings_set", "settings.set"),
+    ("credmgr_settings_revert", "settings.revert"),
+    ("credmgr_settings_request", "settings.request_get"),
+    ("credmgr_kb", "settings.kb"),
 ];
 
 #[test]
@@ -136,7 +175,30 @@ fn the_registry_is_exactly_the_reviewed_set_of_tools() {
         "the MCP registry changed: review the new tool against 10_API_AND_MCP.md §3.2, then \
          add it to REVIEWED_TOOLS in this file"
     );
-    assert_eq!(registry().len(), 15);
+    assert_eq!(registry().len(), 21);
+}
+
+/// ADR-155: the knowledge base names exactly the tools the server registers, so a model reading it can never be told
+/// about a tool that does not exist or miss one that does.
+#[test]
+fn the_kb_lists_exactly_the_registered_tools() {
+    let mut live: Vec<&str> = registry().iter().map(|t| t.name).collect();
+    live.sort_unstable();
+    let mut kb: Vec<&str> = credmgr_core::settings::MCP_TOOL_NAMES.to_vec();
+    kb.sort_unstable();
+    assert_eq!(
+        live, kb,
+        "update credmgr_core::settings::MCP_TOOL_NAMES and regenerate docs/LLM_KB.md"
+    );
+}
+
+/// ADR-155: an agent can never decide or list the owner's waiting setting requests.
+#[test]
+fn no_tool_decides_a_setting_request() {
+    for op in ["settings.request_decide", "settings.request_list"] {
+        assert!(FORBIDDEN_OPS.contains(&op));
+        assert!(registry().iter().all(|t| t.op != op), "{op}");
+    }
 }
 
 /// `field.reorder` is presentation, not something an agent needs: it is neither
@@ -179,4 +241,71 @@ fn the_field_model_ops_are_allowed_and_the_forbidden_list_has_no_field_op() {
     );
     // The seed stays unreachable whatever `field` a caller names.
     assert!(FORBIDDEN_OPS.contains(&"totp.seed"));
+}
+
+/// ADR-148 (P3): the 2.0 owner ops are on the forbidden list, and no tool maps to one.
+#[test]
+fn the_owner_ops_added_in_two_point_oh_are_forbidden() {
+    for op in [
+        "node.rekey",
+        "orphan.destroy",
+        "node.export",
+        "node.gate_enroll_begin",
+        "node.gate_enroll_confirm",
+        "node.gate_verify",
+        "node.gate_remove",
+    ] {
+        assert!(FORBIDDEN_OPS.contains(&op), "{op} must be forbidden");
+        assert!(
+            registry().iter().all(|t| t.op != op),
+            "no tool may map to {op}"
+        );
+    }
+}
+
+/// ADR-164: tokens are how an agent authenticates, never something it can make. Every `agent.*` op is on the
+/// forbidden list and no tool maps to the namespace at all.
+#[test]
+fn no_tool_reaches_the_agent_token_ops() {
+    for op in [
+        "agent.token_issue",
+        "agent.token_status",
+        "agent.token_rotate",
+        "agent.token_revoke",
+    ] {
+        assert!(FORBIDDEN_OPS.contains(&op), "{op} must be on FORBIDDEN_OPS");
+    }
+    for tool in registry() {
+        assert!(
+            !tool.op.starts_with("agent."),
+            "tool {} maps to {}, an agent-token op",
+            tool.name,
+            tool.op
+        );
+    }
+}
+
+/// ADR-168: every `merge.*` op is the owner's alone (a suggestion says which entries share a value), and
+/// ADR-167: no tool sets tags (the broker refuses agents, as for aliases).
+#[test]
+fn every_merge_op_is_forbidden_and_no_tool_sets_tags() {
+    for op in [
+        "merge.suggestions",
+        "merge.apply",
+        "merge.auto",
+        "merge.auto_all",
+        "merge.dismiss",
+        "merge.undismiss",
+        "merge.dismissed_list",
+        "merge.restore_all",
+    ] {
+        assert!(FORBIDDEN_OPS.contains(&op), "{op} must be forbidden");
+        assert!(
+            registry().iter().all(|t| t.op != op),
+            "no tool may map to {op}"
+        );
+    }
+    assert!(registry()
+        .iter()
+        .all(|t| t.op != "entry.tag_set" && t.op != "entry.alias"));
 }

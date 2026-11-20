@@ -31,10 +31,10 @@ describe("classifyError", () => {
     expect(isSessionEnded(err("node_locked"))).toBe(false);
   });
 
-  it("asks for the second factor, and says honestly that presence is not available", () => {
+  it("asks for the second factor, and tells the person to set Touch ID up", () => {
     expect(classifyError(err("two_factor_required"))).toEqual({ route: "two-factor" });
     expect(classifyError(err("presence_required"), { op: "grant.create" })).toEqual({ route: "presence", op: "grant.create", message: PRESENCE_TEXT });
-    expect(PRESENCE_TEXT).toMatch(/cannot attest/);
+    expect(PRESENCE_TEXT).toMatch(/Touch ID/);
     expect(PRESENCE_TEXT).toMatch(/Nothing was changed/);
   });
 

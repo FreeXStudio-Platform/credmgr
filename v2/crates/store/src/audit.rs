@@ -177,15 +177,86 @@ pub fn append(
     let line_hash = sha256_hex(line.as_bytes());
     lines.push(line);
 
+    // K-9, ADR-156: decide before writing whether the log as it stands is the
+    // one the tip signed. If it is not, the record is still written (the log
+    // keeps recording) but the tip is left as it was, so `verify` keeps
+    // reporting the damage instead of the next request signing over it.
+    let may_sign = tip_vouches_for(
+        root_key,
+        year_month,
+        &tip_path(&path),
+        &lines[..lines.len() - 1],
+    );
+
     let mut contents = lines.join("\n");
     contents.push('\n');
     atomic::write(&path, contents.as_bytes())?;
 
+    if !may_sign {
+        return Ok(record);
+    }
     let tip = signed_tip(root_key, year_month, lines.len() as u64, line_hash);
     let tip_bytes = serde_json::to_vec(&tip).map_err(|e| json_err(&tip_path(&path), e))?;
     atomic::write(&tip_path(&path), &tip_bytes)?;
 
     Ok(record)
+}
+
+/// K-9, ADR-156: whether the month's tip, verified under `root_key`, vouches
+/// for `lines` (the log as it stands before an append), so the append may sign
+/// a new tip over it. It does when the tip names exactly these lines, or when
+/// the log is one line ahead of the tip and that line chains to it: the trace
+/// a crash (or a failed tip write) leaves between the log write and the tip
+/// write of one append. A month with no lines and no tip is new. Anything else
+/// (a shorter log, a missing or unparsable tip, a tip signed under another
+/// key) does not vouch, and the tip is left for `verify` to report.
+fn tip_vouches_for(
+    root_key: &[u8; 32],
+    year_month: &str,
+    tip_file: &Path,
+    lines: &[String],
+) -> bool {
+    let Ok(bytes) = atomic::read(tip_file) else {
+        // No tip: a new month, or the first append of one crashed after its log write.
+        return match lines {
+            [] => !tip_file.exists(),
+            [only] => serde_json::from_str::<AuditRecord>(only)
+                .map(|r| r.prev == GENESIS_PREV)
+                .unwrap_or(false),
+            _ => false,
+        };
+    };
+    let Ok(tip) = serde_json::from_slice::<TipDoc>(&bytes) else {
+        return false;
+    };
+    let Some(tag) = hexutil::decode_32(&tip.hmac) else {
+        return false;
+    };
+    let signed_bytes = format!("{}|{}", tip.line_count, tip.last_hash);
+    if !credmgr_core::signing::verify(
+        root_key,
+        &tip_label(year_month),
+        signed_bytes.as_bytes(),
+        &tag,
+    ) {
+        return false;
+    }
+    let n = lines.len() as u64;
+    let hash_at = |count: u64| -> Option<String> {
+        let i = usize::try_from(count).ok()?.checked_sub(1)?;
+        lines.get(i).map(|l| sha256_hex(l.as_bytes()))
+    };
+    if tip.line_count == n {
+        return hash_at(n).as_deref() == Some(tip.last_hash.as_str());
+    }
+    if tip.line_count + 1 == n {
+        let chained = lines
+            .last()
+            .and_then(|l| serde_json::from_str::<AuditRecord>(l).ok())
+            .is_some_and(|r| r.prev == tip.last_hash);
+        return chained && hash_at(tip.line_count).as_deref() == Some(tip.last_hash.as_str());
+    }
+    false
 }
 
 /// A tip sidecar for `line_count`/`last_hash`, signed under `root_key`.
@@ -218,12 +289,10 @@ pub fn year_months(paths: &VaultPaths) -> Result<Vec<String>> {
 /// HMAC, and the tip's agreement with the log. Re-signing a log that already
 /// fails verification would stamp a truncation or an edit as authentic, so a
 /// month that does not verify is an `Err` and is left exactly as it is, so
-/// *the rotation* does not hide the damage. (It keeps failing verification only
-/// while nothing is appended to it: [`append`] signs a month's tip over
-/// whatever lines the log holds and never verifies first, so the next record
-/// written to that month — the rotation's own, if it lands there — makes it
-/// verify again. That is `append`'s behaviour for every request, not a
-/// rotation's.) Returns the bytes to write; touches nothing (ADR-076).
+/// *the rotation* does not hide the damage. It keeps failing verification
+/// after later appends too: since ADR-156 (K-9) [`append`] signs a new tip only
+/// when the old one vouches for the log as it stands. Returns the bytes to
+/// write; touches nothing (ADR-076).
 pub fn resigned_tip(
     paths: &VaultPaths,
     old_root: &[u8; 32],
@@ -343,6 +412,28 @@ pub fn tail(paths: &VaultPaths, limit: usize) -> Result<Vec<AuditRecord>> {
     Ok(out)
 }
 
+/// Every record with `from <= timestamp < to`, oldest first (`audit.report`, ADR-134). Reads only the
+/// monthly logs the period can touch. Plaintext, like [`tail`]: no root key needed.
+pub fn range(paths: &VaultPaths, from: i64, to: i64) -> Result<Vec<AuditRecord>> {
+    let first = year_month_for(from);
+    let last = year_month_for(to.saturating_sub(1).max(from));
+    let mut out = Vec::new();
+    for year_month in year_months(paths)? {
+        if year_month < first || year_month > last {
+            continue;
+        }
+        let path = paths.audit_log(&year_month);
+        for line in read_lines(&path)? {
+            let record: AuditRecord =
+                serde_json::from_str(&line).map_err(|e| json_err(&path, e))?;
+            if record.timestamp >= from && record.timestamp < to {
+                out.push(record);
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// A single record by id, or `None` if no monthly log holds it. Linear scan
 /// — there is no index, and a vault's own audit history is not large enough
 /// to need one (`13_TEST_PLAN.md` scales this build against one owner's
@@ -456,6 +547,110 @@ mod tests {
         // Internally consistent as a 2-line chain — only the tip catches this.
         let err = verify(&paths, &rk, "2026-08").unwrap_err();
         assert!(matches!(err, StoreError::AuditChainBroken { .. }));
+    }
+
+    #[test]
+    fn a_truncated_tail_is_not_signed_over_by_the_next_append() {
+        // K-9, ADR-156: the next request writes its record but leaves the tip.
+        let dir = tempfile::tempdir().unwrap();
+        let paths = VaultPaths::new(dir.path().to_path_buf());
+        let rk = [5u8; 32];
+        for i in 0..4 {
+            append(
+                &paths,
+                &rk,
+                "2026-08",
+                ev("entry.reveal"),
+                1_700_000_000 + i,
+            )
+            .unwrap();
+        }
+        let path = paths.audit_log("2026-08");
+        let lines = read_lines(&path).unwrap();
+        atomic::write(&path, (lines[..2].join("\n") + "\n").as_bytes()).unwrap();
+
+        append(&paths, &rk, "2026-08", ev("entry.list"), 1_700_000_100).unwrap();
+        assert_eq!(
+            read_lines(&path).unwrap().len(),
+            3,
+            "the record is still written"
+        );
+        assert!(
+            verify(&paths, &rk, "2026-08").is_err(),
+            "and the damage still shows"
+        );
+        append(&paths, &rk, "2026-08", ev("entry.list"), 1_700_000_101).unwrap();
+        assert!(
+            verify(&paths, &rk, "2026-08").is_err(),
+            "however many requests follow"
+        );
+
+        // A whole month emptied out is not a new month either.
+        atomic::write(&path, b"").unwrap();
+        append(&paths, &rk, "2026-08", ev("entry.list"), 1_700_000_102).unwrap();
+        assert!(verify(&paths, &rk, "2026-08").is_err());
+    }
+
+    #[test]
+    fn a_tip_one_line_behind_after_a_crash_is_signed_forward() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = VaultPaths::new(dir.path().to_path_buf());
+        let rk = [5u8; 32];
+        for i in 0..3 {
+            append(
+                &paths,
+                &rk,
+                "2026-08",
+                ev("entry.reveal"),
+                1_700_000_000 + i,
+            )
+            .unwrap();
+        }
+        let tip = tip_file(&paths, "2026-08");
+        let tip_before = atomic::read(&tip).unwrap();
+        append(&paths, &rk, "2026-08", ev("entry.reveal"), 1_700_000_010).unwrap();
+        // The crash: the log write landed, the tip write did not.
+        atomic::write(&tip, &tip_before).unwrap();
+        assert!(verify(&paths, &rk, "2026-08").is_err());
+        append(&paths, &rk, "2026-08", ev("entry.list"), 1_700_000_011).unwrap();
+        verify(&paths, &rk, "2026-08").expect("one line of lag is a crash, signed forward");
+
+        // The first append of a month crashing before its tip.
+        append(&paths, &rk, "2026-09", ev("entry.list"), 1_700_000_020).unwrap();
+        std::fs::remove_file(tip_file(&paths, "2026-09")).unwrap();
+        append(&paths, &rk, "2026-09", ev("entry.list"), 1_700_000_021).unwrap();
+        verify(&paths, &rk, "2026-09").unwrap();
+
+        // Two lines of lag are not a crash of one append.
+        let tip_before = atomic::read(&tip).unwrap();
+        append(&paths, &rk, "2026-08", ev("entry.list"), 1_700_000_030).unwrap();
+        append(&paths, &rk, "2026-08", ev("entry.list"), 1_700_000_031).unwrap();
+        atomic::write(&tip, &tip_before).unwrap();
+        append(&paths, &rk, "2026-08", ev("entry.list"), 1_700_000_032).unwrap();
+        assert!(verify(&paths, &rk, "2026-08").is_err());
+    }
+
+    #[test]
+    fn a_tip_signed_under_another_key_is_not_signed_over() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = VaultPaths::new(dir.path().to_path_buf());
+        append(
+            &paths,
+            &[5u8; 32],
+            "2026-08",
+            ev("entry.reveal"),
+            1_700_000_000,
+        )
+        .unwrap();
+        append(
+            &paths,
+            &[6u8; 32],
+            "2026-08",
+            ev("entry.reveal"),
+            1_700_000_001,
+        )
+        .unwrap();
+        assert!(verify(&paths, &[6u8; 32], "2026-08").is_err());
     }
 
     #[test]

@@ -3,7 +3,7 @@
   <div class="cm-modal-panel" data-screen-label="Presence notice" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-touch-title" style="width:360px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center">
     <span id="dlg-touch-title" class="t-eyebrow">{{touchTitle}}</span>
     <div class="t-body-sm">{{touchBody}}</div>
-    <div class="t-caption">This needs presence (Touch ID), which this beta cannot attest yet. Nothing was changed.</div>
+    <div class="t-caption">This needs Touch ID. Set it up in Settings → Security, then try again. Nothing was changed.</div>
     <button class="k-btn" data-variant="primary" onClick="{{touchOk}}" style="width:100%">Close</button>
   </div>
 </div>
@@ -103,6 +103,7 @@
     <div class="t-mono-label">{{adminPassLabel}}</div>
     <input type="password" data-admin-pass="1" aria-label="{{adminPassLabel}}" autoComplete="off" onChange="{{onAdminPass}}" onKeyDown="{{adminPassKey}}" style="font-family:var(--f-mono)" placeholder="passphrase">
     <sc-if value="{{adminPassRepeatShow}}" hint-placeholder-val="{{false}}"><input type="password" data-admin-pass="1" aria-label="repeat the passphrase" autoComplete="off" onChange="{{onAdminRepeat}}" onKeyDown="{{adminPassKey}}" style="font-family:var(--f-mono)" placeholder="repeat it"></sc-if>
+    <sc-if value="{{adminPassNewShow}}" hint-placeholder-val="{{false}}"><div class="t-mono-label">new passphrase</div><input type="password" data-admin-pass="1" data-admin-new="1" aria-label="new passphrase" autoComplete="new-password" onChange="{{onAdminNew}}" onKeyDown="{{adminPassKey}}" style="font-family:var(--f-mono)" placeholder="new passphrase"><input type="password" data-admin-pass="1" data-admin-new-repeat="1" aria-label="repeat the new passphrase" autoComplete="new-password" onChange="{{onAdminNewRepeat}}" onKeyDown="{{adminPassKey}}" style="font-family:var(--f-mono)" placeholder="repeat the new passphrase"></sc-if>
     <div class="t-caption" role="alert" style="color:var(--danger-fg);min-height:1.2em">{{adminPassError}}</div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="k-btn" data-variant="primary" onClick="{{submitAdminPass}}" disabled="{{adminBusy}}">{{adminPassAction}}</button>

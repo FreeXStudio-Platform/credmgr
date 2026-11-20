@@ -69,6 +69,10 @@ pub enum StoreError {
     /// build would silently drop what it cannot see (the seal records) on its
     /// next write.
     RegistryFormatTooNew { found: u32, supported: u32 },
+    /// Issue #36 / ADR-112: a backup that cannot be made, or an archive that cannot
+    /// be restored, with the reason in words. Nothing was written when this is
+    /// returned by a restore.
+    ArchiveRefused { reason: String },
 }
 
 impl fmt::Display for StoreError {
@@ -125,6 +129,7 @@ impl fmt::Display for StoreError {
             StoreError::EntryArchiveMetaTampered { node_id, entry_id } => {
                 write!(f, "node {node_id}: entry {entry_id}: removed-entry metadata hmac does not verify")
             }
+            StoreError::ArchiveRefused { reason } => write!(f, "{reason}"),
             StoreError::RegistryFormatTooNew { found, supported } => write!(
                 f,
                 "registry.json is format {found}, but this build of CredMgr understands up to \

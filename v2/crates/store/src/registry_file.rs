@@ -149,6 +149,19 @@ pub struct RegistryDocument {
     /// the access graph, which `to_core_registry` builds from `nodes` alone.
     #[serde(default)]
     pub sealed: HashMap<String, SealedNodeDoc>,
+    /// ADR-148 §P2-4: the enrolled presence keys, inside the signed registry. `None` in a registry written
+    /// before ADR-148, whose keys are read from `keys/presence.enroll` once and carried here on the next
+    /// write. With `Some`, deleting or replaying `presence.enroll` changes nothing: the registry's list is the
+    /// list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_keys: Option<Vec<crate::presence_file::PresenceKeyRecord>>,
+    /// ADR-148 addendum: the public points (lower-case hex) of the Touch ID unlock wraps this vault set up, inside
+    /// the signed registry. `device.enrol` names its wrap here and `device.remove` clears it, so a validly
+    /// tagged `keys/root.wrap.se` put back after a removal is refused. `None` in a registry written before the
+    /// addendum: the wrap on disk at the first load is carried here by the next write (a tag that does not
+    /// verify is never carried).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_wraps: Option<Vec<String>>,
 }
 
 impl RegistryDocument {
@@ -160,6 +173,8 @@ impl RegistryDocument {
             manifests: HashMap::new(),
             format: REGISTRY_FORMAT,
             sealed: HashMap::new(),
+            presence_keys: None,
+            device_wraps: None,
         }
     }
 
@@ -307,6 +322,38 @@ mod tests {
         let v = serde_json::to_value(doc).unwrap();
         assert_eq!(v["nodes"]["global"]["publicKey"], "aa".repeat(32));
         assert!(v["nodes"]["global"].get("public_key").is_none());
+    }
+
+    /// ADR-140: a registry written before `securityLevel` existed still loads, and every node in it reads
+    /// as Guarded; a node that has the field keeps it through a save and a load.
+    #[test]
+    fn a_node_written_before_security_levels_reads_as_guarded_and_a_level_round_trips() {
+        use credmgr_core::registry::SecurityLevel;
+        let mut v = serde_json::to_value(sample_doc()).unwrap();
+        let policy = v["nodes"]["global"]["policy"].as_object_mut().unwrap();
+        assert!(
+            policy.remove("securityLevel").is_some(),
+            "the new field is written"
+        );
+        let old: RegistryDocument = serde_json::from_value(v).unwrap();
+        assert_eq!(
+            old.nodes["global"].node.policy.security_level,
+            SecurityLevel::Guarded
+        );
+
+        let mut doc = sample_doc();
+        doc.nodes
+            .get_mut("global")
+            .unwrap()
+            .node
+            .policy
+            .security_level = SecurityLevel::Sealed;
+        let back: RegistryDocument =
+            serde_json::from_value(serde_json::to_value(doc).unwrap()).unwrap();
+        assert_eq!(
+            back.nodes["global"].node.policy.security_level,
+            SecurityLevel::Sealed
+        );
     }
 
     fn sealed_sample(id: &str) -> SealedNodeDoc {

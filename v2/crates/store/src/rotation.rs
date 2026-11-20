@@ -527,8 +527,8 @@ fn roll_forward_n(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resigned {
     /// `"audit-tip"`, `"seal-archive"`, `"seal-archive-key"`,
-    /// `"seal-archive-manifest"`, `"orphan-cold-key"`, `"removed-entry"` or
-    /// `"entry-history"`.
+    /// `"seal-archive-manifest"`, `"orphan-cold-key"`, `"removed-entry"`,
+    /// `"entry-history"`, `"presence-enrolment"` or `"device-wrap"`.
     pub kind: &'static str,
     pub id: String,
     pub path: PathBuf,
@@ -620,7 +620,11 @@ pub fn unrecognised_key_files(paths: &VaultPaths) -> Result<Vec<PathBuf>> {
             continue;
         };
         match name {
-            "root.wrap.pass" | "root.wrap.recovery" if is_regular_file(&path) => {}
+            // ADR-098: the Touch ID unlock wrap and the enrolled presence keys are recognised —
+            // `plan_resigned_artifacts` re-seals the first to the same Secure Enclave key and
+            // re-signs the second, so a rotation no longer has to refuse over them.
+            "root.wrap.pass" | "root.wrap.recovery" | "root.wrap.se" | "presence.enroll"
+                if is_regular_file(&path) => {}
             "nodes" if fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_dir()) => {
                 for node in fs::read_dir(&path).map_err(|e| io_err(&path, e))? {
                     let node = node.map_err(|e| io_err(&path, e))?;
@@ -786,6 +790,25 @@ pub fn plan_resigned_artifacts(
             }),
         }
     }
+
+    // ADR-098: the enrolled presence keys are re-signed under the new root key. One that does not verify
+    // under the old root key is left exactly as it is and reported.
+    match crate::presence_file::resigned_presence(paths, old_root, new_root) {
+        Ok(Some(bytes)) => plan.resigned.push(Resigned {
+            kind: "presence-enrolment",
+            id: "presence".to_string(),
+            path: paths.presence_enroll(),
+            bytes,
+        }),
+        Ok(None) => {}
+        Err(e) => plan.skipped.push(Skipped {
+            kind: "presence-enrolment",
+            id: "presence".to_string(),
+            reason: e.to_string(),
+        }),
+    }
+    // The Touch ID unlock wrap (`root.wrap.se`) is re-sealed by the broker, which holds the Secure Enclave
+    // helper (ADR-098); this crate cannot, and so adds it to the plan from the outside.
 
     // Soft-deleted entries: `archive/removed-entries/<node>/<entry>/removed.json`.
     for (node_id, node_dir) in child_dirs(&archive_root.join("removed-entries"))? {
@@ -1353,7 +1376,17 @@ mod tests {
         // A hardware-keystore wrap, any other cold file, a stray file in
         // `keys/nodes/`: each is key material wrapped under a root key this
         // build would leave behind, so each is reported.
+        // ADR-098: the Secure Enclave wrap and the presence enrolment are recognised (a rotation re-seals and
+        // re-signs them); a wrap this build has never heard of is still found.
         atomic::write(&fx.paths.root_wrap_se(), b"se").unwrap();
+        atomic::write(&fx.paths.presence_enroll(), b"enrol").unwrap();
+        assert_eq!(
+            unrecognised_key_files(&fx.paths).unwrap(),
+            Vec::<PathBuf>::new()
+        );
+        fs::remove_file(fx.paths.root_wrap_se()).unwrap();
+        fs::remove_file(fx.paths.presence_enroll()).unwrap();
+        atomic::write(&fx.paths.keys_dir().join("root.wrap.tpm"), b"tpm").unwrap();
         atomic::write(&fx.paths.keys_cold_dir().join("orphan.key.bak"), b"cold").unwrap();
         atomic::write(
             &fx.paths.keys_dir().join("nodes").join("global.key.bak"),
@@ -1375,7 +1408,7 @@ mod tests {
             [
                 "cold/orphan.key.bak",
                 "nodes/global.key.bak",
-                "root.wrap.se"
+                "root.wrap.tpm"
             ],
             "{names:?}"
         );
@@ -1443,6 +1476,8 @@ mod tests {
             expires_at: None,
             rotated_at: None,
             has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
         }
     }
 

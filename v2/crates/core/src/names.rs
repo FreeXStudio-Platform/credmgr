@@ -166,6 +166,122 @@ pub fn mixes_scripts(name: &str) -> bool {
 /// The value of the reply's additive `warnings` entry for a mixed-script name.
 pub const WARN_MIXED_SCRIPT: &str = "mixed_script_name";
 
+// ---- ADR-121: aliases and near-duplicate names ----------------------------------------------
+
+/// ADR-121: the most aliases one entry may carry.
+pub const ALIASES_MAX: usize = 8;
+
+/// ADR-121: the shortest compact key (see [`compact_key`]) for which a one-edit
+/// difference counts as "near". Below it a single edit changes too much of the
+/// name (`db1` and `db2` are two databases, not one typo).
+pub const NEAR_MIN_LEN: usize = 5;
+
+/// Why two names that are not the same name ([`same_name`]) are still
+/// near-duplicates of each other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Similarity {
+    /// They differ only in separators (`-`, `_`, `.`, space, `/`, `:`): `stripe-key` and `Stripe_Key`.
+    Separators,
+    /// They are one edit apart once separators are ignored: one letter added, left out, changed, or two neighbours swapped (`stripe-key`, `stirpe-key`).
+    OneEdit,
+}
+
+impl Similarity {
+    /// The word the wire carries.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Similarity::Separators => "separators",
+            Similarity::OneEdit => "one-edit",
+        }
+    }
+}
+
+fn is_separator(c: char) -> bool {
+    matches!(c, '-' | '_' | '.' | ' ' | '/' | ':' | '\\')
+}
+
+/// The canonical form ([`canonical_name`]) with separators removed - what two
+/// names are compared by when asking "do they look like the same name".
+#[must_use]
+pub fn compact_key(name: &str) -> String {
+    canonical_name(name)
+        .chars()
+        .filter(|c| !is_separator(*c))
+        .collect()
+}
+
+fn without_trailing_digits(s: &str) -> &str {
+    s.trim_end_matches(|c: char| c.is_ascii_digit())
+}
+
+/// Linear check: are `a` and `b` equal, or one insertion / deletion /
+/// substitution / adjacent swap apart? (`a != b` is the caller's business.)
+fn within_one_edit(a: &[char], b: &[char]) -> bool {
+    let (la, lb) = (a.len(), b.len());
+    if la.abs_diff(lb) > 1 {
+        return false;
+    }
+    let mut i = 0;
+    while i < la.min(lb) && a[i] == b[i] {
+        i += 1;
+    }
+    if i == la.min(lb) {
+        return true; // one is a prefix of the other, a longer one by at most one
+    }
+    if la == lb {
+        if a[i + 1..] == b[i + 1..] {
+            return true; // substitution
+        }
+        if i + 1 < la && a[i] == b[i + 1] && a[i + 1] == b[i] && a[i + 2..] == b[i + 2..] {
+            return true; // transposition
+        }
+        return false;
+    }
+    let (long, short) = if la > lb { (a, b) } else { (b, a) };
+    long[i + 1..] == short[i..] // insertion / deletion
+}
+
+/// ADR-121: whether `a` and `b` - which are NOT the same name - are
+/// near-duplicates, and why. A warning, never a refusal: the exact-name rule
+/// (ADR-084) refuses, this one only tells the person.
+///
+/// A numbered series is not a near-duplicate: names that differ only in their
+/// trailing digits (`wallet1`, `wallet2`, `db-01`, `db-02`) are siblings.
+#[must_use]
+pub fn similar_names(a: &str, b: &str) -> Option<Similarity> {
+    similar_keys(
+        &canonical_name(a),
+        &compact_key(a),
+        &canonical_name(b),
+        &compact_key(b),
+    )
+}
+
+/// [`similar_names`] for a caller that compares many names and has already computed each one's
+/// [`canonical_name`] and [`compact_key`] once (ADR-161: the doctor's scan compares every pair in a vault).
+#[must_use]
+pub fn similar_keys(canon_a: &str, ka: &str, canon_b: &str, kb: &str) -> Option<Similarity> {
+    if canon_a == canon_b {
+        return None;
+    }
+    if ka.is_empty() || kb.is_empty() {
+        return None;
+    }
+    if ka == kb {
+        return Some(Similarity::Separators);
+    }
+    let (sa, sb) = (without_trailing_digits(ka), without_trailing_digits(kb));
+    if sa == sb {
+        return None; // a numbered series
+    }
+    let (ca, cb): (Vec<char>, Vec<char>) = (ka.chars().collect(), kb.chars().collect());
+    if ca.len().min(cb.len()) < NEAR_MIN_LEN {
+        return None;
+    }
+    within_one_edit(&ca, &cb).then_some(Similarity::OneEdit)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,6 +358,82 @@ mod tests {
             let once = canonical_name(&s);
             assert_eq!(canonical_name(&once), once, "not idempotent for {from:?}");
             assert_eq!(canonical_name(&from.to_string()), to.to_string());
+        }
+    }
+
+    #[test]
+    fn separators_and_case_make_a_near_duplicate_but_not_the_same_name() {
+        assert!(!same_name("stripe-key", "Stripe_Key"));
+        assert_eq!(
+            similar_names("stripe-key", "Stripe_Key"),
+            Some(Similarity::Separators)
+        );
+        assert_eq!(
+            similar_names("stripe key", "stripekey"),
+            Some(Similarity::Separators)
+        );
+        assert_eq!(
+            similar_names("a/b.c", "a-b_c"),
+            Some(Similarity::Separators)
+        );
+        assert_eq!(
+            similar_names("payroll", "p\u{0430}yroll"),
+            None,
+            "the same name is the exact rule's business"
+        );
+    }
+
+    #[test]
+    fn one_edit_is_near_for_names_of_a_real_length() {
+        for (a, b) in [
+            ("stripe-key", "stirpe-key"),    // swap
+            ("stripe-key", "stripe-kay"),    // substitution
+            ("stripe-key", "stripe-keys"),   // insertion
+            ("github-token", "githb-token"), // deletion
+        ] {
+            assert_eq!(similar_names(a, b), Some(Similarity::OneEdit), "{a} / {b}");
+            assert_eq!(similar_names(b, a), Some(Similarity::OneEdit), "{b} / {a}");
+        }
+        assert_eq!(similar_names("stripe-key", "stripe-token"), None);
+        assert_eq!(similar_names("stripe-key", "strike-kay"), None, "two edits");
+    }
+
+    #[test]
+    fn short_names_and_numbered_series_are_not_near() {
+        assert_eq!(similar_names("db1", "db2"), None);
+        assert_eq!(
+            similar_names("abcd", "abce"),
+            None,
+            "under the minimum length"
+        );
+        assert_eq!(similar_names("wallet1", "wallet2"), None);
+        assert_eq!(similar_names("db-01", "db-02"), None);
+        assert_eq!(
+            similar_names("wallet", "wallet2"),
+            None,
+            "a numbered sibling"
+        );
+        assert_eq!(similar_names("", "x"), None);
+    }
+
+    #[test]
+    fn near_is_symmetric_and_never_true_for_the_same_name() {
+        let names = [
+            "stripe-key",
+            "Stripe_Key",
+            "stirpe-key",
+            "stripe-keys",
+            "other",
+            "p\u{0430}yroll",
+            "payroll",
+        ];
+        for a in names {
+            for b in names {
+                assert_eq!(similar_names(a, b), similar_names(b, a), "{a} / {b}");
+                if same_name(a, b) {
+                    assert_eq!(similar_names(a, b), None);
+                }
+            }
         }
     }
 }

@@ -86,6 +86,8 @@ wallets.json
 # ── Build / tooling / OS ───────────────────────────────────────────────────
 node_modules/
 dist/
+# ADR-162: release-app.sh --mas output (the unsigned Mac App Store bundle and its rendered entitlements).
+dist-mas/
 build/
 coverage/
 target/

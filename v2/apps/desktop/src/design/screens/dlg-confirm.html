@@ -1,0 +1,24 @@
+<!-- ADR-150: "Confirm before showing secrets".  The broker refused a reveal, a copy, a TOTP code or a loosening of the setting with
+     confirmation_required; this dialog asks for Touch ID or the vault passphrase, and the bridge then repeats the request once.  It is the FIRST
+     .cm-modal-panel in the document while it is open (the focus trap acts on the first one), so it is included ahead of every other dialog.
+     The passphrase input is uncontrolled: its text is read when Confirm is pressed and wiped at once, never kept in state. -->
+<sc-if value="{{dlgConfirm}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:95;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{confirmCancel}}">
+  <div class="cm-modal-panel" data-screen-label="Confirm it is you" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-confirm-title" style="width:400px;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px">
+    <span id="dlg-confirm-title" class="t-eyebrow">confirm it is you</span>
+    <div class="t-body-sm">{{confirmBody}}</div>
+    <sc-if value="{{confirmTouchShow}}" hint-placeholder-val="{{false}}">
+      <button class="k-btn" data-variant="primary" data-confirm-touch="1" onClick="{{confirmWithTouch}}" disabled="{{confirmBusy}}" style="display:flex;align-items:center;justify-content:center;gap:10px;min-height:40px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true"><path d="M7 19.5c1.6-2.2 2.5-4.9 2.5-7.5a2.5 2.5 0 0 1 5 0c0 1.2-.1 2.4-.4 3.6"></path><path d="M4.5 15.5c.7-1.1 1-2.3 1-3.5a6.5 6.5 0 0 1 13 0c0 2.6-.5 5.1-1.5 7.4"></path><path d="M12 12c0 3.3-1 6.4-2.8 9"></path></svg>{{confirmTouchLabel}}</button>
+      <div class="t-caption" style="text-align:center">or use your passphrase</div>
+    </sc-if>
+    <div class="t-mono-label">vault passphrase</div>
+    <input type="password" data-confirm-pass="1" aria-label="vault passphrase" autoComplete="off" onChange="{{onConfirmPass}}" onKeyDown="{{confirmPassKey}}" disabled="{{confirmBusy}}" style="font-family:var(--f-mono)" placeholder="passphrase">
+    <div class="t-caption" role="alert" style="color:var(--danger-fg);min-height:1.2em">{{confirmError}}</div>
+    <div class="t-caption">{{confirmNote}}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="k-btn" data-variant="{{confirmPassVariant}}" data-confirm-submit="1" onClick="{{confirmWithPass}}" disabled="{{confirmBusy}}">{{confirmPassLabel}}</button>
+      <button class="k-btn" data-confirm-cancel="1" onClick="{{confirmCancel}}">Cancel</button>
+    </div>
+  </div>
+</div>
+</sc-if>

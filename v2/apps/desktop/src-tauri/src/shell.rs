@@ -144,6 +144,31 @@ pub fn apply_content_protection<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// What the window says about itself, for the page's "hidden" decision (`window_state`). A page is `document.hidden` also when
+/// its window is only covered by another window or sits on a display that is asleep or off; neither is a reason to lock, so the
+/// page asks this before locking: only `minimized` or `!visible` (the window or the whole app hidden) counts as hidden.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct WindowState {
+    pub minimized: bool,
+    pub visible: bool,
+}
+
+impl WindowState {
+    /// Whether this is a window the user put away (minimised, or hidden with the app), as opposed to one merely out of sight.
+    pub fn put_away(self) -> bool {
+        self.minimized || !self.visible
+    }
+}
+
+/// Read the window's state. An unreadable flag is read as "not put away": the page has already wiped every revealed value on
+/// `visibilitychange`, so the cost of a missed lock is the idle auto-lock's, never a value left on screen.
+pub fn window_state<R: Runtime>(window: &WebviewWindow<R>) -> WindowState {
+    WindowState {
+        minimized: window.is_minimized().unwrap_or(false),
+        visible: window.is_visible().unwrap_or(true),
+    }
+}
+
 /// `Builder::on_window_event`.
 pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     if let WindowEvent::CloseRequested { api, .. } = event {
@@ -171,6 +196,9 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
 /// `App::run`'s callback.
 pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
     match event {
+        // ADR-173: watch for agent requests that wait for a decision. Here, not in `configure`, so the mock runtime
+        // the integration tests build never starts it.
+        RunEvent::Ready => crate::approval_notify::start(app),
         RunEvent::Exit => {
             if let Some(clipboard) = app.try_state::<Clipboard>() {
                 clipboard.clear_if_owned();
@@ -186,6 +214,26 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_minimised_or_hidden_window_is_put_away() {
+        assert!(WindowState {
+            minimized: true,
+            visible: true
+        }
+        .put_away());
+        assert!(WindowState {
+            minimized: false,
+            visible: false
+        }
+        .put_away());
+        // Covered by another window, or on a display that is asleep or off: still open.
+        assert!(!WindowState {
+            minimized: false,
+            visible: true
+        }
+        .put_away());
+    }
 
     #[test]
     fn a_focus_loss_is_classified_by_what_the_window_reports() {

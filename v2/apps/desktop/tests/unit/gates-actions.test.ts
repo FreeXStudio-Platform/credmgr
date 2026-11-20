@@ -331,6 +331,14 @@ describe("the agent requests waiting while locked (ADR-090)", () => {
     expect(JSON.stringify(list[1])).not.toMatch(/Atlas|API_KEY/);
   });
 
+  it("says which agent token asked, by label and public id, and nothing for a folder-scoped agent (ADR-164 review P1-2)", async () => {
+    b.vaultStatus.mockResolvedValue({ locked: true, authenticated: false, initialized: true, pendingApprovals: 2 });
+    b.vaultApprovalGet.mockResolvedValue({ pending: [ask({ agentToken: { id: "a_00000000000000a1", label: "ci" } }), ask({ request: "rq_0002" })] });
+    const list = await session.waitingApprovals(asModel(fakeModel()), 1_000);
+    expect(list[0].askedBy).toBe("agent token “ci” (a_00000000000000a1)");
+    expect(list[1].askedBy).toBeNull();
+  });
+
   it("a rejection is the caller's (a broker that is not running)", async () => {
     b.vaultStatus.mockRejectedValue(brokerError("broker_unreachable"));
     await expect(session.waitingApprovals(asModel(fakeModel()))).rejects.toMatchObject({ code: "broker_unreachable" });

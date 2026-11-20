@@ -46,6 +46,8 @@
 
 use std::collections::HashSet;
 
+mod alias;
+
 use rand_core::{OsRng, RngCore};
 use secrecy::SecretBox;
 use serde_json::{json, Value};
@@ -58,10 +60,24 @@ use credmgr_core::inference::{EntryType, Sensitivity};
 use credmgr_core::names::{self, canonical_name};
 use credmgr_core::registry::{
     validate_node_id, validate_registry, AgentAccess, Capability, Grant, GrantTarget, Node,
-    NodeKind, NodePolicy, SiblingVisibility, TwoFactorRequirement, GLOBAL_ID, ORPHAN_ID,
+    NodeKind, NodePolicy, SecurityLevel, SiblingVisibility, TwoFactorRequirement, GLOBAL_ID,
+    ORPHAN_ID,
 };
 
 use credmgr_store::manifest::ManifestEntry;
+
+mod agent_tokens;
+mod doctor_ops;
+mod merge_ops;
+mod move_ops;
+mod node_gate_ops;
+mod quick_ops;
+mod stable_ops;
+mod switchboard;
+mod tags_ops;
+pub(crate) use agent_tokens::audit_detail as agent_token_audit_detail;
+pub(crate) use doctor_ops::ENTRY_CAP as DOCTOR_SCAN_ENTRY_CAP;
+pub(crate) use stable_ops::{CONTENT_SEARCH_MAX_CALLS, CONTENT_WINDOW_SECONDS};
 
 use crate::entry_doc::{self, CreateBody, EntryEdit};
 use crate::protocol::OpError;
@@ -89,12 +105,45 @@ fn canon_taken<'a>(canon: &str, mut existing: impl Iterator<Item = &'a str>) -> 
     existing.any(|n| canonical_name(n) == canon)
 }
 
+/// ADR-121: every name an entry answers to - its own and its aliases. The
+/// uniqueness rule (ADR-084) holds across all of them, so a new name or alias
+/// is checked against this, never against `name` alone.
+fn entry_names(e: &ManifestEntry) -> impl Iterator<Item = &str> {
+    std::iter::once(e.name.as_str()).chain(e.aliases.iter().map(String::as_str))
+}
+
 /// ADR-084: the reply's additive `warnings` list for a name that mixes Latin
 /// with Greek or Cyrillic — accepted, never refused. Absent when there is none.
 fn name_warnings(body: &mut Value, names_typed: &[&str]) {
     if names_typed.iter().any(|n| names::mixes_scripts(n)) {
-        body["warnings"] = json!([names::WARN_MIXED_SCRIPT]);
+        push_warning(body, names::WARN_MIXED_SCRIPT);
     }
+}
+
+/// Appends one entry to the reply's additive `warnings` list (creating it), once.
+fn push_warning(body: &mut Value, warning: &str) {
+    if let Some(list) = body["warnings"].as_array_mut() {
+        if !list.iter().any(|w| w == warning) {
+            list.push(json!(warning));
+        }
+    } else {
+        body["warnings"] = json!([warning]);
+    }
+}
+
+/// Issue #40 / ADR-111: the warning for a field that looks as though it could be a
+/// TOTP seed but is not typed as one.
+const WARN_POSSIBLE_SEED: &str = "possible_totp_seed";
+
+/// Issue #40: adds `possibleSeedFields` (the field ids) and the `possible_totp_seed`
+/// warning when a stored document holds a field that could be an untyped TOTP seed.
+/// Absent otherwise, so every older reply keeps its shape.
+fn seed_hint(body: &mut Value, ids: &[String]) {
+    if ids.is_empty() {
+        return;
+    }
+    body["possibleSeedFields"] = json!(ids);
+    push_warning(body, WARN_POSSIBLE_SEED);
 }
 
 /// ADR-083: an entry count below this is hidden too, from a reader who may not
@@ -162,6 +211,14 @@ fn approval_view(state: &BrokerState, a: &PendingApproval, owner: bool, now: i64
     if owner {
         view["cwd"] = json!(a.cwd);
     }
+    // ADR-164 review P1-2: which agent token asked, so the person deciding can tell a known agent from a stolen token.
+    // Owner only, like the folder (re-review N-2): a locked vault's list is also readable by a token-less caller the
+    // broker cannot tell from the Lock screen, and that caller must not learn other tokens' ids and labels.
+    if owner {
+        if let Some(t) = &a.agent_token {
+            view["agentToken"] = json!({ "id": t.id, "label": t.label });
+        }
+    }
     view
 }
 
@@ -199,21 +256,31 @@ fn second_factor_gate(
         .nodes
         .get(node_id)
         .map(|n| n.policy.require_two_factor);
+    // ADR-135: a node with a second factor of its own is asked for **that** factor's code — by the owner
+    // too, since the owner's login passed the vault's gate and never this one — and the code opens that
+    // node and no other. Every other node is asked as before: the vault's gate, the owner exempt.
+    let own = state.node_has_own_gate(node_id);
     let asks = match level {
         Some(TwoFactorRequirement::Always) => true,
         Some(TwoFactorRequirement::Reveal) => kind == GateKind::Reveal,
-        _ => false,
+        // ADR-148 §P1-2: a node's own gate is not a `requireTwoFactor` setting an admin session can turn
+        // off. `node.policy {requireTwoFactor: "never"}` needs only the admin gate, never the node's code,
+        // so honouring it here would let any owner session skip the node's second factor entirely. A gated
+        // node asks its own code before every reveal whatever `requireTwoFactor` says; removing the gate
+        // (`node.gate_remove`) is the only way out, and that costs the node's code and presence.
+        _ => own && kind == GateKind::Reveal,
     };
+    let gate_scope = if own { node_id } else { GATE_SCOPE_VAULT };
     if !asks
-        || !state.is_gate_confirmed(GATE_SCOPE_VAULT)
-        || state.is_owner_session(scope)
-        || state.is_elevated(GATE_SCOPE_VAULT, now)
+        || !state.is_gate_confirmed(gate_scope)
+        || (!own && state.is_owner_session(scope))
+        || state.is_elevated(gate_scope, now)
     {
         return Ok(());
     }
     Err(OpError::TwoFactorRequired {
         challenge: "totp".to_string(),
-        scope: GATE_SCOPE_VAULT.to_string(),
+        scope: gate_scope.to_string(),
         expires_in: u32::try_from(state.elevation_seconds()).unwrap_or(300),
     })
 }
@@ -254,6 +321,10 @@ const NODE_LABEL_MAX: usize = 120;
 /// string and the comparison runs it against every name in the node, so an
 /// unbounded name is an unbounded amount of work for one request.
 const ENTRY_NAME_MAX: usize = 200;
+
+/// ADR-156: the longest new passphrase `vault.set_passphrase` accepts. Generous for a passphrase; it bounds the
+/// Argon2id input a single request can hand the broker.
+const SET_PASSPHRASE_MAX_CHARS: usize = 1024;
 
 /// The check every route that takes a NEW entry name shares. It counts characters,
 /// never reads past the cap (a megabyte of text is not walked to be refused) and
@@ -308,6 +379,398 @@ fn human_admin_on(
     Ok(())
 }
 
+/// ADR-148 §P1-4: an op that is a person's decision, never an agent's (a cwd-scoped caller or an agent token).
+fn refuse_agent(scope: &BrokerScope) -> Result<(), OpError> {
+    if scope.origin == Origin::Agent {
+        return Err(OpError::CapabilityNotHeld {
+            capability: Capability::Admin,
+        });
+    }
+    Ok(())
+}
+
+/// ADR-098: the public id of the caller's login session — what a presence challenge is bound to.
+fn session_public_id(state: &BrokerState, scope: &BrokerScope) -> Option<String> {
+    scope
+        .token_id
+        .as_deref()
+        .and_then(|bearer| state.tokens.public_id(bearer))
+}
+
+/// ADR-098: the end of every presence-gated arm. A live owner session (never an agent, never a fixture
+/// token) plus a presence proof for exactly this op and these params, made in this session, unused and
+/// unexpired. Everything an arm can check without the user's finger is checked **before** this runs, so
+/// a request that is going to be refused anyway never costs a prompt.
+fn require_presence(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    op: &str,
+    params: &Value,
+    now: i64,
+) -> Result<(), OpError> {
+    use crate::state::presence::PresenceDenied;
+    // A caller that is not a live login session can never hold a proof: it gets the answer these ops
+    // have always given, `presence_required`, not a different one that would say anything new about it.
+    let required = || OpError::PresenceRequired {
+        operation: op.to_string(),
+    };
+    let session = state
+        .is_owner_session(scope)
+        .then(|| session_public_id(state, scope))
+        .flatten()
+        .ok_or_else(required)?;
+    match state.presence_attest(&session, op, params, now) {
+        Ok(()) => Ok(()),
+        // Nothing sent, or nothing enrolled to check it against: still "presence required". The client
+        // finds out which by asking for a challenge (`presence.challenge` says `not_enrolled`).
+        Err(PresenceDenied::Missing | PresenceDenied::NotEnrolled) => Err(required()),
+        Err(denied) => Err(OpError::PresenceFailed {
+            operation: op.to_string(),
+            reason: denied.reason(),
+        }),
+    }
+}
+
+/// ADR-098: the caller must be a live login session (a human who unlocked the vault).
+fn owner_session(state: &BrokerState, scope: &BrokerScope) -> Result<(), OpError> {
+    if state.is_owner_session(scope) {
+        Ok(())
+    } else {
+        Err(OpError::CapabilityNotHeld {
+            capability: Capability::Admin,
+        })
+    }
+}
+
+/// ADR-150: the refusal for a request the vault's "confirm before showing secrets" policy holds back.
+fn confirmation_required(
+    op: &str,
+    policy: &credmgr_core::reveal_confirm::RevealConfirm,
+    need: credmgr_core::reveal_confirm::Need,
+) -> OpError {
+    use credmgr_core::reveal_confirm::Need;
+    let (mode, window_seconds) = match need {
+        Need::Within(s) => ("window", s),
+        _ => (
+            match policy.mode {
+                credmgr_core::reveal_confirm::ConfirmMode::Window => "window",
+                _ => "everyTime",
+            },
+            0,
+        ),
+    };
+    OpError::ConfirmationRequired {
+        operation: op.to_string(),
+        mode,
+        window_seconds,
+    }
+}
+
+/// ADR-150: the last gate before a value of `entry_id` leaves the broker for a person's login. An agent is not
+/// asked (its reveals already answer to the node's security level and the owner's approvals, ADR-140); every
+/// other caller must hold a confirmation that meets what the policy asks for the entry's sensitivity (read from
+/// the plaintext manifest, as ADR-140 reads it). A caller that is not a live login can never hold one, so it is
+/// refused whenever the policy asks anything. An entry the manifest does not list is treated as critical (review
+/// P3-a): the gate never fails open on a missing row.
+fn reveal_confirmation_gate(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    op: &str,
+    target_node: &str,
+    entry_id: &str,
+    now: i64,
+) -> Result<(), OpError> {
+    if is_agent_caller(scope) {
+        return Ok(());
+    }
+    confirmation_gate(
+        state,
+        scope,
+        op,
+        entry_sensitivity_for_gate(state, target_node, entry_id),
+        now,
+    )
+}
+
+/// ADR-150: the sensitivity the confirmation gate uses for an entry — the manifest's, or critical when the manifest
+/// lists no such row (review P3-a).
+fn entry_sensitivity_for_gate(
+    state: &BrokerState,
+    target_node: &str,
+    entry_id: &str,
+) -> credmgr_core::inference::Sensitivity {
+    manifest_entry(state, target_node, entry_id)
+        .map_or(credmgr_core::inference::Sensitivity::Critical, |e| {
+            e.sensitivity
+        })
+}
+
+/// ADR-150: does the caller's login hold a confirmation meeting what the policy asks for `sensitivity`? A fresh need
+/// spends it. A caller that is not a live login never holds one. Whether an agent is exempt is the caller's call.
+fn confirmation_gate(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    op: &str,
+    sensitivity: credmgr_core::inference::Sensitivity,
+    now: i64,
+) -> Result<(), OpError> {
+    let policy = state.reveal_confirm_policy();
+    let need = policy.need(sensitivity);
+    let session = state
+        .is_owner_session(scope)
+        .then(|| session_public_id(state, scope))
+        .flatten();
+    if state.take_confirmation(session.as_deref(), need, now) {
+        Ok(())
+    } else {
+        Err(confirmation_required(op, &policy, need))
+    }
+}
+
+/// The sentence the system shows in the Touch ID dialog, per presence-gated op. `None` for an op that
+/// does not take a presence proof, which is also the allow-list: the broker will not hand out a
+/// challenge for an arbitrary string.
+fn presence_reason(op: &str) -> Option<&'static str> {
+    const REASONS: &[(&str, &str)] = &[
+        ("audit.get", "Read an audit record in full"),
+        ("totp.seed", "Reveal a two-factor seed"),
+        ("node.reparent", "Move a project in the access graph"),
+        ("grant.create", "Grant one project access to another"),
+        ("node.policy", "Widen who can see a project"),
+        ("maintenance.rotate_root", "Replace the vault's root key"),
+        ("vault.set_passphrase", "Change the vault passphrase"),
+        ("maintenance.doctor", "Rebuild the vault registry"),
+        ("presence.enrol", "Add a presence key"),
+        ("presence.unenrol", "Remove a presence key"),
+        ("device.enrol", "Turn on Touch ID unlock"),
+        ("device.remove", "Turn off Touch ID unlock"),
+        ("keystore.unbind", "Turn off the machine lock"),
+        ("orphan.reveal", "Read a sealed entry"),
+        ("node.rekey", "Replace a project's encryption key"),
+        ("entry.move", "Move an entry to another project"),
+        ("vault.doctor_apply", "Move entries as Tidy up proposed"),
+        ("orphan.destroy", "Permanently destroy sealed entries"),
+        ("node.export", "Export a project to an encrypted file"),
+        ("node.gate_remove", "Remove a project's second factor"),
+        ("session.confirm", "Show your saved secrets"),
+        // ADR-164: both mint a new agent bearer secret.
+        ("agent.token_issue", "Issue an agent token"),
+        ("agent.token_rotate", "Replace an agent token's secret"),
+        // ADR-173: approving an agent's waiting request releases a value.
+        ("vault.approval_decide", "Approve an agent's request"),
+        // ADR-155: a switchboard change that widens a project's reach.
+        ("settings.set", "Widen who can see a project"),
+        ("settings.revert", "Widen who can see a project"),
+        (
+            "settings.request_decide",
+            "Approve an agent's request to widen a project",
+        ),
+    ];
+    REASONS.iter().find(|(o, _)| *o == op).map(|(_, r)| *r)
+}
+
+fn device_unlock_error(e: crate::state::presence::DeviceUnlockError) -> OpError {
+    use crate::state::presence::DeviceUnlockError as D;
+    let failed = |reason| OpError::PresenceFailed {
+        operation: "vault.unlock".to_string(),
+        reason,
+    };
+    match e {
+        D::NotSetUp => failed("not_enrolled"),
+        D::Cancelled => failed("cancelled"),
+        D::LockedOut => failed("locked_out"),
+        D::Unavailable(_) => failed("unavailable"),
+        D::WrongKey => OpError::WrongPassphrase,
+        D::Unlock(UnlockError::WrongPassphrase) => OpError::WrongPassphrase,
+        D::Unlock(UnlockError::Integrity(e)) => OpError::Internal(format!(
+            "the vault on disk failed its integrity check and was not opened: {e}"
+        )),
+        D::Unlock(UnlockError::MachineLock(m)) => machine_lock_refused(&m),
+    }
+}
+
+/// ADR-148 §P1-5: the broker's own word for "this caller is an agent", for the one decision where every
+/// token-less caller cannot simply be treated as one (the Touch ID unlock must keep working from a person's
+/// terminal, which reaches the broker exactly as a token-less caller does). An agent token always is; a
+/// token-less caller is when its working directory is inside a registered project folder — the definition
+/// `scope::resolve_scope` already uses to give it a project's agent scope.
+fn is_identified_agent(state: &BrokerState, scope: &BrokerScope) -> bool {
+    state.is_identified_agent(scope)
+}
+
+/// The params key the server fills with a description of the requesting process (ADR-148 §P1-5). Whatever a
+/// client puts there is replaced by `server::handle_request` before dispatch.
+pub const PEER_PARAM: &str = "_peer";
+
+/// ADR-148 §P1-5: the Touch ID dialog's sentence, naming who asked. A person reading "for credmgr (pid 4021)
+/// <- zsh <- claude, in ~/code/acme" can refuse a request they did not make.
+fn device_unlock_reason(params: &Value) -> String {
+    let who = params
+        .get(PEER_PARAM)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("an unidentified process");
+    let mut reason = format!("Unlock CredMgr for {who}");
+    if reason.chars().count() > 240 {
+        reason = reason.chars().take(239).collect::<String>() + "…";
+    }
+    reason
+}
+
+/// ADR-165 — `keystore.status`'s answer (also the tail of `bind` and `unbind`). The tier is said honestly:
+/// `off`, or `file` (a device key in the state directory). There is no Secure Enclave tier in this build.
+fn machine_lock_status_json(st: &crate::state::MachineLockStatus) -> Value {
+    let tier = if st.bound { "file" } else { "off" };
+    // Review P0-1 / P1-4: a lock that went away, or a bind that did not finish, is said, never left silent.
+    let warning: Option<String> = if let Some(d) = &st.record_detached {
+        // ADR-165 M5: said first; it hides the two warnings below, which are read through the record.
+        Some(format!(
+            // Under the app's 300-character caption limit with two 32-digit ids.
+            "this Mac's machine-lock record names this folder as vault {}, but its vault.id is {}: changed, \
+             removed, or an older copy was put back. Nothing was repaired. What was written after the lock \
+             stays protected; turn the lock off and on again",
+            d.record_vault_id,
+            d.vault_id.as_deref().unwrap_or("none")
+        ))
+    } else if st.plain_while_bound {
+        Some(
+            "this Mac turned the machine lock on for this vault, but its passphrase file is not sealed now: \
+             an unbind or a rotation was interrupted, or an older file was put back (a pre-bind file no longer \
+             opens the vault; the recovery code does). Turn the lock off and on again to settle it"
+                .to_string(),
+        )
+    } else if st.in_folder_archives > 0 {
+        Some(format!(
+            "{} CredMgr backup archive{} still in the vault folder's backups/ (from before the machine lock, or \
+             a move that failed): every copy of the folder carries {}, and {} with the backup passphrase and the \
+             vault passphrase of {} day. Bind again to move {} to CredMgr's state folder",
+            st.in_folder_archives,
+            if st.in_folder_archives == 1 { " is" } else { "s are" },
+            if st.in_folder_archives == 1 { "it" } else { "them" },
+            if st.in_folder_archives == 1 { "it opens" } else { "they open" },
+            if st.in_folder_archives == 1 { "its" } else { "their" },
+            if st.in_folder_archives == 1 { "it" } else { "them" },
+        ))
+    } else if !st.pre_bind_nodes.is_empty() {
+        Some(format!(
+            "{} still {} a key from before the machine lock (an interrupted bind, or a sealed project restored \
+             since): an old copy of the folder opens what is written there. Bind again to give {} a new key",
+            st.pre_bind_nodes.join(", "),
+            if st.pre_bind_nodes.len() == 1 { "has" } else { "have" },
+            if st.pre_bind_nodes.len() == 1 { "it" } else { "them" },
+        ))
+    } else {
+        None
+    };
+    json!({
+        "bound": st.bound,
+        "tier": tier,
+        "secureEnclave": false,
+        "opensHere": st.opens_here(),
+        "sealedKeyId": st.sealed_key_id,
+        "damaged": st.damaged,
+        "deviceKeyPresent": st.device_key_present,
+        "deviceKeyId": st.device_key_id,
+        "deviceKeyUnreadable": st.device_key_unreadable,
+        "deviceKeyModeOpen": st.key_file.is_some_and(|h| h.mode_open),
+        "deviceKeyForeignOwner": st.key_file.is_some_and(|h| h.foreign_owner),
+        "recoveryUnlock": st.recovery_unlock,
+        // Review N4: this Mac's bind record for this vault (keyed by the vault's identity) exists.
+        "markedBound": st.marked_bound,
+        "plainWhileBound": st.plain_while_bound,
+        "preBindNodes": st.pre_bind_nodes,
+        // Review M1: archives still inside the vault folder while bound.
+        "inFolderArchives": st.in_folder_archives,
+        // ADR-165 M5: a bind record on this Mac names this folder under another vault id.
+        "recordDetached": st.record_detached.is_some(),
+        "warning": warning,
+        "protects": if st.bound {
+            "a copy of the vault folder alone (a synced folder, a copied directory, a USB disk) made after the \
+             lock was turned on cannot be opened with the passphrase on another computer; it needs this Mac's \
+             device key or the recovery code"
+        } else {
+            "nothing extra: the passphrase alone opens a copy of the vault folder on any computer"
+        },
+        "doesNotProtect": "a stolen or unlocked Mac (its disk holds the vault folder and the device key; FileVault \
+             and a locked screen protect that); Time Machine, whole-disk images and Migration Assistant, which \
+             carry the device key with the folder; what a copy made before the lock was turned on already held; \
+             CredMgr backup archives, which hold the passphrase file unsealed inside their own encryption and \
+             open with their backup passphrase and the vault passphrase (while the lock is on they are written \
+             outside the vault folder, in CredMgr's state folder, so a copy of the vault folder does not carry \
+             them; one copied elsewhere is not covered); anyone holding the recovery code",
+    })
+}
+
+fn machine_lock_op_error(e: crate::state::MachineLockOpError) -> OpError {
+    use crate::state::MachineLockOpError as E;
+    match e {
+        E::Locked => OpError::VaultLocked,
+        E::WrongRecoveryCode => OpError::RecoveryCodeMismatch,
+        E::WrongPassphrase => OpError::WrongPassphrase,
+        E::PassphraseRequired => OpError::Malformed(
+            "params.passphrase is required: no Touch ID key and no second factor are enrolled, so turning the \
+             machine lock off asks for the passphrase"
+                .into(),
+        ),
+        E::NotReady(why) => OpError::Malformed(format!(
+            "the machine lock was not turned on (nothing changed): {why}"
+        )),
+        E::Rotate(r) => rotate_error(r),
+        // Review N1: the commit's code typed back does not match; the prepared bind still waits.
+        E::ConfirmMismatch => OpError::RecoveryCodeMismatch,
+        E::BindElsewhere => OpError::Malformed(format!(
+            "the machine lock was not changed (nothing changed): {}",
+            crate::state::MachineLockOpError::BindElsewhere
+        )),
+        E::RecordNotRemoved(e) => OpError::Internal(format!(
+            "the machine lock was NOT turned off (nothing changed): {}",
+            crate::state::MachineLockOpError::RecordNotRemoved(e)
+        )),
+        E::NotPrepared(why) => OpError::Malformed(format!(
+            "the machine lock was not turned on (nothing changed): {why}"
+        )),
+        E::ChangedNotDurable { bound, source } => OpError::Internal(format!(
+            "the passphrase file WAS changed: the vault is now {}, but the change may not survive a power \
+             loss ({source}); check keystore.status after a restart",
+            if bound { "bound to this Mac" } else { "not bound" }
+        )),
+        E::NoRecoveryCode => OpError::Malformed(
+            "this vault has no recovery code yet, so the machine lock cannot be turned on (a lost device key \
+             would lock you out); change the passphrase or rotate the root key to issue one, then bind"
+                .into(),
+        ),
+        E::KeyInsideVault(path) => OpError::Malformed(format!(
+            "the device key would be stored inside the vault folder ({}), where every copy of the folder would \
+             carry it; move the state directory (CREDMGR_STATE_DIR) outside the vault folder first",
+            path.display()
+        )),
+        E::MachineLock(m) => machine_lock_refused(&m),
+        E::Store(e) => OpError::Internal(format!(
+            "the machine lock was not changed (the passphrase file is as it was): {e}"
+        )),
+    }
+}
+
+/// ADR-165: a machine-lock refusal on the wire (`machine_lock_refused`, pointing to the recovery code).
+pub(crate) fn machine_lock_refused(
+    e: &credmgr_keystore::machine_lock::MachineLockError,
+) -> OpError {
+    OpError::MachineLockRefused { reason: e.reason() }
+}
+
+/// A second factor is fresh when a gate is enrolled; else nothing to ask (the same shape
+/// `maintenance.rotate_root` has always used).
+fn require_fresh_second_factor(state: &BrokerState, now: i64) -> Result<(), OpError> {
+    if state.is_gate_confirmed(GATE_SCOPE_VAULT) && !state.is_elevated(GATE_SCOPE_VAULT, now) {
+        return Err(OpError::TwoFactorRequired {
+            challenge: "totp".to_string(),
+            scope: GATE_SCOPE_VAULT.to_string(),
+            expires_in: 0,
+        });
+    }
+    Ok(())
+}
+
 /// `serde`'s default reads an absent field and an explicit `null` the same
 /// way; `lockAfterSeconds` needs them apart (absent = unchanged, `null` =
 /// clear the per-node timer).
@@ -331,6 +794,9 @@ struct PolicyPatch {
     lock_after_seconds: Option<Option<u32>>,
     private_names: Option<bool>,
     agent_access: Option<AgentAccess>,
+    security_level: Option<SecurityLevel>,
+    /// ADR-150: vault policy — accepted on `global` only.
+    reveal_confirm: Option<credmgr_core::reveal_confirm::RevealConfirm>,
 }
 
 impl PolicyPatch {
@@ -355,6 +821,12 @@ impl PolicyPatch {
         if self.agent_access.is_some() {
             f.push("agentAccess");
         }
+        if self.security_level.is_some() {
+            f.push("securityLevel");
+        }
+        if self.reveal_confirm.is_some() {
+            f.push("revealConfirm");
+        }
         f
     }
 
@@ -365,6 +837,8 @@ impl PolicyPatch {
         (self.descendant_read == Some(true) && !current.descendant_read)
             || (self.sibling_visibility == Some(SiblingVisibility::Shared)
                 && current.sibling_visibility == SiblingVisibility::Isolated)
+            // ADR-140: a lower level (Open < Guarded < Sealed in strictness) lets an agent do more.
+            || self.security_level.is_some_and(|l| l < current.security_level)
     }
 
     fn apply(&self, policy: &mut NodePolicy) {
@@ -385,6 +859,12 @@ impl PolicyPatch {
         }
         if let Some(v) = self.agent_access {
             policy.agent_access = v;
+        }
+        if let Some(v) = self.security_level {
+            policy.security_level = v;
+        }
+        if let Some(v) = self.reveal_confirm {
+            policy.reveal_confirm = v;
         }
     }
 }
@@ -455,6 +935,18 @@ fn canonical_workdirs(value: &Value) -> Result<Vec<String>, OpError> {
 /// children" (R8 for a global-scoped subject) stops locking the vault's own
 /// owner out of their own projects — ADR-047's named "whole vault graph"
 /// gap. Every other scope, including every agent's, is unchanged.
+/// ADR-164: an agent token reaches exactly the node it was issued for. Not global (R3), not its ancestors
+/// (R4), not its descendants (R5), not a sibling (R6), not through a grant (R7): any other target is an R8
+/// denial before `resolve()` is asked. A cwd-scoped agent and a login are unaffected.
+fn token_confined_away(scope: &BrokerScope, target_node: &str) -> bool {
+    scope.origin == Origin::Agent
+        && scope
+            .token_id
+            .as_deref()
+            .is_some_and(crate::token::is_agent_bearer)
+        && target_node != scope.node_id
+}
+
 fn subject_for(state: &BrokerState, scope: &BrokerScope, target_node: &str) -> access::Scope {
     let node_id = if target_node != ORPHAN_ID && state.is_owner_session(scope) {
         target_node.to_string()
@@ -480,6 +972,9 @@ fn resolve_capability(
     capability: Capability,
     now: i64,
 ) -> access::Decision {
+    if token_confined_away(scope, target_node) {
+        return access::Decision::Deny(access::Rule::R8);
+    }
     let registry = state.registry.read().expect("registry poisoned");
     let locked_nodes = state.locked_nodes.read().expect("locked_nodes poisoned");
     let ctx = AccessContext {
@@ -510,6 +1005,9 @@ fn would_be_allowed_ignoring_lock(
     capability: Capability,
     now: i64,
 ) -> bool {
+    if token_confined_away(scope, target_node) {
+        return false;
+    }
     let registry = state.registry.read().expect("registry poisoned");
     let ctx = AccessContext {
         registry: &registry,
@@ -621,11 +1119,30 @@ fn stage_approved_value_with(
 /// itself is never kept). The work folder is deliberately not part of it: a caller can reach any subdirectory of its
 /// folder, so it would mint requesters at will and flood the table (re-verification NEW-P2-a); a node, and a token, are
 /// things a caller cannot multiply.
-fn approval_request_key(scope: &BrokerScope) -> String {
+/// ADR-164 review P1-2: an agent token is keyed by its public id instead, so a rotation does not orphan its request,
+/// and the owner can be told which token asked.
+fn approval_request_key(state: &BrokerState, scope: &BrokerScope, now: i64) -> String {
+    if let Some(agent) = agent_requester(state, scope, now) {
+        return format!("{}|{}", scope.node_id, agent.id);
+    }
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     scope.token_id.hash(&mut h);
     format!("{}|{:016x}", scope.node_id, h.finish())
+}
+
+/// ADR-164 review P1-2: the agent token behind `scope`, if the caller presented one, named by public id and label.
+pub(crate) fn agent_requester(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    now: i64,
+) -> Option<crate::state::AgentRequester> {
+    let bearer = scope.token_id.as_deref()?;
+    let t = state.tokens.peek_agent(bearer, now)?;
+    Some(crate::state::AgentRequester {
+        id: t.public_id,
+        label: t.label,
+    })
 }
 
 fn reveal_via_approval(
@@ -636,6 +1153,11 @@ fn reveal_via_approval(
     field_ids: Option<&[String]>,
     now: i64,
 ) -> Result<Value, OpError> {
+    // ADR-135: a node with a second factor of its own is not released by an approval decided with the
+    // vault's factors: the decision cannot ask the node's code while the vault is locked.
+    if state.node_has_own_gate(target_node) {
+        return Err(locked_refusal(state, target_node));
+    }
     // ADR-088 (4b): a wholly locked live vault no longer answers `vault_locked`
     // here — the request is recorded, because a person can now decide it with the
     // unlock factors while the vault stays locked (`decide_with_factors`).
@@ -648,17 +1170,18 @@ fn reveal_via_approval(
     }
     // One slot per (node, entry, requester): a second caller makes its own request and is decided on its own
     // (audit P1-1). The request remembers the fields it asked for, and what it releases never goes beyond them.
-    let request_key = approval_request_key(scope);
+    let request_key = approval_request_key(state, scope, now);
     let asked: Option<Vec<String>> = field_ids.map(|ids| {
         let mut v: Vec<String> = ids.to_vec();
         v.sort_unstable();
         v.dedup();
         v
     });
-    let approval = state.approval_for_reveal(
+    let approval = state.approval_for_reveal_by(
         target_node,
         entry_id,
         scope.bound_workdir.clone(),
+        agent_requester(state, scope, now),
         &request_key,
         asked.clone(),
         now,
@@ -719,6 +1242,11 @@ fn reveal_via_approval(
                         .into(),
                 ));
             }
+            // ADR-150 (review P0): a value released to a person's own login answers to "confirm before showing
+            // secrets" like any other reveal — locking a node and approving the request must not be a way round
+            // it. An agent is not asked here (it answers to the node's security level). Checked after every other
+            // refusal and before the approval is consumed, so a refused request spends neither.
+            reveal_confirmation_gate(state, scope, "entry.reveal", target_node, entry_id, now)?;
             // Consume it now that there is an answer to give. A lock that lands
             // between the build and this line voids the staged value: nothing is
             // released and `expired` is reported.
@@ -790,6 +1318,22 @@ fn access_denied_error(
     rule: &'static str,
     now: i64,
 ) -> OpError {
+    // ADR-164: a grant does not widen an agent token, so the remedy is a token for the other node.
+    if token_confined_away(scope, target_node) {
+        return OpError::NodeAccessDenied {
+            subject: scope.node_id.clone(),
+            target: target_node.to_string(),
+            capability,
+            rule,
+            message: format!(
+                "This agent token reaches only node '{}', not '{target_node}'.",
+                scope.node_id
+            ),
+            remedy: format!(
+                "A human can issue an agent token for '{target_node}': credmgr agent token issue {target_node} ..."
+            ),
+        };
+    }
     let expired_note = find_expired_grant_note(state, scope, target_node, capability, now);
     OpError::NodeAccessDenied {
         subject: scope.node_id.clone(),
@@ -806,6 +1350,122 @@ fn access_denied_error(
             scope.node_id
         ),
     }
+}
+
+/// ADR-140: the security level of `node` (a node the registry does not know reads as the default).
+fn security_level_of(state: &BrokerState, node: &str) -> SecurityLevel {
+    state
+        .registry
+        .read()
+        .expect("registry poisoned")
+        .nodes
+        .get(node)
+        .map(|n| n.policy.security_level)
+        .unwrap_or_default()
+}
+
+/// ADR-140: the security level binds an *agent* (a cwd-scoped caller or an agent token), never the
+/// owner's own login, CLI session or native shell.
+fn is_agent_caller(scope: &BrokerScope) -> bool {
+    scope.origin == Origin::Agent
+}
+
+/// ADR-140: does this agent reveal of `entry_id` wait for the owner? True when the caller is an
+/// agent and the node's level asks approval for the entry's sensitivity. The sensitivity is read
+/// from the plaintext manifest projection - no key is needed, and an entry the manifest does not
+/// list falls through to the ordinary `not_found`.
+fn reveal_needs_owner_approval(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    target_node: &str,
+    entry_id: &str,
+) -> bool {
+    if !is_agent_caller(scope) {
+        return false;
+    }
+    let level = security_level_of(state, target_node);
+    match manifest_entry(state, target_node, entry_id) {
+        Some(e) => level.reveal_needs_approval(e.sensitivity),
+        None => false,
+    }
+}
+
+/// ADR-148 §P1-3: on a node whose level asks approval by sensitivity, an agent must not lower an entry's
+/// effective sensitivity — neither by setting `sensitivity` nor by an edit whose re-inferred sensitivity is
+/// lower (a relabelled or replaced field) — because the next reveal would then skip the owner's approval.
+/// The owner may; an agent on an Open node may (nothing there asks approval). Refused as `node_access_denied`
+/// with rule `L1`, like the Sealed guard.
+fn lowering_guard(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    target_node: &str,
+    stored: credmgr_core::inference::Sensitivity,
+    next: credmgr_core::inference::Sensitivity,
+    op: &str,
+    now: i64,
+) -> Result<(), OpError> {
+    if !is_agent_caller(scope) {
+        // ADR-150: under "only high and critical", lowering an entry out of that band takes it out of the
+        // policy's reach — its next reveal would ask nothing — so the edit itself needs a fresh confirmation.
+        let policy = state.reveal_confirm_policy();
+        if policy.lowering_escapes(stored, next) {
+            let session = session_public_id(state, scope);
+            let need = credmgr_core::reveal_confirm::Need::Fresh;
+            if !state.take_confirmation(session.as_deref(), need, now) {
+                return Err(confirmation_required(op, &policy, need));
+            }
+        }
+        return Ok(());
+    }
+    if next >= stored {
+        return Ok(());
+    }
+    let level = security_level_of(state, target_node);
+    if level == SecurityLevel::Open {
+        return Ok(());
+    }
+    Err(OpError::NodeAccessDenied {
+        subject: scope.node_id.clone(),
+        target: target_node.to_string(),
+        capability: Capability::Update,
+        rule: "L1",
+        message: format!(
+            "Node '{target_node}' is {}: an agent cannot lower an entry's sensitivity there.",
+            level.as_str()
+        ),
+        remedy: "The owner can change the entry's sensitivity, or the node's security level."
+            .to_string(),
+    })
+}
+
+/// ADR-140: a `Sealed` node refuses an agent's change to, or removal of, what already exists. The
+/// owner (or an agent on an Open/Guarded node) is unaffected. Reported as `node_access_denied`
+/// with the rule `L1` so no new error code exists; the remedy says what the owner can do.
+fn sealed_change_guard(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    target_node: &str,
+    capability: Capability,
+) -> Result<(), OpError> {
+    if !is_agent_caller(scope) {
+        return Ok(());
+    }
+    if security_level_of(state, target_node).agent_may_change_existing() {
+        return Ok(());
+    }
+    Err(OpError::NodeAccessDenied {
+        subject: scope.node_id.clone(),
+        target: target_node.to_string(),
+        capability,
+        rule: "L1",
+        message: format!(
+            "Node '{target_node}' is Strict (stored as sealed): an agent can add entries (they wait in the tray) \
+             but cannot change or remove what already exists."
+        ),
+        remedy: "Ask the owner to make the change, or to lower the node's security level to \
+                 Guarded in the node's settings (a human step that needs Touch ID)."
+            .to_string(),
+    })
 }
 
 fn rule_name(d: access::Decision) -> &'static str {
@@ -830,6 +1490,9 @@ fn resolve_entry_capability(
     capability: Capability,
     now: i64,
 ) -> access::Decision {
+    if token_confined_away(scope, target_node) {
+        return access::Decision::Deny(access::Rule::R8);
+    }
     let registry = state.registry.read().expect("registry poisoned");
     let locked_nodes = state.locked_nodes.read().expect("locked_nodes poisoned");
     let ctx = AccessContext {
@@ -844,6 +1507,32 @@ fn resolve_entry_capability(
         entry_id: entry_id.to_string(),
     };
     access::resolve(&ctx, &subject, &target, capability)
+}
+
+/// ADR-172: the decision for one entry's `read` or `reveal` (`entry.get`, `entry.reveal`, `totp.code`). The
+/// node-level decision first, exactly as before; when it denies for any reason but a lock (R1, which comes
+/// before every grant and has its own approval path), an entry-level grant naming exactly this entry may
+/// allow it (R7 at `Target::Entry`). It never widens to the node or to another entry: `resolve()` matches an
+/// entry grant only against the entry it names. A denial is reported as the node-level one, as before.
+fn resolve_for_entry(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    target_node: &str,
+    entry_id: &str,
+    capability: Capability,
+    now: i64,
+) -> access::Decision {
+    let node_level = resolve_capability(state, scope, target_node, capability, now);
+    if node_level.is_allow() || node_level.rule() == access::Rule::R1 {
+        return node_level;
+    }
+    let entry_level =
+        resolve_entry_capability(state, scope, target_node, entry_id, capability, now);
+    if entry_level.is_allow() {
+        entry_level
+    } else {
+        node_level
+    }
 }
 
 /// `06_ACCESS_GRAPH.md §1b`: "an entry grant is not a directory listing".
@@ -909,6 +1598,15 @@ fn node_is_locked(state: &BrokerState, node_id: &str) -> bool {
 fn locked_refusal(state: &BrokerState, node_id: &str) -> OpError {
     if state.is_locked() {
         OpError::VaultLocked
+    } else if !state
+        .registry
+        .read()
+        .expect("registry poisoned")
+        .nodes
+        .contains_key(node_id)
+    {
+        // A node that does not exist is not "locked": say what is true (terminal check, 2026-11-07).
+        OpError::NotFound(format!("no node {node_id}"))
     } else {
         OpError::NodeLocked {
             node: node_id.to_string(),
@@ -926,6 +1624,8 @@ struct Created {
     /// has not entered the manifest yet.
     generation: Option<u64>,
     field_ids: Vec<String>,
+    /// Issue #40: fields that could be an untyped TOTP seed.
+    possible_seed_fields: Vec<String>,
 }
 
 impl Created {
@@ -937,7 +1637,34 @@ impl Created {
         if let Some(generation) = self.generation {
             body["generation"] = json!(generation);
         }
+        seed_hint(&mut body, &self.possible_seed_fields);
         body
+    }
+}
+
+/// ADR-110: a name free in both the node's manifest and its tray, made from the
+/// typed one by appending ` (2)`, ` (3)`, … The base is cut so the result stays
+/// within [`ENTRY_NAME_MAX`]. Called with the node's write lock held.
+fn free_create_name(state: &BrokerState, node_id: &str, typed: &str) -> String {
+    let manifests = state.manifests.read().expect("manifests poisoned");
+    let pending = state.list_pending(node_id);
+    let is_taken = |candidate: &str| {
+        let canon = canonical_name(candidate);
+        manifests
+            .get(node_id)
+            .is_some_and(|m| canon_taken(&canon, m.entries.iter().map(|e| e.name.as_str())))
+            || canon_taken(&canon, pending.iter().map(|p| p.name.as_str()))
+    };
+    let mut n = 2u32;
+    loop {
+        let suffix = format!(" ({n})");
+        let keep = ENTRY_NAME_MAX.saturating_sub(suffix.chars().count());
+        let base: String = typed.chars().take(keep).collect();
+        let candidate = format!("{base}{suffix}");
+        if !is_taken(&candidate) {
+            return candidate;
+        }
+        n += 1;
     }
 }
 
@@ -958,6 +1685,8 @@ fn create_entry(
     name: &str,
     doc: &EntryDoc,
     now: i64,
+    hide_names: bool,
+    hold: bool,
 ) -> Result<Created, OpError> {
     // F-9: held for the whole check-then-write sequence below, so a
     // concurrent create/update on the same node can never interleave with
@@ -974,7 +1703,7 @@ fn create_entry(
         .read()
         .expect("manifests poisoned")
         .get(target_node)
-        .is_some_and(|m| canon_taken(&canon, m.entries.iter().map(|e| e.name.as_str())))
+        .is_some_and(|m| canon_taken(&canon, m.entries.iter().flat_map(entry_names)))
         || canon_taken(
             &canon,
             state
@@ -982,12 +1711,24 @@ fn create_entry(
                 .iter()
                 .map(|p| p.name.as_str()),
         );
-    if name_taken {
-        return Err(OpError::EntryExists {
-            node: target_node.to_string(),
-            name: name.to_string(),
-        });
-    }
+    // ADR-110: on a `privateNames` node a caller who may not see names is never
+    // told that a name exists. A collision there is answered exactly like a miss
+    // (the entry is created) under a free name made from the typed one, so the
+    // answer does not separate a hidden name from a free one. The owner and every
+    // other node keep the plain `entry_exists` refusal.
+    let disambiguated;
+    let name = if name_taken {
+        if !hide_names {
+            return Err(OpError::EntryExists {
+                node: target_node.to_string(),
+                name: name.to_string(),
+            });
+        }
+        disambiguated = free_create_name(state, target_node, name);
+        disambiguated.as_str()
+    } else {
+        name
+    };
 
     let entry_id = new_entry_id();
     // Review of 2026-09-24 (gap G-12, ADR-067): the manifest's `sha256` is the
@@ -996,8 +1737,10 @@ fn create_entry(
     let (sealed, sha256) = entry_doc::seal_doc(state, target_node, &entry_id, doc)?;
     let p = fields::project(doc);
     let field_ids = doc.field_ids();
+    let possible_seed_fields = entry_doc::possible_seed_ids(doc);
 
-    if node_is_locked(state, target_node) {
+    // ADR-140: an agent's create on a Sealed node waits in the tray like a locked write does.
+    if hold || node_is_locked(state, target_node) {
         let path = state.paths.pending_env(target_node, &entry_id);
         credmgr_store::atomic::write(&path, &sealed)
             .map_err(|e| OpError::Internal(format!("writing pending entry: {e}")))?;
@@ -1024,6 +1767,7 @@ fn create_entry(
             pending: true,
             generation: None,
             field_ids,
+            possible_seed_fields,
         })
     } else {
         let path = state.paths.entry_env(target_node, &entry_id);
@@ -1043,6 +1787,8 @@ fn create_entry(
                 expires_at: None,
                 rotated_at: None,
                 has_totp: p.has_totp,
+                aliases: Vec::new(),
+                tags: Vec::new(),
             },
         );
         Ok(Created {
@@ -1050,6 +1796,7 @@ fn create_entry(
             pending: false,
             generation: Some(generation),
             field_ids,
+            possible_seed_fields,
         })
     }
 }
@@ -1118,6 +1865,7 @@ fn mutate_entry(
             now,
         ));
     }
+    sealed_change_guard(state, scope, target_node, Capability::Update)?;
 
     let node_lock = state.node_write_lock(target_node);
     let _guard = node_lock.lock().expect("node write lock poisoned");
@@ -1150,6 +1898,19 @@ fn mutate_entry(
     };
     let loaded = entry_doc::load(state, target_node, entry_id, &node_priv, Some(&prior))?;
     let next = edit(&loaded.doc)?;
+    lowering_guard(
+        state,
+        scope,
+        target_node,
+        prior.sensitivity,
+        fields::project(&next).sensitivity,
+        match mode {
+            Mutation::Update => "entry.update",
+            Mutation::Rotate => "entry.rotate",
+            Mutation::Field => "field.update",
+        },
+        now,
+    )?;
     let (sealed, sha256) = entry_doc::seal_doc(state, target_node, entry_id, &next)?;
 
     if mode != Mutation::Update {
@@ -1195,6 +1956,7 @@ fn mutated_json(target_node: &str, entry_id: &str, m: &Mutated) -> Value {
     let mut body = json!({ "node": target_node, "entry": entry_id, "generation": m.generation });
     body["fieldCount"] = json!(m.doc.fields.len());
     body["fieldIds"] = json!(m.doc.field_ids());
+    seed_hint(&mut body, &entry_doc::possible_seed_ids(&m.doc));
     body
 }
 
@@ -1205,7 +1967,13 @@ fn free_restored_name(state: &BrokerState, node_id: &str, original_name: &str) -
     let manifests = state.manifests.read().expect("manifests poisoned");
     let taken: HashSet<String> = manifests
         .get(node_id)
-        .map(|m| m.entries.iter().map(|e| canonical_name(&e.name)).collect())
+        .map(|m| {
+            m.entries
+                .iter()
+                .flat_map(entry_names)
+                .map(canonical_name)
+                .collect()
+        })
         .unwrap_or_default();
     let mut candidate = format!("{original_name} old");
     let mut n = 2;
@@ -1240,25 +2008,41 @@ fn do_entry_restore(
 
     // Decide collision handling from the retained snapshot *before*
     // touching disk — a refused `"replace"` must never move a file.
-    let snapshot = credmgr_store::entry_archive::peek(&state.paths, rk, target_node, entry_id, now)
-        .map_err(|e| match e {
-            credmgr_store::StoreError::EntryArchiveNotFound { .. } => {
-                OpError::NotFound(format!("no removed entry {entry_id} on node {target_node}"))
-            }
-            credmgr_store::StoreError::EntryArchiveExpired { .. } => OpError::EntryRemovalExpired {
-                node: target_node.to_string(),
-                entry: entry_id.to_string(),
-            },
-            other => OpError::Internal(format!("reading removed entry archive: {other}")),
-        })?;
+    let (snapshot, merged_into) =
+        credmgr_store::entry_archive::peek_merged(&state.paths, rk, target_node, entry_id, now)
+            .map_err(|e| match e {
+                credmgr_store::StoreError::EntryArchiveNotFound { .. } => {
+                    OpError::NotFound(format!("no removed entry {entry_id} on node {target_node}"))
+                }
+                credmgr_store::StoreError::EntryArchiveExpired { .. } => {
+                    OpError::EntryRemovalExpired {
+                        node: target_node.to_string(),
+                        entry: entry_id.to_string(),
+                    }
+                }
+                other => OpError::Internal(format!("reading removed entry archive: {other}")),
+            })?;
 
+    // ADR-168: an entry a merge removed gave its names to the kept entry as aliases. Restoring it takes
+    // back the ones the kept entry still holds, so it returns under its own name, not as "<name> old".
+    let (keeper, strip): (Option<String>, Vec<String>) = match merged_into {
+        Some(m) => (Some(m.entry), m.aliases),
+        None => (None, Vec::new()),
+    };
+    let stripped = |e: &ManifestEntry, n: &str| {
+        keeper.as_deref() == Some(e.id.as_str()) && strip.iter().any(|s| s == n)
+    };
     let snapshot_canon = canonical_name(&snapshot.name);
     let name_taken = state
         .manifests
         .read()
         .expect("manifests poisoned")
         .get(target_node)
-        .is_some_and(|m| canon_taken(&snapshot_canon, m.entries.iter().map(|e| e.name.as_str())));
+        .is_some_and(|m| {
+            m.entries.iter().any(|e| {
+                entry_names(e).any(|n| canonical_name(n) == snapshot_canon && !stripped(e, n))
+            })
+        });
     let restored_name = if name_taken {
         if mode == "replace" {
             return Err(OpError::EntryExists {
@@ -1282,13 +2066,36 @@ fn do_entry_restore(
     restored_entry.name.clone_from(&restored_name);
     restored_entry.modified = now;
 
+    let mut aliases_removed = 0usize;
+    if let Some(keeper) = keeper.as_deref() {
+        let holds = state
+            .manifests
+            .read()
+            .expect("manifests poisoned")
+            .get(target_node)
+            .and_then(|m| m.entries.iter().find(|e| e.id == keeper))
+            .map_or(0, |e| {
+                e.aliases.iter().filter(|a| strip.contains(a)).count()
+            });
+        if holds > 0 {
+            state.update_manifest_entry(target_node, keeper, |e| {
+                e.aliases.retain(|a| !strip.contains(a));
+            });
+            aliases_removed = holds;
+        }
+    }
     let generation = state.insert_manifest_entry(target_node, restored_entry);
 
-    Ok(json!({
+    let mut body = json!({
         "node": target_node, "entry": entry_id,
         "restoredName": if hide_names { Value::Null } else { json!(restored_name) },
         "generation": generation,
-    }))
+    });
+    if keeper.is_some() {
+        body["mergedInto"] = json!(keeper);
+        body["mergeAliasesRemoved"] = json!(aliases_removed);
+    }
+    Ok(body)
 }
 
 /// `entry.undo`'s retained-history branch (ADR-055, extended by ADR-078 to the
@@ -1305,8 +2112,10 @@ fn do_entry_restore(
 /// The snapshot restores `fieldCount` and `hasTotp` as well as type, sensitivity
 /// and digest (it used to restore only the latter three, which would have left a
 /// wrong `fieldCount` after undoing a field edit).
+#[allow(clippy::too_many_arguments)]
 fn undo_rotate(
     state: &BrokerState,
+    scope: &BrokerScope,
     target_node: &str,
     entry_id: &str,
     pre_rotate_generation: u64,
@@ -1365,6 +2174,17 @@ fn undo_rotate(
             })?;
         (body.generation, entry)
     };
+    // ADR-148 §P1-3: an agent's undo must not put back an older, lower sensitivity on a node that asks
+    // approval by it (the owner raised it; undoing that is the owner's call). Checked before anything moves.
+    lowering_guard(
+        state,
+        scope,
+        target_node,
+        current_entry.sensitivity,
+        restored_snapshot.sensitivity,
+        "entry.undo",
+        now,
+    )?;
 
     // Retain the current (about-to-be-superseded-again) ciphertext and
     // snapshot — always at a strictly lower generation than
@@ -1389,6 +2209,7 @@ fn undo_rotate(
         now,
     )
     .map_err(|e| OpError::Internal(format!("retaining pre-undo snapshot: {e}")))?;
+    entry_doc::prune_history(state, target_node, entry_id, rk, now);
 
     credmgr_store::atomic::write(&current_path, &restored_ciphertext)
         .map_err(|e| OpError::Internal(format!("writing undone entry: {e}")))?;
@@ -1491,6 +2312,7 @@ fn decide_with_factors(
                 "an interrupted root-key rotation could not be finished; nothing was decided"
                     .into(),
             ),
+            ApprovalFactorError::MachineLock(reason) => OpError::MachineLockRefused { reason },
         })?;
     use secrecy::ExposeSecret;
     let rk = root.expose_secret();
@@ -1641,14 +2463,106 @@ pub fn rotate_root_response(
     passphrase: &str,
     now: i64,
 ) -> Result<Value, OpError> {
-    use crate::state::RotateRootError;
     let outcome = state
         .rotate_root(SecretBox::new(Box::new(passphrase.to_string())), now)
+        .map_err(rotate_error)?;
+    Ok(rotation_response(outcome))
+}
+
+/// ADR-156 — what `vault.set_passphrase` answers: the same rotation as [`rotate_root_response`], with the new
+/// passphrase wrap made from `new_passphrase`, and `passphraseChanged: true`. The new recovery code is in the
+/// answer, once (the rotation replaces the root key, so the previous code no longer opens anything).
+pub fn set_passphrase_response(
+    state: &BrokerState,
+    passphrase: &str,
+    new_passphrase: &str,
+    now: i64,
+) -> Result<Value, OpError> {
+    let outcome = state
+        .set_passphrase(
+            SecretBox::new(Box::new(passphrase.to_string())),
+            SecretBox::new(Box::new(new_passphrase.to_string())),
+            now,
+        )
+        .map_err(rotate_error)?;
+    let mut response = rotation_response(outcome);
+    response["passphraseChanged"] = json!(true);
+    Ok(response)
+}
+
+/// ADR-163 — what `vault.recover` answers: the rotation's answer (the new recovery code in it, once),
+/// `passphraseChanged` and `recovered`, and — unless the rotation committed but left its file moves to the
+/// next unlock — the open vault's login token, exactly as `vault.unlock` hands one out.
+pub fn recover_response(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    recovery_code: &str,
+    new_passphrase: &str,
+    second_factor: Option<&str>,
+    now: i64,
+) -> Result<Value, OpError> {
+    use crate::state::RecoverError;
+    let outcome = state
+        .recover_with_code(
+            scope,
+            recovery_code,
+            SecretBox::new(Box::new(new_passphrase.to_string())),
+            second_factor,
+            now,
+        )
         .map_err(|e| match e {
-            RotateRootError::Locked => OpError::VaultLocked,
-            RotateRootError::WrongPassphrase => OpError::WrongPassphrase,
-            other => OpError::Internal(other.to_string()),
+            RecoverError::Agent => OpError::CapabilityNotHeld {
+                capability: Capability::Admin,
+            },
+            RecoverError::AlreadyUnlocked => OpError::Malformed(
+                "the vault is already unlocked - change the passphrase with vault.set_passphrase instead"
+                    .into(),
+            ),
+            RecoverError::Unavailable => OpError::NotFound(
+                "this vault has no recovery-code unlock yet - it is set up by the next passphrase change \
+                 or root-key rotation"
+                    .into(),
+            ),
+            RecoverError::WrongCode => OpError::RecoveryCodeMismatch,
+            RecoverError::SecondFactorRequired => OpError::TwoFactorRequired {
+                challenge: "totp".to_string(),
+                scope: GATE_SCOPE_VAULT.to_string(),
+                expires_in: 0,
+            },
+            RecoverError::WrongSecondFactor => OpError::GateVerificationFailed,
+            RecoverError::Integrity(e) => OpError::Internal(format!(
+                "the vault on disk failed its integrity check and was not opened: {e}"
+            )),
+            RecoverError::Rotate(e) => rotate_error(e),
         })?;
+    let opened = outcome.opened;
+    let mut response = rotation_response(outcome.rotation);
+    response["passphraseChanged"] = json!(true);
+    response["recovered"] = json!(true);
+    if opened {
+        response["locked"] = json!(false);
+        response["token"] = json!(mint_session_token(state, now));
+    } else {
+        // Review P2-a: the rotation committed but the vault is locked — its file move is pending, or the node
+        // keys could not be opened and the vault was locked again (which revoked every token). No login is
+        // handed out; the next unlock with the new passphrase opens the vault from disk.
+        response["locked"] = json!(true);
+        response["meta"] = json!({ "vaultLocked": true });
+    }
+    Ok(response)
+}
+
+fn rotate_error(e: crate::state::RotateRootError) -> OpError {
+    use crate::state::RotateRootError;
+    match e {
+        RotateRootError::Locked => OpError::VaultLocked,
+        RotateRootError::WrongPassphrase => OpError::WrongPassphrase,
+        RotateRootError::MachineLock(m) => machine_lock_refused(&m),
+        other => OpError::Internal(other.to_string()),
+    }
+}
+
+fn rotation_response(outcome: crate::state::RotationOutcome) -> Value {
     let mut response = json!({
         "rotated": true,
         "recoveryCode": outcome.recovery_code,
@@ -1657,16 +2571,30 @@ pub fn rotate_root_response(
         "filesReplaced": outcome.files_replaced,
         "artifactsResigned": outcome.artifacts_resigned,
         "completionPending": outcome.completion_pending,
+        // ADR-165: whether the new passphrase wrap is sealed to this Mac's device key (a bound vault stays bound).
+        "machineLocked": outcome.machine_lock.bound,
         "notResigned": outcome
             .skipped
             .iter()
             .map(|s| json!({ "kind": s.kind, "id": s.id, "reason": s.reason }))
             .collect::<Vec<_>>(),
     });
+    // ADR-165 N5: a passphrase change or a recovery replaced every live node's keypair.
+    if let Some(nodes) = &outcome.nodes_rekeyed {
+        // The ids, as `keystore.bind` answers them.
+        response["nodesRekeyed"] = json!(nodes);
+        response["filesResealed"] = json!(outcome.files_resealed);
+    }
+    if outcome.machine_lock.device_key_created {
+        response["deviceKeyCreated"] = json!(true);
+    }
+    if let Some(why) = &outcome.machine_lock.unsealed_because {
+        response["machineLockRemoved"] = json!(why);
+    }
     if outcome.completion_pending {
         response["meta"] = json!({ "vaultLocked": true });
     }
-    Ok(response)
+    response
 }
 
 /// Ops whose success changes what a disk-backed vault must remember
@@ -1682,6 +2610,10 @@ pub fn rotate_root_response(
 /// before and after it ordered around that write. A generic persist after the
 /// op would be a second write that proves nothing and could mask a failure.
 pub const PERSISTED_OPS: &[&str] = &[
+    // ADR-155: the switchboard writes the signed registry.
+    "settings.set",
+    "settings.revert",
+    "settings.request_decide",
     "entry.create",
     "entry.update",
     "entry.rotate",
@@ -1695,15 +2627,38 @@ pub const PERSISTED_OPS: &[&str] = &[
     "vault.pending_accept",
     "vault.gate_enroll_confirm",
     "vault.gate_verify",
+    // ADR-148 §P2-2: a node's code spends a recovery code or raises the TOTP replay floor; both must
+    // survive a restart, or a spent code is good again.
+    "node.gate_verify",
+    // ADR-148 §P2-4: the enrolled presence keys live in the signed registry. (`presence.unenrol`,
+    // `device.enrol` and `device.remove` write the registry themselves, before memory and files change —
+    // ADR-148 addendum — so they are not listed: a second write would prove nothing.)
+    "presence.enrol",
     "node.create",
     "node.set_workdirs",
     "node.update",
     "node.policy",
     "notes.write",
     "entry.create_batch",
+    "entry.alias",
+    "entry.import_env",
+    // ADR-167: tags are manifest metadata.
+    "entry.tag_set",
+    // ADR-168: a merge removes entries and edits the kept one; the decision memory is a node write.
+    "merge.apply",
+    "merge.auto",
+    "merge.auto_all",
+    "merge.dismiss",
+    "merge.undismiss",
+    "merge.restore_all",
+    // ADR-156: expiry is manifest metadata.
+    "entry.set_expiry",
     "node.reparent",
     "grant.create",
     "grant.revoke",
+    // ADR-135: a node's own second factor lives in the registry like the vault's.
+    "node.gate_enroll_confirm",
+    "node.gate_remove",
 ];
 
 /// Dispatch one op, then — on a disk-backed vault, for an op that changes
@@ -1751,11 +2706,39 @@ fn dispatch_op(
         // ADR-090: `pendingApprovals` is a bare count of the requests still waiting
         // for a person (unexpired, undecided). It names no node, no entry and no
         // requester, so it is safe on an op anyone on the socket may call.
-        "vault.status" => Ok(json!({
-            "locked": state.is_locked(),
-            "initialized": state.is_durable() || state.paths.registry().exists(),
-            "pendingApprovals": state.pending_approvals(now).len(),
-        })),
+        "vault.status" => {
+            let mut body = json!({
+                "locked": state.is_locked(),
+                "initialized": state.is_durable() || state.paths.registry().exists(),
+                "pendingApprovals": state.pending_approvals(now).len(),
+                // ADR-098: Touch ID unlock is set up. A public fact (the wrap file exists), safe before login.
+                "touchIdUnlock": state.touch_id_unlock_on(),
+                // ADR-163: the recovery code can open this vault (the wrap file exists). Also a public fact; it
+                // is what tells the Lock screen and `credmgr recover` whether to offer the way in.
+                "recoveryUnlock": state.recovery_unlock_available(),
+            });
+            // ADR-156: the cross-node anomaly alarm, as a count, for the owner's own login only. An agent, or a
+            // caller with no login, never learns that it (or anyone) tripped it.
+            if state.is_owner_session(scope) {
+                body["anomaliesUnseen"] = json!(state.rate_limiter.unseen_alarms());
+                // ADR-165 M5: a bind record that no longer matches the folder's `vault.id`, said to the owner's
+                // own login only (an agent never learns whether a vault is tied to this Mac, ADR-165 §5), and
+                // audited once. Nothing is repaired.
+                if state.is_durable() {
+                    if let Some(detached) = state.detached_bind_record() {
+                        push_warning(&mut body, crate::state::WARN_BIND_RECORD_DETACHED);
+                        state.note_detached_bind_record(&detached, now);
+                    }
+                }
+            }
+            Ok(body)
+        }
+
+        // ADR-156: the owner has seen the alarm (the app's notice bar, `credmgr status --ack`). Owner only.
+        "vault.anomalies_ack" => {
+            owner_session(state, scope)?;
+            Ok(json!({ "acknowledged": state.rate_limiter.acknowledge_alarms() }))
+        }
 
         // ADR-063: with a passphrase, the live unlock — prove it, load the
         // vault from disk if this process has not, then the gate. Without
@@ -1763,16 +2746,44 @@ fn dispatch_op(
         // already holds (a test fixture's; the daemon's inert placeholder
         // refuses every passphrase, which is the safe reading of "none sent").
         "vault.unlock" => {
-            let outcome = match params["passphrase"].as_str() {
-                Some(passphrase) => state
-                    .unlock_with_passphrase(SecretBox::new(Box::new(passphrase.to_string())), now)
-                    .map_err(|e| match e {
-                        UnlockError::WrongPassphrase => OpError::WrongPassphrase,
-                        UnlockError::Integrity(e) => OpError::Internal(format!(
-                            "the vault on disk failed its integrity check and was not opened: {e}"
-                        )),
-                    }),
-                None => state.unlock(now).map_err(|_| OpError::WrongPassphrase),
+            let outcome = if params.get("method").and_then(Value::as_str) == Some("device") {
+                // ADR-098: the Touch ID unlock. The Secure Enclave opens the root key (the user
+                // authenticates); everything after that is the passphrase unlock's own tail.
+                //
+                // ADR-148 §P1-5: a biometric proves a person is at the Mac, not that the person meant to
+                // hand *this caller* an owner session. A caller the broker identifies as an agent (an agent
+                // token, or no token from inside a registered project folder — where agents run) never gets
+                // one, and is refused before any prompt appears. Anyone else gets a prompt that names the
+                // process that asked, and a dismissed prompt counts against the uid's backoff (server.rs).
+                if is_identified_agent(state, scope) {
+                    return Err(OpError::CapabilityNotHeld {
+                        capability: Capability::Admin,
+                    });
+                }
+                let helper = state.presence_helper().ok_or(OpError::PresenceFailed {
+                    operation: "vault.unlock".to_string(),
+                    reason: "unavailable",
+                })?;
+                let reason = device_unlock_reason(params);
+                state
+                    .unlock_with_device(&helper, now, &reason)
+                    .map_err(device_unlock_error)
+            } else {
+                match params["passphrase"].as_str() {
+                    Some(passphrase) => state
+                        .unlock_with_passphrase(
+                            SecretBox::new(Box::new(passphrase.to_string())),
+                            now,
+                        )
+                        .map_err(|e| match e {
+                            UnlockError::WrongPassphrase => OpError::WrongPassphrase,
+                            UnlockError::Integrity(e) => OpError::Internal(format!(
+                                "the vault on disk failed its integrity check and was not opened: {e}"
+                            )),
+                            UnlockError::MachineLock(m) => machine_lock_refused(&m),
+                        }),
+                    None => state.unlock(now).map_err(|_| OpError::WrongPassphrase),
+                }
             };
             match outcome? {
                 false => Ok(json!({ "locked": false, "token": mint_session_token(state, now) })),
@@ -1785,6 +2796,453 @@ fn dispatch_op(
                     expires_in: crate::state::GATE_UNLOCK_TTL_SECONDS as u32,
                 }),
             }
+        }
+
+        // ADR-098 — presence and the Touch ID unlock (`docs/04 §5.3`).
+        //
+        // ADR-098 — the sealed ("orphaned") entries. `orphan.list` shows what is there: names only, as
+        // the access rules have always said ("names stay, values become human-only").
+        "orphan.list" => {
+            owner_session(state, scope)?;
+            let manifests = state.manifests.read().expect("manifests poisoned");
+            let rows: Vec<Value> = manifests
+                .get(ORPHAN_ID)
+                .map(|b| {
+                    b.entries
+                        .iter()
+                        .map(|e| json!({ "entry": e.id, "name": e.name, "ref": e.r#ref, "type": e.entry_type, "modified": e.modified }))
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(json!({ "entries": rows }))
+        }
+
+        // `orphan.reveal` is the one door R0 leaves open: the owner, a fresh second factor, and a presence
+        // proof for this exact request. Every reveal costs all three; nothing is cached (the second-factor
+        // window is dropped as soon as it is used) and there is no CLI flag or MCP tool for it.
+        "orphan.reveal" => {
+            owner_session(state, scope)?;
+            let entry_id = params["entry"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.entry is required".into()))?;
+            let field_ids = entry_doc::opt_string_list(params.get("fieldIds"), "fieldIds")?;
+            if !scope.holds(Capability::Reveal) {
+                return Err(OpError::CapabilityNotHeld {
+                    capability: Capability::Reveal,
+                });
+            }
+            let entry = {
+                let manifests = state.manifests.read().expect("manifests poisoned");
+                manifests
+                    .get(ORPHAN_ID)
+                    .and_then(|b| b.entries.iter().find(|e| e.id == entry_id).cloned())
+            }
+            .ok_or_else(|| OpError::NotFound(format!("no sealed entry {entry_id}")))?;
+            require_fresh_second_factor(state, now)?;
+            require_presence(state, scope, "orphan.reveal", params, now)?;
+            // R0, asked of the resolver itself with the attestation this request just earned.
+            let native = access::Scope {
+                node_id: GLOBAL_ID.to_string(),
+                origin: Origin::Native,
+                presence_attested: true,
+            };
+            {
+                let registry = state.registry.read().expect("registry poisoned");
+                let locked_nodes = state.locked_nodes.read().expect("locked_nodes poisoned");
+                let ctx = AccessContext {
+                    registry: &registry,
+                    vault_locked: state.is_locked(),
+                    locked_nodes: &locked_nodes,
+                    now,
+                };
+                let decision = access::resolve(
+                    &ctx,
+                    &native,
+                    &access::Target::Node(ORPHAN_ID.to_string()),
+                    Capability::Reveal,
+                );
+                if !decision.is_allow() {
+                    return Err(OpError::CapabilityNotHeld {
+                        capability: Capability::Reveal,
+                    });
+                }
+            }
+            use secrecy::ExposeSecret;
+            let root = state
+                .reauth_root_key("orphan reveal")
+                .map_err(|_| OpError::VaultLocked)?;
+            let public = state
+                .node_public_key(ORPHAN_ID)
+                .ok_or_else(|| OpError::Internal("the orphan node has no public key".into()))?;
+            let cold_bytes = credmgr_store::atomic::read(&state.paths.orphan_key())
+                .map_err(|_| OpError::Internal("the orphan cold key is missing".into()))?;
+            let secret = credmgr_core::cold::open_orphan_cold(
+                root.expose_secret(),
+                &cold_bytes,
+                Some(&public),
+            )
+            .map_err(|_| OpError::Internal("the orphan cold key does not open".into()))?;
+            let loaded = entry_doc::load(state, ORPHAN_ID, entry_id, &secret, Some(&entry))?;
+            drop(secret);
+            // No second-factor window survives a sealed read.
+            state.drop_elevations();
+            entry_doc::reveal_json(ORPHAN_ID, entry_id, &loaded.doc, field_ids.as_deref())
+        }
+
+        // ADR-150 — confirm it is you. The owner's own login proves a person is at the keyboard, with the vault
+        // passphrase or a Touch ID proof for this op, and the vault's "confirm before showing secrets" policy is
+        // then met for this login: for the trust window, or for one request. A wrong passphrase counts in the
+        // per-uid unlock backoff (`server.rs`). Never for an agent, never an MCP tool.
+        "session.confirm" => {
+            owner_session(state, scope)?;
+            let session = session_public_id(state, scope).ok_or(OpError::SessionExpired)?;
+            let method = match params.get("passphrase") {
+                Some(p) => {
+                    // Optional: absent means Touch ID. Present, it must be text.
+                    let Some(p) = p.as_str() else {
+                        return Err(OpError::Malformed(
+                            "params.passphrase must be a string".into(),
+                        ));
+                    };
+                    state
+                        .confirm_passphrase(SecretBox::new(Box::new(p.to_string())))
+                        .map_err(|e| match e {
+                            crate::state::ConfirmPassphraseError::MachineLock(m) => {
+                                machine_lock_refused(&m)
+                            }
+                            crate::state::ConfirmPassphraseError::WrongPassphrase => {
+                                OpError::WrongPassphrase
+                            }
+                        })?;
+                    "passphrase"
+                }
+                None => {
+                    require_presence(state, scope, "session.confirm", params, now)?;
+                    "presence"
+                }
+            };
+            state.record_confirmation(&session, now);
+            Ok(json!({
+                "confirmed": true,
+                "method": method,
+                "expiresIn": state.reveal_confirm_policy().confirmation_lifetime(),
+            }))
+        }
+
+        // `presence.status` tells the owner what this Mac can do and what is set up. Public facts only.
+        "presence.status" => {
+            owner_session(state, scope)?;
+            let helper = state.presence_helper();
+            let probe = helper.as_ref().and_then(|h| h.probe().ok());
+            let keys: Vec<Value> = state
+                .presence_keys()
+                .iter()
+                .map(|k| json!({ "id": k.id, "label": k.label, "createdAt": k.created_at }))
+                .collect();
+            Ok(json!({
+                "helper": helper.is_some(),
+                "secureEnclave": probe.as_ref().is_some_and(|p| p.secure_enclave),
+                "biometry": probe.as_ref().map_or("none", |p| p.biometry.as_str()),
+                "passcode": probe.as_ref().is_some_and(|p| p.passcode),
+                "enrolled": keys,
+                "touchIdUnlock": state.touch_id_unlock_on(),
+            }))
+        }
+
+        // Ask for a challenge for one of the presence-gated ops, with its exact params. The answer
+        // carries the digest the Secure Enclave must sign and a sentence for the Touch ID dialog.
+        "presence.challenge" => {
+            owner_session(state, scope)?;
+            let target = params["op"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.op is required".into()))?;
+            // ADR-148 §P2-4: `possession: true` asks for the challenge the key being enrolled signs — proof the
+            // client holds its private half. Only for `presence.enrol`, and issued with nothing enrolled yet.
+            if params.get("possession").and_then(Value::as_bool) == Some(true) {
+                if target != "presence.enrol" {
+                    return Err(OpError::Malformed(
+                        "a possession challenge is only for presence.enrol".into(),
+                    ));
+                }
+                let inner = params.get("params").cloned().unwrap_or(Value::Null);
+                let session = session_public_id(state, scope).ok_or(OpError::SessionExpired)?;
+                let issued = state.possession_challenge(&session, &inner, now);
+                let b64 = base64::engine::general_purpose::STANDARD;
+                return Ok(json!({
+                    "nonce": base64::Engine::encode(&b64, issued.nonce),
+                    "digest": base64::Engine::encode(&b64, issued.digest),
+                    "expiresIn": issued.expires_in,
+                    "reason": "Prove this Mac holds the new presence key",
+                    "possession": true,
+                }));
+            }
+            let reason = presence_reason(target).ok_or_else(|| {
+                OpError::Malformed(format!("{target} does not use a presence proof"))
+            })?;
+            let inner = params.get("params").cloned().unwrap_or(Value::Null);
+            // ADR-164 review P2-1: a token's sentence names what the proof is for (node, capabilities, lifetime).
+            let reason: String = agent_tokens::presence_reason(state, target, &inner, now)
+                .unwrap_or_else(|| reason.to_string());
+            let session = session_public_id(state, scope).ok_or(OpError::SessionExpired)?;
+            let issued = state
+                .presence_challenge(&session, target, &inner, now)
+                .map_err(|d| OpError::PresenceFailed {
+                    operation: target.to_string(),
+                    reason: d.reason(),
+                })?;
+            let b64 = base64::engine::general_purpose::STANDARD;
+            Ok(json!({
+                "nonce": base64::Engine::encode(&b64, issued.nonce),
+                "digest": base64::Engine::encode(&b64, issued.digest),
+                "expiresIn": issued.expires_in,
+                "reason": reason,
+            }))
+        }
+
+        // Enrol this Mac's Secure Enclave presence key. The first one needs only an admin session and a
+        // fresh second factor; once one exists, adding or removing another needs the first.
+        "presence.enrol" => {
+            human_admin_on(state, scope, GLOBAL_ID, now)?;
+            require_fresh_second_factor(state, now)?;
+            if !state.presence_keys().is_empty() {
+                require_presence(state, scope, "presence.enrol", params, now)?;
+            }
+            let public = params["publicKey"]
+                .as_str()
+                .and_then(|s| {
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, s).ok()
+                })
+                .ok_or_else(|| OpError::Malformed("params.publicKey must be base64".into()))?;
+            let label = params["label"].as_str().unwrap_or("This Mac");
+            // ADR-148 §P2-4: proof of possession — the new key's own signature over a broker nonce, checked
+            // last (after the finger of an already enrolled key), so a refused request never burns it.
+            let session = session_public_id(state, scope).ok_or(OpError::SessionExpired)?;
+            state
+                .possession_attest(&session, &public, params, now)
+                .map_err(|d| match d {
+                    crate::state::presence::PresenceDenied::Missing => OpError::Malformed(
+                        "params.possession is required: sign a `presence.challenge` with `possession: true` \
+                         using the key being enrolled"
+                            .into(),
+                    ),
+                    other => OpError::PresenceFailed {
+                        operation: "presence.enrol".to_string(),
+                        reason: other.reason(),
+                    },
+                })?;
+            let record = state
+                .presence_enrol(&public, label, now)
+                .map_err(OpError::Malformed)?;
+            Ok(json!({ "id": record.id, "label": record.label, "createdAt": record.created_at }))
+        }
+
+        "presence.unenrol" => {
+            human_admin_on(state, scope, GLOBAL_ID, now)?;
+            require_fresh_second_factor(state, now)?;
+            let id = params["id"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.id is required".into()))?;
+            if !state.presence_keys().is_empty() {
+                require_presence(state, scope, "presence.unenrol", params, now)?;
+            }
+            let removed = state.presence_unenrol(id, now).map_err(OpError::Internal)?;
+            Ok(json!({ "removed": removed }))
+        }
+
+        // Set up (or remove) unlocking this vault with Touch ID. Needs the vault open, an admin session
+        // and a fresh second factor; with a presence key enrolled it needs a presence proof too.
+        "device.enrol" => {
+            human_admin_on(state, scope, GLOBAL_ID, now)?;
+            require_fresh_second_factor(state, now)?;
+            if !state.presence_keys().is_empty() {
+                require_presence(state, scope, "device.enrol", params, now)?;
+            }
+            let helper = state.presence_helper().ok_or(OpError::PresenceFailed {
+                operation: "device.enrol".to_string(),
+                reason: "unavailable",
+            })?;
+            state
+                .device_enrol(&helper, now)
+                .map_err(OpError::Internal)?;
+            Ok(json!({ "touchIdUnlock": true }))
+        }
+
+        "device.remove" => {
+            human_admin_on(state, scope, GLOBAL_ID, now)?;
+            require_fresh_second_factor(state, now)?;
+            if !state.presence_keys().is_empty() {
+                require_presence(state, scope, "device.remove", params, now)?;
+            }
+            state.device_remove(now).map_err(OpError::Internal)?;
+            Ok(json!({ "touchIdUnlock": false }))
+        }
+
+        // ADR-165 — the machine lock (ADR-144's smallest safe version). Owner only: an agent token, or a token-less
+        // caller (an agent in a project folder looks like one), is refused before any file is read. `status`
+        // reads. `bind` is a root rotation sealed to this Mac's device key, then a re-key of every live node
+        // (review P0-1), in two phases (review N1): `prepare` takes the passphrase and the current recovery code,
+        // both proven and both counted in the back-off (review P1-1), and answers the new recovery code without
+        // changing anything durable; `commit` takes the new code typed back and only then writes. `unbind` removes a protection, so
+        // it needs a fresh second factor where one is enrolled, a Touch ID proof where a presence key is
+        // enrolled, and the passphrase where neither is (review P2-4). The recovery code never depends on the
+        // device key.
+        "keystore.status" => {
+            if is_identified_agent(state, scope) {
+                return Err(OpError::CapabilityNotHeld {
+                    capability: Capability::Admin,
+                });
+            }
+            owner_session(state, scope)?;
+            Ok(machine_lock_status_json(&state.machine_lock_status()))
+        }
+
+        "keystore.bind" => {
+            if is_identified_agent(state, scope) {
+                return Err(OpError::CapabilityNotHeld {
+                    capability: Capability::Admin,
+                });
+            }
+            human_admin_on(state, scope, GLOBAL_ID, now)?;
+            owner_session(state, scope)?;
+            // Review M4: the prepared bind belongs to the login that prepared it (owner_session proved there is
+            // one).
+            let session = scope.token_id.clone().unwrap_or_default();
+            // Review N1: two phases. `prepare` proves the passphrase and the current recovery code and answers
+            // the new code, changing nothing durable; `commit` takes the new code typed back and only then
+            // turns the lock on. `cancel` forgets a prepared bind.
+            match params.get("phase").and_then(Value::as_str) {
+                Some("prepare") => {
+                    // Required for `prepare` only (commit and cancel take neither), so the bridge sends them as
+                    // optional and the refusal is per phase.
+                    let passphrase = params
+                        .get("passphrase")
+                        .and_then(Value::as_str)
+                        .filter(|p| !p.is_empty());
+                    let Some(passphrase) = passphrase else {
+                        return Err(OpError::Malformed(
+                            "params.passphrase is required to prepare: turning the machine lock on replaces the \
+                             root key, and the new passphrase file is made from it"
+                                .into(),
+                        ));
+                    };
+                    let code = params
+                        .get("recoveryCode")
+                        .and_then(Value::as_str)
+                        .filter(|c| !c.trim().is_empty());
+                    let Some(code) = code else {
+                        return Err(OpError::Malformed(
+                            "params.recoveryCode is required to prepare: the current recovery code is proven \
+                             before the lock is turned on, so a lost device key can never lock you out"
+                                .into(),
+                        ));
+                    };
+                    let prepared = state
+                        .machine_lock_bind_prepare(
+                            secrecy::SecretBox::new(Box::new(passphrase.to_string())),
+                            code,
+                            &session,
+                            now,
+                        )
+                        .map_err(machine_lock_op_error)?;
+                    let mut body = machine_lock_status_json(&state.machine_lock_status());
+                    body["phase"] = json!("prepare");
+                    body["changed"] = json!(false);
+                    body["already"] = json!(prepared.already);
+                    body["newRecoveryCode"] = json!(prepared.recovery_code);
+                    body["expiresIn"] = json!(prepared.expires_in);
+                    body["nodesToRekey"] = json!(prepared.pre_bind_nodes);
+                    Ok(body)
+                }
+                Some("commit") => {
+                    let typed = params
+                        .get("recoveryCode")
+                        .and_then(Value::as_str)
+                        .filter(|c| !c.trim().is_empty());
+                    let bound = state
+                        .machine_lock_bind_commit(typed, &session, now)
+                        .map_err(machine_lock_op_error)?;
+                    // No second-factor window survives a re-key (as `node.rekey`).
+                    if !bound.nodes_rekeyed.is_empty() {
+                        state.drop_elevations();
+                    }
+                    let mut body = machine_lock_status_json(&state.machine_lock_status());
+                    body["phase"] = json!("commit");
+                    body["changed"] = json!(!bound.already);
+                    body["deviceKeyCreated"] = json!(bound.device_key_created);
+                    body["nodesRekeyed"] = json!(bound.nodes_rekeyed);
+                    body["rekeyFailed"] = json!(bound
+                        .rekey_failed
+                        .iter()
+                        .map(|(node, reason)| json!({ "node": node, "reason": reason }))
+                        .collect::<Vec<_>>());
+                    // Review M1: archives from before the bind moved out of the vault folder.
+                    body["archivesMoved"] = json!(bound.archives_moved);
+                    body["archivesNotMoved"] = json!(bound
+                        .archives_not_moved
+                        .iter()
+                        .map(|(file, reason)| json!({ "file": file, "reason": reason }))
+                        .collect::<Vec<_>>());
+                    if let Some(rotation) = bound.rotation {
+                        body["orphanKeyReplaced"] = json!(rotation.orphan_key_replaced);
+                        body["rotation"] = rotation_response(rotation);
+                        // The owner typed the code back; it is not sent again.
+                        if let Some(obj) = body["rotation"].as_object_mut() {
+                            obj.remove("recoveryCode");
+                        }
+                        body["completionPending"] = body["rotation"]["completionPending"].clone();
+                        if body["completionPending"] == json!(true) {
+                            body["meta"] = json!({ "vaultLocked": true });
+                        }
+                    }
+                    Ok(body)
+                }
+                Some("cancel") => {
+                    state
+                        .cancel_machine_lock_bind(&session, now)
+                        .map_err(machine_lock_op_error)?;
+                    let mut body = machine_lock_status_json(&state.machine_lock_status());
+                    body["phase"] = json!("cancel");
+                    body["changed"] = json!(false);
+                    Ok(body)
+                }
+                _ => Err(OpError::Malformed(
+                    "params.phase is required: \"prepare\" (with the passphrase and the current recovery code; \
+                     answers the new recovery code and changes nothing), then \"commit\" (with the new recovery \
+                     code typed back), or \"cancel\""
+                        .into(),
+                )),
+            }
+        }
+
+        "keystore.unbind" => {
+            if is_identified_agent(state, scope) {
+                return Err(OpError::CapabilityNotHeld {
+                    capability: Capability::Admin,
+                });
+            }
+            human_admin_on(state, scope, GLOBAL_ID, now)?;
+            owner_session(state, scope)?;
+            if state.is_locked() {
+                return Err(OpError::VaultLocked);
+            }
+            require_fresh_second_factor(state, now)?;
+            let presence_enrolled = !state.presence_keys().is_empty();
+            if presence_enrolled {
+                require_presence(state, scope, "keystore.unbind", params, now)?;
+            }
+            let passphrase = params
+                .get("passphrase")
+                .and_then(Value::as_str)
+                .filter(|p| !p.is_empty())
+                .map(|p| secrecy::SecretBox::new(Box::new(p.to_string())));
+            let require_passphrase =
+                !presence_enrolled && !state.is_gate_confirmed(GATE_SCOPE_VAULT);
+            let change = state
+                .machine_lock_unbind(passphrase, require_passphrase)
+                .map_err(machine_lock_op_error)?;
+            let mut body = machine_lock_status_json(&state.machine_lock_status());
+            body["changed"] = json!(!change.already);
+            Ok(body)
         }
 
         // ADR-064 — the last door (`07_TWO_FACTOR.md §4`): passphrase plus
@@ -1803,10 +3261,51 @@ fn dispatch_op(
             match state.gate_recover(SecretBox::new(Box::new(passphrase.to_string())), code, now) {
                 Ok(had_gate) => Ok(json!({ "gateReset": had_gate })),
                 Err(GateRecoverError::WrongFactors) => Err(OpError::WrongPassphrase),
+                Err(GateRecoverError::MachineLock(m)) => Err(machine_lock_refused(&m)),
                 Err(GateRecoverError::Store(e)) => Err(OpError::Internal(format!(
                     "the gate could not be reset: {e}"
                 ))),
             }
+        }
+
+        // ADR-163 — the passphrase is forgotten: open the vault with the recovery code alone, and in the same
+        // call set a new passphrase and issue a new recovery code (the used one stops opening anything). No
+        // login is needed (the caller is locked out by definition); the code, and an enrolled second factor,
+        // are the authorisation. Never an agent: a caller the broker identifies as one is refused before any
+        // code is read, as for the Touch ID unlock, and the op is on the MCP forbidden list. `server.rs` puts
+        // it behind the per-uid unlock backoff (a wrong code and a wrong second factor both count), runs it
+        // alone (it is a root rotation), and audits every attempt — one refused while the vault is locked is
+        // written by the next unlock. Neither secret is ever echoed, logged or audited.
+        "vault.recover" => {
+            if is_identified_agent(state, scope) {
+                return Err(OpError::CapabilityNotHeld {
+                    capability: Capability::Admin,
+                });
+            }
+            let code = params["recoveryCode"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.recoveryCode is required".into()))?;
+            let new_passphrase = params["newPassphrase"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.newPassphrase is required".into()))?;
+            if code.trim().is_empty() || new_passphrase.is_empty() {
+                return Err(OpError::Malformed(
+                    "params.recoveryCode and params.newPassphrase must not be empty".into(),
+                ));
+            }
+            if new_passphrase.chars().count() > SET_PASSPHRASE_MAX_CHARS {
+                return Err(OpError::Malformed(format!(
+                    "params.newPassphrase is longer than {SET_PASSPHRASE_MAX_CHARS} characters"
+                )));
+            }
+            let second_factor = match params.get("code") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(c)) => Some(c.as_str()),
+                Some(_) => {
+                    return Err(OpError::Malformed("params.code must be a string".into()));
+                }
+            };
+            recover_response(state, scope, code, new_passphrase, second_factor, now)
         }
 
         // `07 §3` step 3: completes an unlock that returned
@@ -1996,6 +3495,8 @@ fn dispatch_op(
                 "node": scope.node_id,
                 "capabilities": scope.capabilities,
                 "reachable": reachable,
+                // ADR-140: the caller's own node's security level.
+                "level": security_level_of(state, &scope.node_id).as_str(),
             }))
         }
 
@@ -2016,10 +3517,10 @@ fn dispatch_op(
             if let Some(obj) = params.as_object() {
                 if let Some(k) = obj
                     .keys()
-                    .find(|k| !["length", "symbols", "pronounceable"].contains(&k.as_str()))
+                    .find(|k| !["length", "symbols", "pronounceable", "hex"].contains(&k.as_str()))
                 {
                     return Err(OpError::Malformed(format!(
-                        "params.{k} is not a generator option (length, symbols, pronounceable)"
+                        "params.{k} is not a generator option (length, symbols, pronounceable, hex)"
                     )));
                 }
             }
@@ -2042,10 +3543,23 @@ fn dispatch_op(
                         OpError::Malformed("params.length must be a whole number".into())
                     })?,
             };
+            let hex = flag("hex", params.get("hex"), false)?;
+            let pronounceable = flag("pronounceable", params.get("pronounceable"), false)?;
+            // `hex` is its own alphabet: asking for symbols or a pronounceable value as well is a contradiction,
+            // refused rather than quietly ignored. `symbols` left out is simply off for hex.
+            let symbols = flag("symbols", params.get("symbols"), true)?;
+            let symbols_given = params.get("symbols").filter(|v| !v.is_null());
+            if hex && (pronounceable || matches!(symbols_given, Some(Value::Bool(true)))) {
+                return Err(OpError::Malformed(
+                    "params.hex cannot be combined with params.pronounceable or params.symbols"
+                        .into(),
+                ));
+            }
             let options = generate::Params {
                 length,
-                symbols: flag("symbols", params.get("symbols"), true)?,
-                pronounceable: flag("pronounceable", params.get("pronounceable"), false)?,
+                symbols: symbols && !hex,
+                pronounceable,
+                hex,
             };
             let made = generate::generate(options, &mut OsRng).map_err(|e| match e {
                 GenerateError::LengthOutOfRange { .. } => OpError::Malformed(format!(
@@ -2059,6 +3573,7 @@ fn dispatch_op(
                 "length": options.length,
                 "symbols": options.symbols,
                 "pronounceable": options.pronounceable,
+                "hex": options.hex,
                 "entropyBits": made.entropy_bits,
             }))
         }
@@ -2127,20 +3642,24 @@ fn dispatch_op(
                 let counts = manifests.get(node_id).map(|m| m.counts).unwrap_or_default();
                 let locked = state.is_locked() || state.is_node_locked(node_id);
                 // `07_TWO_FACTOR.md §2`: `requireTwoFactor` governs whether
-                // *reveal* on this node needs gate 2FA at all; §4's "refusal
-                // to build a lockout" means a node cannot carry `reveal`/
-                // `always` unless the vault-wide gate already exists, so
-                // "policy requires it but no gate is enrolled at all" is not
-                // a reachable state to represent honestly here — only the
-                // enrolled-but-unconfirmed vs. confirmed distinction is.
+                // *reveal* on this node needs gate 2FA at all. Issue #37: the
+                // value reflects enrolment, not the policy alone. A vault with
+                // no second factor says `none` on every node, whatever the
+                // policy (the default `reveal` asks for nothing until a gate is
+                // confirmed - `second_factor_gate` does nothing without one);
+                // `enrolled` is an enrolment begun and not yet confirmed (the
+                // window draws a warning ring); `required` is a confirmed vault
+                // gate under a policy that asks for it.
                 let twofa = if node.policy.require_two_factor
                     == credmgr_core::registry::TwoFactorRequirement::Never
                 {
                     "none"
                 } else if state.is_gate_confirmed(GATE_SCOPE_VAULT) {
                     "required"
-                } else {
+                } else if state.is_gate_enrolling(GATE_SCOPE_VAULT) {
                     "enrolled"
+                } else {
+                    "none"
                 };
                 let mut row = if node.policy.private_names && !owner {
                     // ADR-083: an opaque row — the id and the shape of the graph,
@@ -2155,6 +3674,7 @@ fn dispatch_op(
                         "kind": node.kind,
                         "depth": node.depth,
                         "parentId": node.parent_id,
+                        "securityLevel": node.policy.security_level,
                         "entryCount": shown,
                         "counts": { "entries": shown, "totp": Value::Null },
                         "gate": { "locked": locked, "twofa": twofa },
@@ -2171,6 +3691,7 @@ fn dispatch_op(
                         "kind": node.kind,
                         "depth": node.depth,
                         "parentId": node.parent_id,
+                        "securityLevel": node.policy.security_level,
                         "counts": { "entries": counts.entries, "totp": counts.totp },
                         "gate": { "locked": locked, "twofa": twofa },
                         // No integrity/expiry computation exists yet (Phase 7);
@@ -2216,11 +3737,37 @@ fn dispatch_op(
                         .collect(),
                 );
             }
-            Ok(json!({
+            // ADR-120 (C4 F-10): what is in Orphaned, by name. `entry.list` on the
+            // orphan node is refused to everyone (R0), and the snapshot leaves the
+            // orphan node itself out for the same reason, so a window that only
+            // asks the usual questions finds Orphaned empty after a seal. The
+            // names are what the person sealed - they could list them a moment
+            // before - so the vault owner's own login session gets them here:
+            // `id` and `name`, never a value, a label or a count of fields.
+            // Absent for every other caller (an agent, a token, a grantee).
+            if state.is_owner_session(scope) && scope.holds(Capability::Admin) {
+                let orphaned: Vec<Value> = manifests
+                    .get(ORPHAN_ID)
+                    .map(|m| {
+                        m.entries
+                            .iter()
+                            .map(|e| json!({ "id": e.id, "name": e.name }))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                meta["orphaned"] = Value::Array(orphaned);
+            }
+            let mut snapshot = json!({
                 "nodes": nodes,
                 "links": links,
                 "meta": meta,
-            }))
+            });
+            // ADR-150: the owner's own login is told the vault's "confirm before showing secrets" policy, so
+            // Settings can show it. Additive, and absent for every other caller.
+            if state.is_owner_session(scope) {
+                snapshot["revealConfirm"] = json!(state.reveal_confirm_policy());
+            }
+            Ok(snapshot)
         }
 
         // `10_API_AND_MCP.md §1`'s `audit.tail` — plaintext, like
@@ -2313,9 +3860,24 @@ fn dispatch_op(
                     capability: Capability::Admin,
                 });
             }
-            Err(OpError::PresenceRequired {
-                operation: "audit.get".to_string(),
-            })
+            // ADR-098: the unredacted single record, behind a live presence proof.
+            let id = params["id"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.id is required".into()))?;
+            require_presence(state, scope, "audit.get", params, now)?;
+            match credmgr_store::audit::get(&state.paths, id)
+                .map_err(|e| OpError::Internal(e.to_string()))?
+            {
+                Some(r) => Ok(json!({
+                    "id": r.id, "timestamp": r.timestamp,
+                    "actor": crate::token::redact_bearer_tokens(&r.actor),
+                    "action": r.action, "node": r.node_id, "entry": r.entry_id,
+                    "decision": r.decision,
+                    "detail": r.detail.as_deref().map(crate::token::redact_bearer_tokens),
+                    "generation": r.generation,
+                })),
+                None => Err(OpError::NotFound(format!("no audit record {id}"))),
+            }
         }
 
         "entry.list" => {
@@ -2349,6 +3911,24 @@ fn dispatch_op(
                 ));
             }
             second_factor_gate(state, scope, target_node, GateKind::Read, now)?;
+            // ADR-167: `tag` narrows the list to the entries carrying it, among exactly those the caller
+            // could already list on this one node. A node that hides its names hides its tags too, so a
+            // filtered count there would say what a tag is on: refused as a name search is.
+            let tag = tags_ops::tag_filter(params.get("tag"))?;
+            if tag.is_some() && node_hides_names(state, scope, target_node) {
+                return Err(access_denied_error(
+                    state,
+                    scope,
+                    target_node,
+                    Capability::List,
+                    "private_names",
+                    now,
+                ));
+            }
+            let mut visible = visible;
+            if let Some(tag) = &tag {
+                visible.retain(|e| e.tags.contains(tag));
+            }
             if node_hides_names(state, scope, target_node) {
                 // ADR-083: the node is a count and nothing else.
                 let generation = manifests
@@ -2387,13 +3967,22 @@ fn dispatch_op(
                 visible
                     .iter()
                     .map(|e| {
-                        json!({
+                        let mut row = json!({
                             "id": e.id, "name": e.name, "type": e.entry_type,
                             "sensitivity": e.sensitivity, "fieldCount": e.field_count,
                             "hasTotp": e.has_totp,
                             "modified": e.modified, "rotatedAt": e.rotated_at,
                             "expiresAt": e.expires_at,
-                        })
+                        });
+                        // ADR-121: present only when the entry has aliases.
+                        if !e.aliases.is_empty() {
+                            row["aliases"] = json!(e.aliases);
+                        }
+                        // ADR-167: present only when the entry has tags.
+                        if !e.tags.is_empty() {
+                            row["tags"] = json!(e.tags);
+                        }
+                        row
                     })
                     .collect()
             });
@@ -2416,7 +4005,299 @@ fn dispatch_op(
             if let Some(entries_metadata) = entries_metadata {
                 body["entries"] = Value::Array(entries_metadata);
             }
+            if let Some(tag) = tag {
+                body["tag"] = json!(tag);
+            }
             Ok(body)
+        }
+
+        // ADR-156: the post-launch quick wins. The bodies live in `ops/quick_ops.rs`; the arms read their
+        // params here, with literal keys, so the desktop bridge's drift guard can see them.
+        "entry.set_expiry" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let entry_id = params["entry"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.entry is required".into()))?;
+            let expected_generation = params["generation"]
+                .as_u64()
+                .ok_or_else(|| OpError::Malformed("params.generation is required".into()))?;
+            // Exactly one of `expiresAt` (unix seconds) and `clear: true` — a missing value never clears.
+            // Both are optional on their own, so each is read into a binding first.
+            let clear = params["clear"].as_bool() == Some(true);
+            let given = params.get("expiresAt").filter(|v| !v.is_null());
+            let expires_at = match (given, clear) {
+                (Some(v), false) => Some(v.as_i64().ok_or_else(|| {
+                    OpError::Malformed("params.expiresAt is unix seconds".into())
+                })?),
+                (None, true) => None,
+                _ => {
+                    return Err(OpError::Malformed(
+                        "give params.expiresAt (unix seconds) or params.clear: true, not both"
+                            .into(),
+                    ))
+                }
+            };
+            quick_ops::set_expiry(
+                state,
+                scope,
+                target_node,
+                entry_id,
+                expected_generation,
+                expires_at,
+                now,
+            )
+        }
+
+        // ADR-158 — move an entry to another node, re-encrypted to that node's key (crash-safe,
+        // `state/move_entry.rs`). Owner, `Admin` on both nodes, fresh second factors, a presence proof.
+        "entry.move" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let entry_id = params["entry"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.entry is required".into()))?;
+            let destination = params["to"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.to is required".into()))?;
+            let expected_generation = params["generation"]
+                .as_u64()
+                .ok_or_else(|| OpError::Malformed("params.generation is required".into()))?;
+            let reason = params.get("reason").filter(|v| !v.is_null());
+            let reason = match reason {
+                None => None,
+                Some(v) => Some(
+                    v.as_str()
+                        .ok_or_else(|| OpError::Malformed("params.reason is a string".into()))?,
+                ),
+            };
+            move_ops::entry_move(
+                state,
+                scope,
+                target_node,
+                entry_id,
+                destination,
+                expected_generation,
+                reason,
+                params,
+                now,
+            )
+        }
+
+        // ADR-161 — the doctor's tidy-up scan, phase 1: a report and a preview plan, never a value and never a
+        // write (`ops/doctor_ops.rs`). The owner's login with `Admin` on `global`, as `audit.report`.
+        "vault.doctor_scan" => {
+            let days = |given: Option<&Value>, key: &str, default: u64| -> Result<u64, OpError> {
+                match given {
+                    None | Some(Value::Null) => Ok(default),
+                    Some(v) => v.as_u64().ok_or_else(|| {
+                        OpError::Malformed(format!("params.{key} is a whole number of days"))
+                    }),
+                }
+            };
+            let stale_days = days(
+                params.get("staleDays"),
+                "staleDays",
+                doctor_ops::STALE_DAYS_DEFAULT,
+            )?;
+            let expiring_days = days(
+                params.get("expiringDays"),
+                "expiringDays",
+                doctor_ops::EXPIRING_DAYS_DEFAULT,
+            )?;
+            doctor_ops::doctor_scan(state, scope, stale_days, expiring_days, now)
+        }
+
+        // ADR-168 — merge suggestions and merges inside one node, and the node's decision memory
+        // (`ops/merge_ops.rs`). The owner's login with `Admin` on the node; never across a node.
+        "merge.suggestions" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let include_dismissed = match params.get("includeDismissed") {
+                None | Some(Value::Null) => false,
+                Some(Value::Bool(b)) => *b,
+                Some(_) => {
+                    return Err(OpError::Malformed(
+                        "params.includeDismissed must be a boolean".into(),
+                    ))
+                }
+            };
+            merge_ops::suggestions(state, scope, target_node, include_dismissed, now)
+        }
+
+        "merge.apply" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let keep = params["keep"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.keep is required".into()))?;
+            let expected_generation = params["generation"]
+                .as_u64()
+                .ok_or_else(|| OpError::Malformed("params.generation is required".into()))?;
+            let raw = params["drop"].as_array().ok_or_else(|| {
+                OpError::Malformed("params.drop is required (the entry ids to merge in)".into())
+            })?;
+            let drops = raw
+                .iter()
+                .map(|v| v.as_str().map(str::to_string))
+                .collect::<Option<Vec<String>>>()
+                .ok_or_else(|| OpError::Malformed("params.drop holds entry ids".into()))?;
+            merge_ops::apply(
+                state,
+                scope,
+                target_node,
+                keep,
+                &drops,
+                expected_generation,
+                now,
+            )
+        }
+
+        "merge.auto" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let key = params["key"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.key is required".into()))?;
+            let expected_generation = params["generation"]
+                .as_u64()
+                .ok_or_else(|| OpError::Malformed("params.generation is required".into()))?;
+            merge_ops::auto(state, scope, target_node, key, expected_generation, now)
+        }
+
+        "merge.auto_all" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let apply = match params.get("apply") {
+                None | Some(Value::Null) => false,
+                Some(Value::Bool(b)) => *b,
+                Some(_) => return Err(OpError::Malformed("params.apply must be a boolean".into())),
+            };
+            let generation_given = params.get("generation").filter(|v| !v.is_null());
+            let expected_generation = match generation_given {
+                None => None,
+                Some(v) => Some(v.as_u64().ok_or_else(|| {
+                    OpError::Malformed("params.generation is a whole number".into())
+                })?),
+            };
+            merge_ops::auto_all(state, scope, target_node, apply, expected_generation, now)
+        }
+
+        "merge.dismiss" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let key = params["key"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.key is required".into()))?;
+            merge_ops::dismiss(state, scope, target_node, key, now)
+        }
+
+        "merge.undismiss" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let key = params["key"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.key is required".into()))?;
+            merge_ops::undismiss(state, scope, target_node, key, now)
+        }
+
+        "merge.dismissed_list" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            merge_ops::dismissed_list(state, scope, target_node, now)
+        }
+
+        "merge.restore_all" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            merge_ops::restore_all(state, scope, target_node, now)
+        }
+
+        // ADR-169 — apply every move of one doctor plan in one request (`ops/move_ops.rs`). The request
+        // carries the exact plan the scan showed; `entry.move`'s gates, asked for once; stop at the first
+        // failure and report what was applied.
+        "vault.doctor_apply" => {
+            let moves = params["moves"].as_array().ok_or_else(|| {
+                OpError::Malformed("params.moves is a list of {node, entry, to, generation}".into())
+            })?;
+            let mut plan = Vec::with_capacity(moves.len());
+            for (i, m) in moves.iter().enumerate() {
+                let text = |key: &str| {
+                    m[key].as_str().map(str::to_string).ok_or_else(|| {
+                        OpError::Malformed(format!("params.moves[{i}].{key} is required"))
+                    })
+                };
+                plan.push(move_ops::PlannedMove {
+                    from: text("node")?,
+                    entry: text("entry")?,
+                    to: text("to")?,
+                    generation: m["generation"].as_u64().ok_or_else(|| {
+                        OpError::Malformed(format!("params.moves[{i}].generation is required"))
+                    })?,
+                });
+            }
+            let reason = params.get("reason").filter(|v| !v.is_null());
+            let reason = match reason {
+                None => None,
+                Some(v) => Some(
+                    v.as_str()
+                        .ok_or_else(|| OpError::Malformed("params.reason is a string".into()))?,
+                ),
+            };
+            move_ops::doctor_apply(state, scope, &plan, reason, params, now)
+        }
+
+        "entry.expiring" => {
+            let only_node = params["node"].as_str();
+            let days_given = params.get("days");
+            let days = match days_given {
+                None | Some(Value::Null) => quick_ops::EXPIRING_DAYS_DEFAULT,
+                Some(v) => v.as_u64().ok_or_else(|| {
+                    OpError::Malformed("params.days is a whole number of days".into())
+                })?,
+            };
+            quick_ops::expiring(state, scope, only_node, days, now)
+        }
+
+        "entry.history" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let entry_id = params["entry"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.entry is required".into()))?;
+            let limit = params["limit"]
+                .as_u64()
+                .unwrap_or(quick_ops::HISTORY_LIMIT_DEFAULT);
+            quick_ops::history(state, scope, target_node, entry_id, limit, now)
+        }
+
+        "entry.search" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let term = params["term"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.term is required".into()))?;
+            let tag = tags_ops::tag_filter(params.get("tag"))?;
+            quick_ops::search_in_node(state, scope, target_node, term, tag.as_deref(), now)
+        }
+
+        "entry.get_by_ref" => {
+            let wanted = params["reference"]
+                .as_u64()
+                .ok_or_else(|| OpError::Malformed("params.reference is a number".into()))?;
+            quick_ops::get_by_ref(state, scope, wanted, now)
         }
 
         // `10_API_AND_MCP.md §2/§3.1`: `credmgr search <term>` / `credmgr_search`,
@@ -2474,6 +4355,18 @@ fn dispatch_op(
                             "id": entry.id,
                             "name": entry.name,
                         }));
+                    } else if let Some(alias) = entry
+                        .aliases
+                        .iter()
+                        .find(|a| a.to_lowercase().contains(&term_lower))
+                    {
+                        // ADR-121: found by an alias - the row says which, and still names the entry.
+                        results.push(json!({
+                            "node": node_id,
+                            "id": entry.id,
+                            "name": entry.name,
+                            "alias": alias,
+                        }));
                     }
                 }
             }
@@ -2494,7 +4387,9 @@ fn dispatch_op(
                     capability: Capability::Reveal,
                 });
             }
-            let decision = resolve_capability(state, scope, target_node, Capability::Reveal, now);
+            // ADR-172: an entry-level reveal grant naming this entry counts, never one for another entry.
+            let decision =
+                resolve_for_entry(state, scope, target_node, entry_id, Capability::Reveal, now);
             if !decision.is_allow() {
                 // R1 (locked) is not a flat denial for `reveal` — a target
                 // that would otherwise be readable gets a one-tap approval
@@ -2529,12 +4424,28 @@ fn dispatch_op(
                     now,
                 ));
             }
+            // ADR-140: on a node whose security level asks for it, an agent's reveal waits for the
+            // owner's approval - the same one-tap path a locked vault uses (ADR-042).
+            if reveal_needs_owner_approval(state, scope, target_node, entry_id) {
+                return reveal_via_approval(
+                    state,
+                    scope,
+                    target_node,
+                    entry_id,
+                    field_ids.as_deref(),
+                    now,
+                );
+            }
             second_factor_gate(state, scope, target_node, GateKind::Reveal, now)?;
             let Some(node_priv) = state.hot_node_key(target_node) else {
                 return Err(locked_refusal(state, target_node));
             };
             let doc = open_entry_doc(state, target_node, entry_id, &node_priv)?;
-            entry_doc::reveal_json(target_node, entry_id, &doc, field_ids.as_deref())
+            let answer = entry_doc::reveal_json(target_node, entry_id, &doc, field_ids.as_deref())?;
+            // ADR-150: last — after the answer is built, so a request refused for any other reason (an unknown
+            // field id included, review P3-d) never spends a confirmation.
+            reveal_confirmation_gate(state, scope, "entry.reveal", target_node, entry_id, now)?;
+            Ok(answer)
         }
 
         // ADR-078: one entry's metadata — field ids, labels, types, masking and
@@ -2557,7 +4468,9 @@ fn dispatch_op(
                     capability: Capability::Read,
                 });
             }
-            let decision = resolve_capability(state, scope, target_node, Capability::Read, now);
+            // ADR-172: an entry-level read grant naming this entry counts, never one for another entry.
+            let decision =
+                resolve_for_entry(state, scope, target_node, entry_id, Capability::Read, now);
             if !decision.is_allow() {
                 return Err(access_denied_error(
                     state,
@@ -2591,6 +4504,10 @@ fn dispatch_op(
                 // ADR-083: the entry's name and its field labels are names.
                 body["name"] = Value::Null;
                 body["nameHidden"] = json!(true);
+                if let Some(obj) = body.as_object_mut() {
+                    obj.remove("aliases"); // ADR-121: an alias is a name
+                    obj.remove("tags"); // ADR-167: a tag is names-level metadata
+                }
                 if let Some(rows) = body["fields"].as_array_mut() {
                     for row in rows {
                         row["label"] = Value::Null;
@@ -2619,7 +4536,9 @@ fn dispatch_op(
                     capability: Capability::Reveal,
                 });
             }
-            let decision = resolve_capability(state, scope, target_node, Capability::Reveal, now);
+            // ADR-172: an entry-level reveal grant naming this entry counts, never one for another entry.
+            let decision =
+                resolve_for_entry(state, scope, target_node, entry_id, Capability::Reveal, now);
             if !decision.is_allow() {
                 // Deliberately NOT `reveal_via_approval` on a locked-but-
                 // otherwise-reachable target (unlike `entry.reveal` above):
@@ -2637,6 +4556,24 @@ fn dispatch_op(
                     rule_name(decision),
                     now,
                 ));
+            }
+            // ADR-140: on a Sealed node an agent gets no code either. The approval path returns the
+            // entry's document - the seed - so it is never used for `totp.code`; the owner reads it.
+            if is_agent_caller(scope)
+                && security_level_of(state, target_node) == SecurityLevel::Sealed
+            {
+                return Err(OpError::NodeAccessDenied {
+                    subject: scope.node_id.clone(),
+                    target: target_node.to_string(),
+                    capability: Capability::Reveal,
+                    rule: "L1",
+                    message: format!(
+                        "Node '{target_node}' is Strict (stored as sealed): an agent is not given a one-time code."
+                    ),
+                    remedy: "Ask the owner for the code, or lower the node's security level to \
+                             Guarded (a human step that needs Touch ID)."
+                        .to_string(),
+                });
             }
             second_factor_gate(state, scope, target_node, GateKind::Reveal, now)?;
             let Some(node_priv) = state.hot_node_key(target_node) else {
@@ -2679,8 +4616,17 @@ fn dispatch_op(
                 }
                 _ => OpError::Internal("the stored TOTP seed could not be used".into()),
             })?;
-            let code = totp.code(now.max(0) as u64);
-            Ok(json!({ "node": target_node, "entry": entry_id, "code": code }))
+            // ADR-150: a one-time code is a secret like any other value. Last, after the field was chosen and the
+            // seed checked, so an ambiguous or unusable field never spends a confirmation (review P3-d).
+            reveal_confirmation_gate(state, scope, "totp.code", target_node, entry_id, now)?;
+            let at = now.max(0) as u64;
+            let code = totp.code(at);
+            // How long this code still counts: the rest of its thirty-second step (1..=30).
+            let period = credmgr_core::totp::DEFAULT_PERIOD;
+            Ok(json!({
+                "node": target_node, "entry": entry_id, "code": code,
+                "validForSeconds": period - (at % period),
+            }))
         }
 
         // `07 §6`: "Nothing in the API returns a seed to a non-native
@@ -2694,11 +4640,10 @@ fn dispatch_op(
             let target_node = params["node"]
                 .as_str()
                 .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
-            params["entry"]
+            let entry_id = params["entry"]
                 .as_str()
                 .ok_or_else(|| OpError::Malformed("params.entry is required".into()))?;
-            // ADR-078: accepted so the op's shape matches `totp.code`'s; the op
-            // still answers `presence_required` whichever field is meant.
+            // ADR-078: which field holds the seed, as `totp.code` takes it.
             let _field = entry_doc::opt_str(&params["field"], "field")?;
             if !scope.holds(Capability::Reveal) {
                 return Err(OpError::CapabilityNotHeld {
@@ -2716,9 +4661,15 @@ fn dispatch_op(
                     now,
                 ));
             }
-            Err(OpError::PresenceRequired {
-                operation: "totp.seed".to_string(),
-            })
+            second_factor_gate(state, scope, target_node, GateKind::Reveal, now)?;
+            // ADR-098: everything above was checkable without the sensor; only now ask for it.
+            require_presence(state, scope, "totp.seed", params, now)?;
+            let Some(node_priv) = state.hot_node_key(target_node) else {
+                return Err(locked_refusal(state, target_node));
+            };
+            let doc = open_entry_doc(state, target_node, entry_id, &node_priv)?;
+            let chosen = entry_doc::select_totp_field(&doc, _field)?;
+            Ok(json!({ "node": target_node, "entry": entry_id, "seed": chosen.value }))
         }
 
         // F-1: permitted even while locked — `resolve()`'s R1 only denies
@@ -2810,14 +4761,17 @@ fn dispatch_op(
                 }
                 parsed.push((name, doc));
             }
-            {
+            // ADR-110: on a `privateNames` node a caller who may not see names is
+            // not refused for a collision; each item is disambiguated instead.
+            let hide_names = node_hides_names(state, scope, target_node);
+            if !hide_names {
                 let manifests = state.manifests.read().expect("manifests poisoned");
                 let existing = manifests.get(target_node);
                 let pending = state.list_pending(target_node);
                 if let Some((name, _)) = parsed.iter().find(|(name, _)| {
                     let canon = canonical_name(name);
                     existing.is_some_and(|m| {
-                        canon_taken(&canon, m.entries.iter().map(|e| e.name.as_str()))
+                        canon_taken(&canon, m.entries.iter().flat_map(entry_names))
                     }) || canon_taken(&canon, pending.iter().map(|p| p.name.as_str()))
                 }) {
                     return Err(OpError::EntryExists {
@@ -2830,18 +4784,33 @@ fn dispatch_op(
             let mut created = Vec::with_capacity(total);
             let mut generation = Value::Null;
             let mut failed = Value::Null;
+            let mut any_seed_hint = false;
             for (i, (name, doc)) in parsed.into_iter().enumerate() {
-                match create_entry(state, target_node, name, &doc, now) {
+                match create_entry(
+                    state,
+                    target_node,
+                    name,
+                    &doc,
+                    now,
+                    hide_names,
+                    is_agent_caller(scope)
+                        && security_level_of(state, target_node).create_is_held(),
+                ) {
                     Ok(c) => {
                         if let Some(g) = c.generation {
                             generation = json!(g);
                         }
-                        created.push(json!({
+                        let mut item = json!({
                             "name": name,
                             "entry": c.entry_id,
                             "pending": c.pending,
                             "fieldCount": c.field_ids.len(),
-                        }));
+                        });
+                        seed_hint(&mut item, &c.possible_seed_fields);
+                        if !c.possible_seed_fields.is_empty() {
+                            any_seed_hint = true;
+                        }
+                        created.push(item);
                     }
                     Err(e) => {
                         failed = json!({ "index": i, "name": name, "error": format!("{e:?}") });
@@ -2859,6 +4828,9 @@ fn dispatch_op(
             });
             let typed: Vec<&str> = items.iter().filter_map(|i| i["name"].as_str()).collect();
             name_warnings(&mut body, &typed);
+            if any_seed_hint {
+                push_warning(&mut body, WARN_POSSIBLE_SEED);
+            }
             Ok(body)
         }
 
@@ -2910,7 +4882,16 @@ fn dispatch_op(
                 ));
             }
 
-            let created = create_entry(state, target_node, name, &doc, now)?;
+            let hide_names = node_hides_names(state, scope, target_node);
+            let created = create_entry(
+                state,
+                target_node,
+                name,
+                &doc,
+                now,
+                hide_names,
+                is_agent_caller(scope) && security_level_of(state, target_node).create_is_held(),
+            )?;
             let mut body = created.to_json(target_node);
             name_warnings(&mut body, &[name]);
             Ok(body)
@@ -2924,6 +4905,84 @@ fn dispatch_op(
         // one field when the entry has several) replaces one value, `fields`
         // replaces the whole list, `entryType` / `sensitivity` set or clear the
         // entry's own overrides; keeps no history, as it never did.
+        // ADR-121 / ADR-122: the bodies live in `ops/alias.rs`; the arms read their
+        // params here, with literal keys, so the desktop bridge's drift guard can see them.
+        "entry.alias" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let entry_id = params["entry"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.entry is required".into()))?;
+            let expected_generation = params["generation"]
+                .as_u64()
+                .ok_or_else(|| OpError::Malformed("params.generation is required".into()))?;
+            let raw = params["aliases"].as_array().ok_or_else(|| {
+                OpError::Malformed(
+                    "params.aliases is required (a list of names; [] clears them)".into(),
+                )
+            })?;
+            alias::entry_alias(
+                state,
+                scope,
+                now,
+                target_node,
+                entry_id,
+                expected_generation,
+                raw,
+            )
+        }
+
+        // ADR-167: replace one entry's tags. The body is `ops/tags_ops.rs`.
+        "entry.tag_set" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let entry_id = params["entry"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.entry is required".into()))?;
+            let expected_generation = params["generation"]
+                .as_u64()
+                .ok_or_else(|| OpError::Malformed("params.generation is required".into()))?;
+            let raw = params["tags"].as_array().ok_or_else(|| {
+                OpError::Malformed(
+                    "params.tags is required (a list of tags; [] clears them)".into(),
+                )
+            })?;
+            tags_ops::entry_tag_set(
+                state,
+                scope,
+                now,
+                target_node,
+                entry_id,
+                expected_generation,
+                raw,
+            )
+        }
+
+        "entry.similar" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let name = params["name"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.name is required".into()))?;
+            let skip = params.get("entry");
+            alias::entry_similar(state, scope, now, target_node, name, skip)
+        }
+
+        "entry.import_env" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let items = params["entries"]
+                .as_array()
+                .ok_or_else(|| OpError::Malformed("params.entries is required".into()))?;
+            let dry_run = params.get("dryRun");
+            let on_conflict = params.get("onConflict");
+            alias::entry_import_env(state, scope, now, target_node, items, dry_run, on_conflict)
+        }
+
         "entry.update" => {
             let target_node = params["node"]
                 .as_str()
@@ -3210,6 +5269,7 @@ fn dispatch_op(
                 ));
             }
 
+            sealed_change_guard(state, scope, target_node, Capability::Update)?;
             let node_lock = state.node_write_lock(target_node);
             let _guard = node_lock.lock().expect("node write lock poisoned");
 
@@ -3313,6 +5373,7 @@ fn dispatch_op(
                 ));
             }
 
+            sealed_change_guard(state, scope, target_node, Capability::Update)?;
             let node_lock = state.node_write_lock(target_node);
             let _guard = node_lock.lock().expect("node write lock poisoned");
 
@@ -3384,6 +5445,7 @@ fn dispatch_op(
                 ));
             }
 
+            sealed_change_guard(state, scope, target_node, Capability::Update)?;
             let node_lock = state.node_write_lock(target_node);
             let _guard = node_lock.lock().expect("node write lock poisoned");
 
@@ -3454,6 +5516,7 @@ fn dispatch_op(
                     let pre_change_generation = post_change_generation.saturating_sub(1);
                     undo_rotate(
                         state,
+                        scope,
                         target_node,
                         entry_id,
                         pre_change_generation,
@@ -3537,6 +5600,9 @@ fn dispatch_op(
             let entry_id = params["entry"]
                 .as_str()
                 .ok_or_else(|| OpError::Malformed("params.entry is required".into()))?;
+            // ADR-148 §P1-4: accepting a held entry is a person's decision (ADR-140: a Sealed node holds an
+            // agent's create for the owner). No agent — the one that wrote it included — may accept it.
+            refuse_agent(scope)?;
 
             if !scope.holds(Capability::Create) {
                 return Err(OpError::CapabilityNotHeld {
@@ -3578,7 +5644,7 @@ fn dispatch_op(
                 .expect("manifests poisoned")
                 .get(target_node)
                 .is_some_and(|m| {
-                    canon_taken(&pending_canon, m.entries.iter().map(|e| e.name.as_str()))
+                    canon_taken(&pending_canon, m.entries.iter().flat_map(entry_names))
                 });
             if name_taken {
                 return Err(OpError::EntryExists {
@@ -3617,6 +5683,8 @@ fn dispatch_op(
                     expires_at: None,
                     rotated_at: None,
                     has_totp: false,
+                    aliases: Vec::new(),
+                    tags: Vec::new(),
                 };
                 let loaded =
                     entry_doc::open_bytes(&bytes, target_node, entry_id, &node_priv, Some(&stored))
@@ -3651,6 +5719,8 @@ fn dispatch_op(
                     expires_at: None,
                     rotated_at: None,
                     has_totp: projection.has_totp,
+                    aliases: Vec::new(),
+                    tags: Vec::new(),
                 },
             );
 
@@ -3667,6 +5737,9 @@ fn dispatch_op(
             let entry_id = params["entry"]
                 .as_str()
                 .ok_or_else(|| OpError::Malformed("params.entry is required".into()))?;
+            // ADR-148 §P1-4: discarding is a person's decision too — an agent must not throw away another
+            // caller's held write.
+            refuse_agent(scope)?;
 
             if !scope.holds(Capability::Create) {
                 return Err(OpError::CapabilityNotHeld {
@@ -3827,10 +5900,29 @@ fn dispatch_op(
                 )));
             }
             let verdict = if approved {
-                ApprovalVerdict::Approve {
-                    staged: stage_approved_value(state, &pending)?,
-                    lock_epoch,
+                let staged = stage_approved_value(state, &pending)?;
+                // ADR-173: with a presence key enrolled, approving in a login needs the user's finger, the same
+                // way `settings.request_decide` and the other releases do. The shell attaches the proof itself when
+                // the broker answers `presence_required`. Checked before the confirmation below so a first call
+                // that is going to be asked for a proof never spends a confirmation. Denying is never gated, and
+                // the locked-vault form (`passphrase` + `code`, above) is authorised by the unlock factors.
+                if !state.presence_keys().is_empty() {
+                    require_presence(state, scope, "vault.approval_decide", params, now)?;
                 }
+                // ADR-150 (review P0): approving releases a stored value, so the person approving from a login
+                // answers to "confirm before showing secrets" for that entry's sensitivity — whoever asked (the
+                // owner's own login after a node lock, or an agent). Checked last, after the value was staged, so
+                // a request refused for any other reason never spends a confirmation. A decider that is not a live
+                // login can never hold one. Denying is never gated, and the locked-vault form (`passphrase` +
+                // `code`, above) is authorised by the unlock factors themselves.
+                confirmation_gate(
+                    state,
+                    scope,
+                    "vault.approval_decide",
+                    entry_sensitivity_for_gate(state, &pending.node_id, &pending.entry_id),
+                    now,
+                )?;
+                ApprovalVerdict::Approve { staged, lock_epoch }
             } else {
                 ApprovalVerdict::Deny
             };
@@ -3866,6 +5958,14 @@ fn dispatch_op(
         "vault.approval_get" => {
             let locked = state.is_durable() && state.is_locked();
             let owner = state.is_owner_session(scope);
+            // ADR-164 re-review N-2: an identified agent (an agent token, or a folder registered to a node) has a scope,
+            // and the pending list spans every node, so it is refused in both states. Only the token-less Lock screen
+            // (indistinguishable from an unregistered folder, ADR-088) reads it while locked, and never the requester.
+            if !owner && is_identified_agent(state, scope) {
+                return Err(OpError::CapabilityNotHeld {
+                    capability: Capability::Admin,
+                });
+            }
             if !locked && !owner {
                 return Err(OpError::CapabilityNotHeld {
                     capability: Capability::Admin,
@@ -4126,6 +6226,57 @@ fn dispatch_op(
         // Presence is not attestable on any transport yet, so those answer
         // `presence_required`, exactly as `grant.create` and
         // `node.reparent` do; the patch is all-or-nothing.
+        // ADR-155: the switchboard. Every setting in `credmgr_core::settings::SETTINGS`, one surface for the app, the
+        // CLI and the MCP server; the rules per caller are in `ops/switchboard.rs`.
+        "settings.list" => switchboard::list(state, scope, params["node"].as_str(), now),
+        "settings.get" => {
+            let id = params["id"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.id is required".into()))?;
+            switchboard::get(state, scope, id, params["node"].as_str(), now)
+        }
+        "settings.set" => {
+            let id = params["id"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.id is required".into()))?;
+            let value = params.get("value").cloned().ok_or_else(|| {
+                OpError::Malformed(
+                    "params.value is required (null where the setting takes null)".into(),
+                )
+            })?;
+            let reason = params["reason"].as_str().ok_or_else(|| {
+                OpError::Malformed(
+                    "params.reason is required — a setting change records why".into(),
+                )
+            })?;
+            let node = params["node"].as_str();
+            switchboard::set(state, scope, id, node, value, reason, params, now)
+        }
+        "settings.revert" => {
+            let change = params["change"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.change is required".into()))?;
+            let reason = params["reason"].as_str();
+            switchboard::revert(state, scope, change, reason, params, now)
+        }
+        "settings.request_get" => {
+            let request = params["request"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.request is required".into()))?;
+            switchboard::request_get(state, scope, request, now)
+        }
+        "settings.request_list" => switchboard::request_list(state, scope, now),
+        "settings.request_decide" => {
+            let request = params["request"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.request is required".into()))?;
+            let approve = params["approve"].as_bool().ok_or_else(|| {
+                OpError::Malformed("params.approve (true or false) is required".into())
+            })?;
+            switchboard::request_decide(state, scope, request, approve, params, now)
+        }
+        "settings.kb" => Ok(switchboard::kb()),
+
         "node.policy" => {
             let target_node = params["node"]
                 .as_str()
@@ -4157,7 +6308,30 @@ fn dispatch_op(
                     "params.policy sets no field — nothing to change".into(),
                 ));
             }
+            if let Some(next) = &patch.reveal_confirm {
+                // The stored struct ignores unknown keys (forward compatible); a request stays strict.
+                if let Some(obj) = params["policy"]["revealConfirm"].as_object() {
+                    if let Some(k) = obj
+                        .keys()
+                        .find(|k| !credmgr_core::reveal_confirm::FIELDS.contains(&k.as_str()))
+                    {
+                        return Err(OpError::Malformed(format!(
+                            "params.policy.revealConfirm: unknown field `{k}`"
+                        )));
+                    }
+                }
+                // ADR-150: vault policy, so it lives on `global` only, and only the owner's own login changes it.
+                if target_node != GLOBAL_ID {
+                    return Err(OpError::Malformed(
+                        "revealConfirm is vault policy: set it on the global node".into(),
+                    ));
+                }
+                next.validate().map_err(OpError::Malformed)?;
+            }
             human_admin_on(state, scope, target_node, now)?;
+            if patch.reveal_confirm.is_some() {
+                owner_session(state, scope)?;
+            }
             let mut registry = state.registry.write().expect("registry poisoned");
             let current = registry
                 .nodes
@@ -4165,10 +6339,17 @@ fn dispatch_op(
                 .ok_or_else(|| OpError::NotFound(format!("no node {target_node}")))?
                 .policy
                 .clone();
+            // ADR-150: turning it on or asking more needs nothing; turning it off or asking less needs a
+            // confirmation made in the last minute, which this change uses up — spent only once every other check
+            // (presence, the registry invariants) has passed, so a change refused for another reason leaves it
+            // usable (review P3-c).
+            let weakens = patch
+                .reveal_confirm
+                .as_ref()
+                .is_some_and(|next| current.reveal_confirm.weakened_by(next));
             if patch.widens_reach(&current) {
-                return Err(OpError::PresenceRequired {
-                    operation: "node.policy".to_string(),
-                });
+                // ADR-098: widening reach is the one policy change that needs the user's finger.
+                require_presence(state, scope, "node.policy", params, now)?;
             }
             let mut candidate = (*registry).clone();
             let node = candidate
@@ -4182,6 +6363,17 @@ fn dispatch_op(
                 return Err(OpError::Malformed(format!(
                     "would violate a registry invariant: {violations:?}"
                 )));
+            }
+            if weakens {
+                let session = session_public_id(state, scope);
+                let need = credmgr_core::reveal_confirm::Need::Fresh;
+                if !state.take_confirmation(session.as_deref(), need, now) {
+                    return Err(confirmation_required(
+                        "node.policy",
+                        &current.reveal_confirm,
+                        need,
+                    ));
+                }
             }
             *registry = candidate;
             drop(registry);
@@ -4234,6 +6426,18 @@ fn dispatch_op(
             // exposed. Read BEFORE the note itself, so a write landing in between
             // can only make the caller's generation stale (its write is refused
             // as a conflict), never newer than the text it saw.
+            // ADR-156 (supersedes the K-24 exemption of ADR-150): a note is free text that often holds
+            // what a value would, so a person's read answers to "confirm before showing secrets" as a
+            // high-sensitivity value does. An agent is not asked, as for a reveal (ADR-140).
+            if !is_agent_caller(scope) {
+                confirmation_gate(
+                    state,
+                    scope,
+                    "notes.read",
+                    credmgr_core::inference::Sensitivity::High,
+                    now,
+                )?;
+            }
             let generation = state.manifest_generation(target_node).unwrap_or(0);
             let recorded = state.manifest_notes_digest(target_node);
             let path = state.paths.notes_env(target_node);
@@ -4345,6 +6549,14 @@ fn dispatch_op(
                     "{target_node} cannot be sealed"
                 )));
             }
+            // ADR-135: a node's own second factor travels with the node's registry entry, and a seal's
+            // restore would bring the node back without it. Remove the factor first (it is the owner's
+            // to remove); a seal never silently lowers the bar on what it seals.
+            if state.node_has_own_gate(target_node) {
+                return Err(OpError::Malformed(format!(
+                    "{target_node} has a second factor of its own - remove it (node.gate_remove) before sealing the node"
+                )));
+            }
             if !scope.holds(Capability::Admin) {
                 return Err(OpError::CapabilityNotHeld {
                     capability: Capability::Admin,
@@ -4395,6 +6607,8 @@ fn dispatch_op(
             // made after it.
             if state.is_durable() {
                 let outcome = state.seal_node_durable(target_node, &node_priv, now)?;
+                // ADR-164 review P1-1: a sealed node's agent tokens end with it; a restore does not revive them.
+                state.tokens.revoke_agents_for_node(target_node, now);
                 let mut sealed = json!({ "node": target_node, "sealed": true });
                 if outcome.archive_move_pending {
                     sealed["archiveMovePending"] = json!(true);
@@ -4475,6 +6689,8 @@ fn dispatch_op(
                         expires_at: entry.expires_at,
                         rotated_at: entry.rotated_at,
                         has_totp: entry.has_totp,
+                        aliases: Vec::new(),
+                        tags: Vec::new(),
                     },
                 );
                 orphan_entry_ids.push(entry.id.clone());
@@ -4498,6 +6714,8 @@ fn dispatch_op(
             // for every dispatched op, not per-arm here — this call site
             // only needs to make the revocation itself real.
             state.revoke_grants_touching(target_node);
+            // ADR-164 review P1-1: and so do its agent tokens.
+            state.tokens.revoke_agents_for_node(target_node, now);
 
             state.record_sealed(
                 target_node,
@@ -4670,9 +6888,65 @@ fn dispatch_op(
                     now,
                 ));
             }
-            Err(OpError::PresenceRequired {
-                operation: "node.reparent".to_string(),
-            })
+            // ADR-098: everything above needed no sensor; the move itself needs the user's finger.
+            let new_parent = params["newParent"].as_str().expect("checked above");
+            require_presence(state, scope, "node.reparent", params, now)?;
+            let mut registry = state.registry.write().expect("registry poisoned");
+            if !registry.nodes.contains_key(target_node) {
+                return Err(OpError::NotFound(format!("no node {target_node}")));
+            }
+            let Some(parent) = registry.nodes.get(new_parent) else {
+                return Err(OpError::NotFound(format!("no node {new_parent}")));
+            };
+            if new_parent == ORPHAN_ID {
+                return Err(OpError::Malformed(
+                    "a node cannot be re-parented under orphan; seal it instead".into(),
+                ));
+            }
+            if new_parent == target_node || registry.is_strict_ancestor(target_node, new_parent) {
+                return Err(OpError::Malformed(
+                    "a node cannot be moved under itself or one of its own descendants".into(),
+                ));
+            }
+            let new_depth = parent.depth + 1;
+            let mut candidate = (*registry).clone();
+            // Move the node, then recompute the depth of it and everything beneath it.
+            candidate
+                .nodes
+                .get_mut(target_node)
+                .expect("presence checked above")
+                .parent_id = Some(new_parent.to_string());
+            let mut frontier = vec![(target_node.to_string(), new_depth)];
+            while let Some((id, depth)) = frontier.pop() {
+                if let Some(node) = candidate.nodes.get_mut(&id) {
+                    node.depth = depth;
+                    // The kind follows the depth: a project one level below global, a sub-node two.
+                    node.kind = match depth {
+                        1 => credmgr_core::registry::NodeKind::Project,
+                        _ => credmgr_core::registry::NodeKind::Sub,
+                    };
+                }
+                let kids: Vec<String> = candidate
+                    .nodes
+                    .values()
+                    .filter(|n| n.parent_id.as_deref() == Some(id.as_str()))
+                    .map(|n| n.id.clone())
+                    .collect();
+                for kid in kids {
+                    frontier.push((kid, depth + 1));
+                }
+            }
+            let violations = validate_registry(&candidate);
+            if !violations.is_empty() {
+                return Err(OpError::Malformed(format!(
+                    "would violate a registry invariant (the graph allows two levels below global): {violations:?}"
+                )));
+            }
+            *registry = candidate;
+            drop(registry);
+            // A move changes who can reach what, exactly as a policy change does.
+            state.drop_elevations();
+            Ok(json!({ "node": target_node, "parent": new_parent, "depth": new_depth }))
         }
 
         // ADR-050: `grant.list`/`create`/`revoke` (`10_API_AND_MCP.md §1`,
@@ -4780,9 +7054,107 @@ fn dispatch_op(
                     now,
                 ));
             }
-            Err(OpError::PresenceRequired {
-                operation: "grant.create".to_string(),
-            })
+            // ADR-098: validation is complete; the write itself needs a live presence proof.
+            let direction = match params.get("direction").and_then(Value::as_str) {
+                None | Some("one-way") => credmgr_core::registry::Direction::OneWay,
+                Some("mutual") => credmgr_core::registry::Direction::Mutual,
+                Some(_) => {
+                    return Err(OpError::Malformed(
+                        "params.direction must be one-way or mutual".into(),
+                    ))
+                }
+            };
+            // ADR-172: an entry-level grant is read and/or reveal of that one entry (it lists that entry
+            // and no other), one-way. `notes` belong to a node, and a mirror would open the whole `from`
+            // node to the entry's node; both are refused rather than stored as a grant that does nothing.
+            if matches!(to, GrantTarget::Entry { .. }) {
+                if requested_scope.contains(&Capability::Notes) {
+                    return Err(OpError::Malformed(
+                        "an entry-level grant may only contain read or reveal: notes belong to a node"
+                            .into(),
+                    ));
+                }
+                if direction == credmgr_core::registry::Direction::Mutual {
+                    return Err(OpError::Malformed(
+                        "an entry-level grant is one-way: a mutual one would open the whole granting node"
+                            .into(),
+                    ));
+                }
+            }
+            if let GrantTarget::Entry { node_id, entry_id } = &to {
+                let exists = state
+                    .manifests
+                    .read()
+                    .expect("manifests poisoned")
+                    .get(node_id)
+                    .is_some_and(|m| m.entries.iter().any(|e| &e.id == entry_id));
+                if !exists {
+                    return Err(OpError::NotFound(format!(
+                        "no entry {entry_id} on node {node_id}"
+                    )));
+                }
+            }
+            let expires_at = match params.get("expiresAt") {
+                None | Some(Value::Null) => None,
+                Some(v) => {
+                    let Some(t) = v.as_i64() else {
+                        return Err(OpError::Malformed(
+                            "params.expiresAt must be epoch seconds or null".into(),
+                        ));
+                    };
+                    if t <= now {
+                        return Err(OpError::Malformed(
+                            "params.expiresAt must be in the future".into(),
+                        ));
+                    }
+                    Some(t)
+                }
+            };
+            require_presence(state, scope, "grant.create", params, now)?;
+            let mut registry = state.registry.write().expect("registry poisoned");
+            if !registry.nodes.contains_key(from) {
+                return Err(OpError::NotFound(format!("no node {from}")));
+            }
+            if !registry.nodes.contains_key(to.node_id()) {
+                return Err(OpError::NotFound(format!("no node {}", to.node_id())));
+            }
+            if from == to.node_id() {
+                return Err(OpError::Malformed(
+                    "a node cannot be granted access to itself".into(),
+                ));
+            }
+            if registry.grants.iter().any(|g| {
+                g.from == from
+                    && g.to == to
+                    && g.scope == requested_scope
+                    && g.direction == direction
+            }) {
+                return Err(OpError::Malformed(
+                    "an identical grant already exists".into(),
+                ));
+            }
+            let mut id_bytes = [0u8; 4];
+            OsRng.fill_bytes(&mut id_bytes);
+            let id = format!("g_{}", crate::state::hex_encode(&id_bytes));
+            let grant = Grant {
+                id: id.clone(),
+                from: from.to_string(),
+                to,
+                direction,
+                scope: requested_scope,
+                expires_at,
+                reason: reason.to_string(),
+            };
+            let mut candidate = (*registry).clone();
+            candidate.grants.push(grant.clone());
+            let violations = validate_registry(&candidate);
+            if !violations.is_empty() {
+                return Err(OpError::Malformed(format!(
+                    "would violate a registry invariant: {violations:?}"
+                )));
+            }
+            *registry = candidate;
+            Ok(serde_json::to_value(&grant).expect("Grant serialises"))
         }
 
         // `06_ACCESS_GRAPH.md §6`: "Revocation is one click and takes effect
@@ -5016,9 +7388,57 @@ fn dispatch_op(
                         now,
                     ));
                 }
-                return Err(OpError::PresenceRequired {
-                    operation: "maintenance.doctor --rebuild-registry".to_string(),
+                // ADR-098: the diff is shown first and nothing is written unless `apply: true`; both
+                // need a live presence proof, because the diff names what a rebuild would resurrect.
+                let passphrase = params["passphrase"].as_str().expect("checked above");
+                // A rebuild shows its diff first; only an explicit `apply: true` writes.
+                let apply = params
+                    .get("apply")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                require_presence(state, scope, "maintenance.doctor", params, now)?;
+                let candidate = crate::maintenance::load_rebuild_candidate_in(
+                    &state.backup_dirs(),
+                    &SecretBox::new(Box::new(passphrase.to_string())),
+                )
+                .map_err(|e| OpError::Malformed(e.to_string()))?;
+                use secrecy::ExposeSecret;
+                let root_key = state
+                    .reauth_root_key("registry rebuild")
+                    .map_err(|_| OpError::VaultLocked)?;
+                let on_disk =
+                    credmgr_store::registry_file::load(&state.paths, root_key.expose_secret())
+                        .map_err(|e| OpError::Internal(e.to_string()))?;
+                let diff = credmgr_store::rebuild::diff(&on_disk, &candidate, &Default::default());
+                let shown = json!({
+                    "nodesAdded": diff.nodes_added, "nodesRemoved": diff.nodes_removed,
+                    "grantsAdded": diff.grants_added, "grantsRemoved": diff.grants_removed,
+                    "policyChanges": diff.policy_changes, "sealedAdded": diff.sealed_added,
+                    "sealedRemoved": diff.sealed_removed,
+                    "presenceKeysKept": diff.presence_keys_kept,
+                    "presenceKeysNotRestored": diff.presence_keys_not_restored,
                 });
+                if !apply {
+                    return Ok(
+                        json!({ "applied": false, "diff": shown, "empty": diff.is_empty() }),
+                    );
+                }
+                let counter =
+                    credmgr_store::generation::FileGenerationCounter::new(state.state_dir_path());
+                credmgr_store::rebuild::apply(
+                    &state.paths,
+                    root_key.expose_secret(),
+                    &counter,
+                    &on_disk,
+                    candidate,
+                )
+                .map_err(|e| OpError::Internal(e.to_string()))?;
+                state.invalidate_loaded_vault();
+                return Ok(json!({
+                    "applied": true, "diff": shown,
+                    "meta": { "vaultLocked": true },
+                    "message": "the registry was rebuilt; the vault locked itself - unlock to load it",
+                }));
             }
 
             if !scope.holds(Capability::Admin) {
@@ -5181,9 +7601,54 @@ fn dispatch_op(
                     expires_in: 0,
                 });
             }
-            Err(OpError::PresenceRequired {
-                operation: "maintenance.rotate_root".to_string(),
-            })
+            require_presence(state, scope, "maintenance.rotate_root", params, now)?;
+            rotate_root_response(state, passphrase, now)
+        }
+
+        // ADR-156 — change the vault passphrase. The same gates as `maintenance.rotate_root` (a human login,
+        // `Admin` on Global, a fresh vault second factor when one is enrolled), and the same crash-safe
+        // rotation underneath, so it also answers a new recovery code. Presence: a Touch ID proof when a
+        // presence key is enrolled; with none enrolled the current passphrase, proven inside the rotation, is
+        // the proof that a person is here (as `session.confirm` accepts it), so a Mac without Touch ID and
+        // a Linux machine can still change it.
+        "vault.set_passphrase" => {
+            let passphrase = params["passphrase"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.passphrase is required".into()))?;
+            let new_passphrase = params["newPassphrase"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.newPassphrase is required".into()))?;
+            if passphrase.is_empty() || new_passphrase.is_empty() {
+                return Err(OpError::Malformed(
+                    "params.passphrase and params.newPassphrase must not be empty".into(),
+                ));
+            }
+            if new_passphrase.chars().count() > SET_PASSPHRASE_MAX_CHARS {
+                return Err(OpError::Malformed(format!(
+                    "params.newPassphrase is longer than {SET_PASSPHRASE_MAX_CHARS} characters"
+                )));
+            }
+            human_admin_on(state, scope, GLOBAL_ID, now)?;
+            if state.is_gate_confirmed(GATE_SCOPE_VAULT)
+                && !state.is_elevated(GATE_SCOPE_VAULT, now)
+            {
+                return Err(OpError::TwoFactorRequired {
+                    challenge: "totp".to_string(),
+                    scope: GATE_SCOPE_VAULT.to_string(),
+                    expires_in: 0,
+                });
+            }
+            if !state.presence_keys().is_empty() {
+                require_presence(state, scope, "vault.set_passphrase", params, now)?;
+            }
+            // A "change" to the same passphrase would still rotate the root key; refuse it as the mistake it
+            // almost certainly is. Both values come from the same caller, so comparing them leaks nothing.
+            if passphrase == new_passphrase {
+                return Err(OpError::Malformed(
+                    "the new passphrase is the same as the current one".into(),
+                ));
+            }
+            set_passphrase_response(state, passphrase, new_passphrase, now)
         }
 
         // ADR-054: `maintenance.backup` — `Capability::Admin` resolved
@@ -5227,8 +7692,46 @@ fn dispatch_op(
                 ));
             }
 
-            let plaintext = credmgr_store::backup::create_backup(&state.paths)
-                .map_err(|e| OpError::Internal(format!("selecting backup files: {e}")))?;
+            // Issue #36 / ADR-112: the complete archive - notes, sealed-node and history
+            // archives, the tray and the audit log - so `credmgr restore` rebuilds the same
+            // vault from it. ADR-148 amendment (K-23 (e)): not the generation counter, which
+            // stays on this machine, but a restore ticket signed under the root key for the
+            // archived registry, which `credmgr restore` turns into a one-shot marker.
+            // ADR-165 (review P0-2): a bound vault's archive carries the passphrase wrap unsealed, inside the
+            // archive's own encryption, so an owner who loses this Mac can still open it with the passphrase
+            // after any later rotation. Review N2: such an archive is therefore written outside the vault
+            // folder (`<state>/backups/<vault id>/`, beside the device key, which opens the sealed file anyway),
+            // so a copy of the folder never carries it. Review N3: there is no check of the backup passphrase
+            // against the vault passphrase (it was an unthrottled oracle and is not needed once the archive
+            // is not in the folder). Review N6: a device key that went away while the vault was open is said,
+            // with what to do.
+            let plain_wrap = state.plain_pass_wrap_for_backup().map_err(|m| match m {
+                credmgr_keystore::machine_lock::MachineLockError::DeviceKeyMissing
+                | credmgr_keystore::machine_lock::MachineLockError::DeviceKeyUnreadable(_)
+                | credmgr_keystore::machine_lock::MachineLockError::WrongDeviceKey => {
+                    OpError::MachineLockRefused {
+                        reason: "backup_needs_device_key",
+                    }
+                }
+                other => machine_lock_refused(&other),
+            })?;
+            if plain_wrap.is_some() {
+                owner_session(state, scope)?;
+            }
+            use secrecy::ExposeSecret;
+            let root = state
+                .reauth_root_key("backup: restore ticket")
+                .map_err(|_| OpError::VaultLocked)?;
+            let plaintext = credmgr_store::backup::create_backup_with_ticket_and_pass_wrap(
+                &state.paths,
+                root.expose_secret(),
+                now,
+                plain_wrap.as_deref(),
+            )
+            .map_err(|e| match e {
+                credmgr_store::StoreError::ArchiveRefused { reason } => OpError::Malformed(reason),
+                other => OpError::Internal(format!("selecting backup files: {other}")),
+            })?;
             let passphrase = secrecy::SecretBox::new(Box::new(passphrase_str.to_string()));
             let ciphertext = credmgr_keystore::backup_passphrase::encrypt_with_passphrase(
                 &passphrase,
@@ -5236,17 +7739,175 @@ fn dispatch_op(
             );
 
             let name = crate::maintenance::backup_file_name(now);
-            let out_path = state.paths.backups_dir().join(name);
+            let out_dir = state.backup_dir();
+            let outside_vault_folder = out_dir != state.paths.backups_dir();
+            let out_path = out_dir.join(name);
             credmgr_store::atomic::write(&out_path, &ciphertext)
                 .map_err(|e| OpError::Internal(format!("writing backup: {e}")))?;
 
-            let pruned = crate::maintenance::prune_backups(&state.paths, retain);
+            let pruned = crate::maintenance::prune_backups_in(&out_dir, retain);
 
             Ok(json!({
+                // ADR-165: the archive holds the passphrase file unsealed (the vault is bound to this Mac).
+                "passphraseFileUnsealed": plain_wrap.is_some(),
+                // Review N2: while the vault is bound the archive is written outside the vault folder.
+                "outsideVaultFolder": outside_vault_folder,
                 "path": out_path.to_string_lossy(),
                 "retain": retain,
                 "pruned": pruned,
+                "complete": true,
             }))
+        }
+
+        // ADR-130 — replace a node's keypair and re-seal everything sealed to the old one (crash-safe,
+        // `state/rekey.rs`). Owner, `Admin`, a fresh second factor, a presence proof; one at a time.
+        "node.rekey" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            stable_ops::node_rekey(state, scope, target_node, params, now)
+        }
+
+        // ADR-131 — permanently destroy sealed entries and the material archived behind them. Owner,
+        // `Admin`, the confirmation word, the count the person was shown, a fresh second factor, presence.
+        "orphan.destroy" => {
+            let confirm = params["confirm"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.confirm is required".into()))?;
+            let count = params["count"]
+                .as_u64()
+                .ok_or_else(|| OpError::Malformed("params.count is required".into()))?;
+            let entries = entry_doc::opt_string_list(params.get("entries"), "entries")?;
+            stable_ops::orphan_destroy(state, scope, confirm, count, entries, params, now)
+        }
+
+        // ADR-132 — find entries by what their field VALUES contain; answers entry ids and names only,
+        // never a value, a snippet or a position. `reveal` capability, rate-limited, never for a reader
+        // who may not see a private node's names, never on a stored 2FA seed.
+        "search.content" => {
+            let term = params["term"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.term is required".into()))?;
+            let only_node = params.get("node").and_then(Value::as_str);
+            stable_ops::content_search(state, scope, term, only_node, now)
+        }
+
+        // ADR-133 — a node's entries, encrypted for the owner as an age file. The plaintext is built and
+        // encrypted inside the broker; only ciphertext leaves it.
+        "node.export" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let passphrase = params.get("passphrase").and_then(Value::as_str);
+            let recipients = entry_doc::opt_string_list(params.get("recipients"), "recipients")?;
+            stable_ops::node_export(
+                state,
+                scope,
+                target_node,
+                passphrase,
+                recipients,
+                params,
+                now,
+            )
+        }
+
+        // ADR-135 — a node's own second factor: enrol (two steps, like the vault's), step up (its code
+        // opens that node only), remove (its fresh code and a presence proof, or the last door).
+        "node.gate_enroll_begin" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            node_gate_ops::enroll_begin(state, scope, target_node, now)
+        }
+        "node.gate_enroll_confirm" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let code = params["code"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.code is required".into()))?;
+            node_gate_ops::enroll_confirm(state, scope, target_node, code, now)
+        }
+        "node.gate_verify" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let code = params["code"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.code is required".into()))?;
+            node_gate_ops::verify(state, scope, target_node, code, now)
+        }
+        "node.gate_remove" => {
+            let target_node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let passphrase = params.get("passphrase").and_then(Value::as_str);
+            let recovery_code = params.get("recoveryCode").and_then(Value::as_str);
+            node_gate_ops::remove(
+                state,
+                scope,
+                target_node,
+                passphrase,
+                recovery_code,
+                params,
+                now,
+            )
+        }
+
+        // ADR-134 — a summary of the audit log for a period: counts, denials, presence uses. No values,
+        // no names of entries, none of the free text a person wrote.
+        "audit.report" => {
+            let from = params["from"]
+                .as_i64()
+                .ok_or_else(|| OpError::Malformed("params.from is required".into()))?;
+            let to = params["to"]
+                .as_i64()
+                .ok_or_else(|| OpError::Malformed("params.to is required".into()))?;
+            let only_node = params.get("node").and_then(Value::as_str);
+            stable_ops::audit_report(state, scope, from, to, only_node, now)
+        }
+
+        // ADR-164 — node-scoped agent tokens. The owner's login only; issuing and rotating mint a bearer
+        // secret, so each also needs a fresh second factor (where enrolled) and a Touch ID proof. None of the
+        // four is an MCP tool (`FORBIDDEN_OPS`).
+        "agent.token_issue" => {
+            let node = params["node"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
+            let label = params["label"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.label is required".into()))?;
+            let capabilities = params
+                .get("capabilities")
+                .ok_or_else(|| OpError::Malformed("params.capabilities is required".into()))?;
+            let expires_in = params.get("expiresIn");
+            agent_tokens::issue(
+                state,
+                scope,
+                node,
+                label,
+                capabilities,
+                expires_in,
+                params,
+                now,
+            )
+        }
+        "agent.token_status" => {
+            let only_node = params.get("node").and_then(Value::as_str);
+            agent_tokens::status(state, scope, only_node, now)
+        }
+        "agent.token_rotate" => {
+            let id = params["id"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.id is required".into()))?;
+            let expires_in = params.get("expiresIn");
+            agent_tokens::rotate(state, scope, id, expires_in, params, now)
+        }
+        "agent.token_revoke" => {
+            let id = params["id"]
+                .as_str()
+                .ok_or_else(|| OpError::Malformed("params.id is required".into()))?;
+            agent_tokens::revoke(state, scope, id, now)
         }
 
         other => Err(OpError::Malformed(format!("unknown op: {other}"))),

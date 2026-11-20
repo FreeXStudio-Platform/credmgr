@@ -10,7 +10,7 @@ surface: repo
 last_reviewed: 2026-08-19
 ---
 
-<!-- artifact-hardened: NEEDS RE-HARDENING — rewritten to ultimate-destination state on
+<!-- artifact-hardened: NEEDS RE-HARDENING — revised 2026-11-08 for ADR-150 (reveal confirmation); awaiting re-verification. Earlier: edited 2026-11-06 for ADR-098 (Touch ID honesty pass). Earlier note: rewritten to ultimate-destination state on
      2026-08-18 (Session 21). The previous stamp (Approved With Known Risks @ d15a5c7, pass 2,
      reconciled 2026-08-10 under ADR-052) had drifted and was invalid: the body was edited after
      the commit it named. This rewrite invalidates it again by construction. Every claim below
@@ -68,12 +68,13 @@ last_reviewed: 2026-08-19
 
 `CredMgr V2` · the wire contract, the whole operation surface, and which parts of it exist · `2026-08-18`
 
-> **Status.** The **broker protocol is built** — framing, envelopes, the 25-variant error
+> **Status.** The **broker protocol is built** — framing, envelopes, the 26-variant error
 > taxonomy, the peer gate and the per-decision audit id all exist in `crates/brokerd/` and are
-> covered by the isolation suite. **53 operations are dispatched** (`crates/brokerd/src/ops.rs`);
-> five of them can only ever refuse today because their positive path needs native presence
-> attestation, which no current transport can supply. **The CLI has 24 top-level subcommands**;
-> **the MCP server exposes 15 tools**. Everything else this document specifies — the other 29
+> covered by the isolation suite. **63 operations are dispatched** (`crates/brokerd/src/ops.rs`);
+> since ADR-098 the five that used to refuse because their positive path needs a presence proof (and the
+> sealed read) **execute on a Mac with an enrolled Secure Enclave presence key**, and eight new ops carry
+> the proof and the Touch ID unlock (§4.2, §4.2a); with no key enrolled they still answer `presence_required`. **The CLI has 24 top-level subcommands**;
+> **the MCP server exposes 21 tools** (15, plus the six switchboard tools of ADR-155: `credmgr_settings_list/get/set/revert/request` and `credmgr_kb`; the rules, the safety tiers and every setting are in `LLM_KB.md`, generated from `credmgr_core::settings`). Everything else this document specifies — the other 29
 > named operations, the rest of the command surface, two more MCP tools, server-pushed event
 > frames, the scripting client, and the full native-shell allowlist — is **`planned`: designed
 > here in full, dispatched nowhere.** Section 4 is the honest op-by-op map. `## Source` is where
@@ -131,7 +132,7 @@ have, never something false.
 
 ### 1.3 The error taxonomy — **`built`**
 
-Denials are typed internally (`OpError`, 25 variants) and become a flat JSON object on the wire
+Denials are typed internally (`OpError`, 26 variants since ADR-098 added `presence_failed`) and become a flat JSON object on the wire
 with a short static `error` discriminant. The same discriminant is what the audit record stores,
 so a caller's own error and the log's account of it use one vocabulary rather than two.
 
@@ -161,19 +162,25 @@ so a caller's own error and the log's account of it use one vocabulary rather th
   "remedy": "A human can create a grant: credmgr grant northwind --to acme --scope read --reason \"…\"" }
 ```
 
-The twenty-five variants, grouped by what they tell a caller to do next:
+```jsonc
+// ←  a Touch ID proof was sent and did not verify (ADR-098)
+{ "id": "1", "ok": false, "error": "presence_failed", "operation": "grant.create",
+  "reason": "expired", "message": "the presence challenge expired or was already used; ask for a new one" }
+```
+
+The twenty-eight variants, grouped by what they tell a caller to do next:
 
 | Class | `error` values | What the caller should do |
 |---|---|---|
 | Authorisation | `node_access_denied`, `capability_not_held` | Stop and ask a human. `remedy` names the exact command. |
-| Authentication in progress | `two_factor_required`, `approval_pending` | Complete the named challenge, or wait for the operator's decision. |
+| Authentication in progress | `two_factor_required`, `approval_pending`, `confirmation_required` | Complete the named challenge, or wait for the operator's decision. `confirmation_required` (ADR-150) carries `operation`, `mode` (`window` / `everyTime`) and `windowSeconds`: the vault's "confirm before showing secrets" policy holds the owner's login back until `session.confirm` (Touch ID or the passphrase, §4.2b); the app and the CLI do this themselves, then repeat the request once. An agent is never asked. |
 | Authentication failed | `wrong_passphrase`, `gate_verification_failed`, `gate_not_enrolling`, `approval_denied`, `rate_limited` | Do not retry in a loop; `rate_limited` carries `retryAfterSeconds`. |
-| Lock state | `vault_locked`, `node_locked` | `vault_locked`: the **whole vault** is locked — only `entry.create` is permitted (ADR-023), and `entry.create_batch`, which runs each item through it and holds the whole batch in the pending tray (ADR-073); a client's login is over. `node_locked` (ADR-077): the vault is unlocked but the named `node` (it is in the body) is locked individually — unlock it with `vault.node_unlock`; the login is still valid. |
+| Lock state | `vault_locked`, `node_locked`, `machine_lock_refused` | `vault_locked`: the **whole vault** is locked — only `entry.create` is permitted (ADR-023), and `entry.create_batch`, which runs each item through it and holds the whole batch in the pending tray (ADR-073); a client's login is over. `node_locked` (ADR-077): the vault is unlocked but the named `node` (it is in the body) is locked individually — unlock it with `vault.node_unlock`; the login is still valid. `machine_lock_refused` (ADR-165): the passphrase file is sealed to a device key this Mac does not hold, or is damaged (`reason`: `device_key_missing`, `device_key_mismatch`, `device_key_unreadable`, `sealed_wrap_damaged`, `device_key_unwritable`), or (`plain_wrap_while_bound`, review P0-1) this Mac bound the vault and an older plain passphrase file that no longer opens it was put back; it is not a wrong passphrase and does not count in the back-off. `remedy` names the recovery code (`credmgr recover`, the Lock screen's "Forgot passphrase?"). |
 | Session ended (ADR-068) | `session_expired` | The token presented is not a live login — it idled out, the vault locked, or it never existed. Unlock again; do not retry with the same token. |
-| Transport not capable | `presence_required` | Nothing to complete on this build — see §4.2. |
+| Presence | `presence_required`, `presence_failed` | `presence_required`: the operation needs a Touch ID proof — ask `presence.challenge`, have the Secure Enclave sign, repeat with `params.presence` (the CLI and the desktop shell do this themselves); with no key enrolled there is nothing to complete (enrol one, §4.2a). `presence_failed` (ADR-098) carries a `reason`: `not_enrolled`, `expired`, `invalid`, `cancelled`, `locked_out`, `unavailable`. An agent or fixture token can never hold a proof. See §4.2. |
 | Concurrency | `conflict` | Re-read, re-apply, retry once with the current `generation`. |
 | Data state | `not_found`, `entry_exists`, `archive_expired`, `entry_removal_expired`, `not_undoable` | A terminal answer about the vault's contents, not about permission. |
-| Vault bootstrap (ADR-061) | `vault_already_initialized`, `vault_inside_git_working_tree`, `vault_init_not_pending`, `recovery_code_mismatch` | A terminal answer about `credmgr init`'s state — a vault already exists, the path is inside a git working tree, no init is pending, or the retyped recovery code did not match. |
+| Vault bootstrap (ADR-061) | `vault_already_initialized`, `vault_inside_git_working_tree`, `vault_init_not_pending`, `recovery_code_mismatch` | A terminal answer about `credmgr init`'s state — a vault already exists, the path is inside a git working tree, no init is pending, or the retyped recovery code did not match. `vault.recover` (ADR-163) answers `recovery_code_mismatch` for a recovery code that does not open the vault, and there it counts in the unlock back-off. |
 | Caller error | `malformed_request` | Fix the request. |
 | Broker fault | `internal` | A local failure outside the documented taxonomy. |
 
@@ -195,11 +202,11 @@ removes.
 |---|---|---|
 | A peer whose uid is not the vault owner has its connection closed before the first frame is read | **`built`** | `server.rs::serve_connection` calls `peer::identify_peer` then `peer_is_owner` before constructing a reader |
 | Every request either carries a token or is resolved from the caller's cwd to a minimum scope | **`built`** | `scope.rs::resolve_scope`; I-11 proves a cwd-scoped caller cannot reach another node under any argument |
-| A request that presents a token the broker does not hold is refused as `session_expired`, never resolved from cwd — except `vault.status`/`unlock`/`gate_verify`/`gate_recover`/`init_begin`/`init_confirm`/`lock` | **`built`** (ADR-068) | `server.rs::handle_request_at`, `TOKENLESS_OK_OPS`; `session_login.rs::a_token_the_broker_never_issued_is_refused_not_resolved_from_cwd` |
+| A request that presents a token the broker does not hold is refused as `session_expired`, never resolved from cwd — except `vault.status`/`unlock`/`gate_verify`/`gate_recover`/`recover` (ADR-163)/`init_begin`/`init_confirm`/`lock` | **`built`** (ADR-068) | `server.rs::handle_request_at`, `TOKENLESS_OK_OPS`; `session_login.rs::a_token_the_broker_never_issued_is_refused_not_resolved_from_cwd` |
 | A session token appears only in the response of the op that mints it (`vault.unlock`, `vault.gate_verify`) — never in the audit log, an `audit.tail`/`audit.get` response, a log line, an error or a `Debug` print; the audit `actor` is `<Origin>` or `<Origin>:s_<16 hex>` | **`built`** (ADR-077) | `server.rs::audit_actor`/`scrubbed`, `token.rs::redact_bearer_tokens`; `audit_actor.rs` (4 tests); the endpoint matrix's all-secrets plaintext invariant and its `audit.tail` rows judge the bytes. Alpha vaults written before this still hold dead `cmt_…` strings in their audit files — `v2/SECURITY.md` |
 | A token's scope is fixed at issue and cannot be raised at runtime | **`built`** | `token.rs` exposes no mutator for `node_id`/`capabilities`; `BrokerScope::holds` is a ceiling checked *in addition to* `resolve()` |
 | A token presented from a cwd that disagrees with its `boundWorkdir` proceeds, and writes an anomaly record | **`built`** | I-12; `server.rs::record_anomaly` — the anomaly never blocks the request that raised it |
-| `grant.create` and `node.reparent` refuse every origin that cannot attest live presence | **`built`, and today that is every origin** | both arms end in `PresenceRequired` unconditionally; I-23 for `reparent` |
+| `grant.create` and `node.reparent` refuse every origin that cannot prove live presence | **`built`** (ADR-098) | both arms require a verified presence proof — a Secure Enclave signature over the exact params, single-use, bound to the session — and otherwise answer `PresenceRequired`; an agent or fixture token can never hold one; I-23 for `reparent`, `crates/brokerd/tests/presence.rs` |
 | Values appear only in `entry.reveal` and `totp.code` responses — never in list, get, search, audit or event frames | **`built`** | `ops.rs` returns a plaintext in exactly those two arms; `entry.get` (ADR-078) returns field ids, labels, types and masking and **no value**; the audit module's own contract is that it never records a value or a label |
 | Every request that mutates an *existing* entry carries the caller's last-seen `generation`; a stale value returns `conflict` rather than overwriting, and writes are serialised per node | **`built`** | `entry.update`/`rotate`/`remove`/`restore`/`undo` and the four `field.*` ops all require `params.generation` (each of those arms in `ops.rs` reads `params["generation"]`); `state.node_write_lock` serialises; I-25 proves exactly one of two concurrent writers wins. **`entry.create` is the exception, not covered by this row** — it bumps `generation` but reads no `params.generation` (its `ops.rs` arm), because there is nothing yet to conflict with — nor, for the same reason, `entry.create_batch` (`ADR-073`). `notes.write` requires `params.generation` too (`ADR-072`) |
 | `entry.create` is permitted while locked (into the pending tray); `entry.update` is not | **`built`** | I-18; ADR-023 |
@@ -261,13 +268,21 @@ which is also the MCP server (`credmgr mcp`) and therefore one artefact to sign 
 ```bash
 credmgr init                            # first-run vault creation; passphrase from stdin,
                                         # prints the recovery code once (ADR-061)
-credmgr status
+credmgr status [--ack | --log]          # --log: where the diagnostic log is, without asking the
+                                        # broker (ADR-159)
 credmgr unlock                          # passphrase from stdin; prints `export CREDMGR_TOKEN=…`
-credmgr gate verify <code>              # completes an unlock that returned two_factor_required
+credmgr gate verify [--code-on-argv <n>]
+                                        # completes an unlock that returned two_factor_required; the
+                                        # authenticator code is typed at a prompt or read from stdin,
+                                        # never an argument (ADR-113)
 credmgr gate enroll                     # turns on two-factor; prints the otpauth:// URI, then the
                                         # ten recovery codes once (ADR-064)
 credmgr gate recover                    # lost authenticator: passphrase + root recovery code,
                                         # both from stdin, reset the gate; never unlocks (ADR-064)
+credmgr recover [--json]                # forgotten passphrase: the root recovery code, then a new
+                                        # passphrase (and a second-factor code if one is enrolled),
+                                        # from stdin; opens the vault, sets the new passphrase and
+                                        # prints a NEW recovery code once - the used one is retired (ADR-163)
 credmgr lock
 credmgr whoami [--json]
 credmgr list [--node <id>] [--json]
@@ -283,6 +298,14 @@ credmgr field set <name> (--field <l> | --field-id <id>) [--label <new>] [--type
 credmgr field rm <name> (--field <l> | --field-id <id>)   # undoable: prints the audit id
 credmgr field mv <name> (--field <l> | --field-id <id>) --to <n>
 credmgr search <term> [--json]
+credmgr search <term> --deep [--node <id>] [--json]     # ADR-132: inside field VALUES; node and name only
+credmgr node rekey <id>                 # ADR-130: new node key, every file re-sealed; fresh code + Touch ID
+credmgr orphan ls [--json]              # sealed entries: names only
+credmgr orphan destroy (--all | <entry-id>...) --count <n> --confirm destroy-sealed-entries   # ADR-131: for good
+credmgr export --node <id> --out <file> --age [--age-recipient <age1…>]... [--force]
+                                        # ADR-133: age file, mode 0600, never stdout; passphrase from stdin twice
+credmgr audit report (--days <n> | --from YYYY-MM-DD --to YYYY-MM-DD) [--node <id>] [--json]   # ADR-134
+credmgr gate enroll|verify|remove [--last-door] --node <id>  # verify reads the code from a prompt or stdin   # ADR-135: a project's own second factor
 credmgr set <name> --node <id> [--bulk] [--field <l> | --field-id <id>] [--label <l>]
                                         # value from stdin; `--bulk` parses the paste locally into
                                         # ONE multi-field entry; `--field` replaces one field
@@ -295,11 +318,20 @@ credmgr verify [--json]                 # also hashes every envelope against its
 credmgr pending [--node <id>] [--json]  # the locked-write review tray; no --node lists every node (ADR-069)
 credmgr pending accept|discard <entry> --node <id>
 credmgr doctor [--dry-run]
-credmgr backup [--retain N]
-credmgr import <file|-> --node <id> [--json]
+credmgr backup [--retain N]             # a COMPLETE encrypted archive (ADR-112); passphrase from stdin
+credmgr restore <archive> [--to <empty dir>] [--state-dir <dir>]
+                                        # rebuilds a vault from a backup archive; offline, backup
+                                        # passphrase from stdin, refuses a target that is not empty (ADR-112)
+credmgr approve <request> [--deny] [--code-on-argv <n>]
+                                        # passphrase = first stdin line; authenticator code = second
+                                        # line, or asked for at a terminal (ADR-113)
+credmgr import <file|-> --node <id> [--format json|env] [--json]
                                         # a .env-style file becomes entries in ONE all-or-nothing
                                         # entry.create_batch call (ADR-073); `-` reads stdin; values
-                                        # are never printed; empty values are skipped and named
+                                        # are never printed; empty values are skipped and named.
+                                        # rc.2: a .json file (or --format json) is an array of
+                                        # {"name","value"} or {"name","fields":[{"label","value","type"?}]}
+                                        # items, passed to the same call as they are; same 500 ceiling
 credmgr notes show <id> [--json]        # the node's markdown note (ADR-072)
 credmgr notes set <id> [--file <path>]  # text from the file or stdin; EMPTY input is refused
 credmgr notes clear <id>                # the only way to delete a note
@@ -314,7 +346,12 @@ credmgr node policy <id> --reason "…" [--agent-access read-write|read-only|non
                                         # a partial patch, all-or-nothing; a change that widens
                                         # reach is refused with presence_required (ADR-071)
 credmgr grant <from> --to <node> --scope read --reason "…" | grant ls | grant revoke <id>
-credmgr mcp                             # the MCP stdio server; for agent config, not humans
+credmgr mcp                             # the MCP stdio server; for agent config, not humans;
+                                        # presents CREDMGR_AGENT_TOKEN if set, never CREDMGR_TOKEN
+credmgr agent token issue <node> --label "…" --cap list,read [--expires 8h]
+                                        # a node-scoped agent token, shown once on stdout;
+                                        # owner login, second factor, Touch ID (ADR-164)
+credmgr agent token ls [--node <id>] | rotate <id> [--expires …] | revoke <id>
 credmgr --version                       # version, commit, dirty flag and platform
 ```
 
@@ -353,7 +390,9 @@ token is presented on every subsequent request through the environment — never
 exactly the reason a value is never a flag. Since ADR-065 that login reaches every project in the
 vault, so the CLI prints a `#` warning line beside it (ignored by `eval`) to keep it out of any
 shell an AI agent runs in — accepted risk K-6. `credmgr grant <from> --to …` is wired end to end and
-validates every parameter, and then refuses, because its positive path needs presence (§4.2).
+validates every parameter, and then asks for Touch ID itself (the CLI answers `presence_required` with a
+challenge, a signature and a retry) — or, with no presence key enrolled, refuses and says to run
+`credmgr presence enrol` (ADR-098, §4.2).
 
 ### 2.2 A secret never travels in argv — **`built`, structurally**
 
@@ -361,9 +400,11 @@ No subcommand defines a flag or positional that carries a secret. (A field's *la
 a type are naming, not secrets, and may be flags: `--field`, `--field-id`, `--label`, `--at`, `--to`, `--type`,
 `--mask`; the test's allowlist names every flag.) New and updated values, the
 unlock passphrase, and `gate recover`'s passphrase and root recovery code are read from stdin
-only; `import` and `notes set` take their text from a file or stdin only. The one deliberate exception is
-`credmgr gate verify <code>`: a 6-digit TOTP in argv costs an attacker nothing they could not get
-by watching the same six digits being typed.
+only; `import` and `notes set` take their text from a file or stdin only. There is no exception left (ADR-113, issue #39): an authenticator code is a single-use number, but a
+same-user process sees argv in `ps`, so `credmgr gate verify` and `credmgr approve` read it from a
+prompt or stdin. `--code-on-argv <n>` keeps the argument for the few places that cannot prompt, and
+`credmgr help` says what it costs; the old spelling `gate verify <code>` is refused without sending
+anything.
 
 This is asserted by a test that inspects the argument surface itself rather than by review —
 `crates/cli/tests/no_secret_in_argv.rs`. That matters because the failure mode is a future
@@ -373,7 +414,8 @@ session adding one convenient flag.
 
 The commands below are designed and mapped in `18_ENDPOINT_INDEX.md §2`; none of them is
 dispatched today. (`import`, `notes show`/`set`/`clear` and `node rename`/`policy` left this table on
-2026-10-02 and are in §2.1.) They are grouped by the op namespace each one **will** call, so the CLI's
+2026-10-02 and are in §2.1; `history` and `expiring` left it on 2026-11-09 with `ADR-156`, which built them
+with `passphrase`, `expire` and `ref` — see `18_ENDPOINT_INDEX.md §1` for each op behind them.) They are grouped by the op namespace each one **will** call, so the CLI's
 missing surface and the broker's missing surface (§4.3) stay one list rather than two.
 
 | Command | Will call | Notes on the target behaviour |
@@ -381,18 +423,17 @@ missing surface and the broker's missing surface (§4.3) stay one list rather th
 | `credmgr export --node <n> --out <file>` | `node.export` | Will require 2FA, presence and an explicit `--out`. Will never write to stdout. |
 | `credmgr env --node <n>` | `node.export` | Will emit `KEY=value` lines to a file, never to a terminal. |
 | `credmgr batch --node <n>` | `entry.create_batch` | Will open `$EDITOR` and create several entries from one paste, one per `///` block. The op takes multi-field items since `ADR-078`; `credmgr import` is the only command that calls it today. |
-| `credmgr history <name>` | `entry.history` | Will list an entry's rotations, values never included. |
-| `credmgr expiring [--days N]` | `entry.expiring` | Will list entries approaching their expiry. |
-| `credmgr generate [--length N] [--no-symbols] [--pronounceable] [--json]` | `util.generate` | **Built** (ADR-087): the password alone on stdout, its strength on stderr. |
-| `credmgr totp <name>` | `totp.code` | The op is built; the command is not. Will print the current code, never the seed. |
-| `credmgr node rm` / `reparent` | `node.seal`/`node.reparent` | `seal` and `restore` exist as `credmgr node seal` / `credmgr node restore`, `policy` and a rename as `credmgr node policy` / `credmgr node rename` (§2.1); `reparent` has no command (it needs presence, §4.2). |
+| `credmgr generate [--length N] [--no-symbols] [--pronounceable \| --hex] [--copy \| --json]` | `util.generate` | **Built** (ADR-087): the password alone on stdout, its strength on stderr. `--hex` (rc.2) makes lower-case hex. `--copy` (rc.2, macOS) puts it on the clipboard instead of stdout via `pbcopy` and clears it after 30 s only if the clipboard still holds it; `credmgr get --copy` and `credmgr totp --copy` do the same. |
+| `credmgr totp <name> [--node <id>] [--field <label> \| --field-id <id>] [--copy \| --json]` | `totp.code` | **Built** (rc.2): the current code alone on stdout, never the seed; the seconds it stays valid (`validForSeconds`, 1–30) on stderr, or in `--json`. |
+| `credmgr node rm` / `reparent` | `node.seal`/`node.reparent` | `seal` and `restore` exist as `credmgr node seal` / `credmgr node restore`, `policy` and a rename as `credmgr node policy` / `credmgr node rename` (§2.1); `credmgr node reparent` exists since ADR-098 and asks for Touch ID itself (§4.2). |
 | `credmgr pending ls` / `accept` / `discard` | `vault.pending_*` | **Built since 2026-09-24** (`ADR-069`) as `credmgr pending` — §2.1. Kept in this table only because it predates the command; it said no command reached the three ops. |
 | `credmgr audit --purge` | `audit.purge` | Will be human-only and 2FA-gated, and will never be reachable from an agent transport. |
 | `credmgr scan` | `entry.*` | Will scan a work folder for credential-shaped files and offer to adopt them into the node. |
-| `credmgr llm detect` / `connect` | `llm.detect`/`llm.connect` | Will write the client's MCP config as `17 §4.1` specifies, backup first, merge never replace. |
-| `credmgr prompt` | — | Will print the Vault Protocol prompt (`17 §5`) for pasting into a client with no MCP support. |
-| `credmgr token issue` / `rotate` / `revoke` | `agent.token_*` | Will issue node-scoped agent tokens; `issue` will be human-only. |
-| `credmgr keystore status` / `bind` / `unbind` | `keystore.*` | The cross-platform generalisation of V1's machine-lock (`16 §3`). |
+| `credmgr mcp --print-config [<client>]` | — | **Built** (ADR-141): the exact MCP configuration for `claude-code`, `claude-desktop`, `cursor`, `vscode`, `windsurf`, or generic JSON, on stdout. No file read or written, no server started. |
+| `credmgr agent detect` / `connect` / `disconnect` / `init` | — (no broker op, ADR-146) | **Built** (ADR-142, ADR-143): finds the clients, shows the diff and writes only the `credmgr` entry on `--yes` or a typed `y` (backup first, never Claude Code's `~/.claude.json`); `init` writes `CREDMGR.md` into a work folder. |
+| `credmgr prompt [--node <id>]` | `whoami` / `graph.snapshot` | **Built** (ADR-143): the Vault Protocol prompt (`17 §5`) from the live vault, names and structure only. |
+| `credmgr token issue` / `rotate` / `revoke` | `agent.token_*` | **Built** (ADR-164) as `credmgr agent token issue <node> --label … --cap …` / `ls` / `rotate <id>` / `revoke <id>` — subcommands of `agent`, not a top-level `token`. Owner login only; `issue` and `rotate` ask for the second factor where enrolled and Touch ID; the token alone on stdout (§4.2e). |
+| `credmgr keystore status` / `bind` / `unbind` | `keystore.*` | **Built** (ADR-165, the smallest safe version ADR-144 defined): the machine lock, macOS file tier only. `status` prints the honest tier (a device key file on this Mac, never the Secure Enclave), what it protects and what it does not; `bind` asks for the passphrase and the current recovery code, rotates the root key, re-keys every project, seals `root.wrap.pass` and prints the NEW recovery code once (`RECOVERY_CODE=`); `unbind` asks for the second factor and Touch ID where they are on, and the passphrase where neither is. `credmgr recover` and `credmgr passphrase` print whether the machine lock is still on, and warn when the rotation removed it. `--json` on each. Kept in this table only because it predates the command (§4.2d). |
 | `credmgr ssh-agent-add <name>` | `entry.reveal` | Will load a key into the running SSH agent and never write it to disk. |
 | `credmgr which` / `where` / `home` | — | Will print the resolved vault, socket and binary paths for support purposes. |
 
@@ -508,18 +549,19 @@ check alone would miss a tool that calls a permitted op under a misleading name,
 
 - **No grant creation or modification.** `Grant.createdBy` is typed `'human'`; there is no agent
   path, and adding one would defeat the entire access graph.
-- **No orphan read.** Not gated — absent. The broker refuses non-native transports for orphan
-  operations regardless of what any tool asks.
+- **No orphan read.** Not gated — absent. `orphan.list` and `orphan.reveal` (ADR-098) have no MCP tool and
+  no CLI command; the broker refuses everything but the owner's own session with a fresh second factor and a
+  Touch ID proof, whatever any tool asks.
 - **No TOTP seed.** `credmgr_totp_code` returns a code worth thirty seconds; a seed is worth
-  forever. The `totp.seed` op exists in the broker and, on every transport this build has,
-  returns `presence_required` and nothing else.
+  forever. The `totp.seed` op exists in the broker; it runs only for the owner's login with a
+  Touch ID proof (ADR-098), and for every agent or MCP scope it returns `presence_required` and nothing else.
 - **No node policy or `agentAccess` change, and no rename.** An agent may not widen its own scope.
   This is the definition of the boundary. Since `ADR-071` the list names the real ops,
   `node.policy` and `node.update`, beside the two placeholder names (`node.policy_update`,
   `node.agent_access_update`) that predate them; both ops also refuse `Origin::Agent` in the
   broker itself.
 - **No node re-parenting.** [Pass 2 · F-8] Moving a node changes its ancestor set and therefore
-  what it can read — a grant by another name. Human and presence only.
+  what it can read — a grant by another name. Human and presence only (a Touch ID proof, ADR-098).
 - **No listing of nodes outside scope.** `credmgr_whoami` names only reachable nodes; nothing
   else enumerates the vault's topology.
 - **No audit purge, no recovery-window shortening, no `forcePurge`.** The 7-day recovery window
@@ -532,9 +574,32 @@ check alone would miss a tool that calls a permitted op under a misleading name,
   (ADR-054): `doctor` and `backup` mutate vault-wide state, and `verify`'s errors can name a
   security-relevant condition — a tampered manifest — that belongs in front of a human, not
   silently in an agent's context.
+- **No tidy-up scan.** `vault.doctor_scan` (ADR-161) compares values across every node the owner can
+  read; even its counts would map the vault for whoever ran it. It is on `FORBIDDEN_OPS`, and the broker
+  answers only the owner's login (`capability_not_held` to every agent scope).
+- **No merge.** The eight `merge.*` ops (ADR-168) are on `FORBIDDEN_OPS`: a suggestion of kind `identical` says that two
+  entries hold the same value, a merge removes entries and renames, and the decision memory is the owner's judgement. The
+  broker answers only the owner's login with `admin` on the node (`capability_not_held` to every agent scope). Tags
+  (`entry.tag_set`, ADR-167) have no tool either; like `entry.alias` the op is not listed here because no tool exists to
+  forbid, and the broker refuses `Origin::Agent` itself.
+- **No applying a tidy-up plan.** `vault.doctor_apply` (ADR-169) is a run of `entry.move`s in one request; like
+  `entry.move` it would let an agent carry entries out of its scope. It is on `FORBIDDEN_OPS`, and the broker answers
+  only the owner's login.
 - **No root-key rotation.** `maintenance.rotate_root` (ADR-076) replaces the key every other key is
   wrapped under and issues a new recovery code; it is on `FORBIDDEN_OPS` — absent, not gated — and
-  refuses `Origin::Agent` in the broker as well. Human, `admin`, a fresh second factor and presence.
+  refuses `Origin::Agent` in the broker as well. Human, `admin`, a fresh second factor and a presence proof.
+- **No recovery-code unlock.** `vault.recover` (ADR-163) opens the vault with the printed recovery code and
+  re-keys it under a new passphrase and a new code; it is on `FORBIDDEN_OPS` — absent, not gated — and the
+  broker refuses an agent token, or a call from inside a registered project folder, before any code is read.
+- **No machine-lock change.** `keystore.status`, `keystore.bind` and `keystore.unbind` (ADR-165) are on
+  `FORBIDDEN_OPS` — absent, not gated — and the broker refuses an agent token, or a call from inside a
+  registered project folder, before anything is read: an agent may neither weaken the lock nor learn
+  whether a vault is tied to this Mac.
+- **No agent-token issuing, listing, rotation or revocation.** `agent.token_issue`, `agent.token_status`,
+  `agent.token_rotate` and `agent.token_revoke` (ADR-164) are on `FORBIDDEN_OPS`, and I-13 forbids `token` in any
+  tool name. An agent token is how an agent **authenticates** to the MCP server, never something an agent can make,
+  widen, narrow or renew — not even a narrower one, not even its own. The broker refuses all four to `Origin::Agent`
+  as well.
 - **No 2FA gate change and no directory binding.** `vault.gate_enroll_begin`,
   `vault.gate_enroll_confirm`, `vault.gate_recover` and `node.set_workdirs` are on the forbidden
   list (ADR-064, ADR-066): resetting or replacing the gate, and re-pointing the directories that
@@ -595,21 +660,38 @@ burden when a project is added.
 transport resolves the socket from the same vault path every other client uses, presenting no
 token, so the broker scopes it from the process's own cwd and peer credentials.
 
-**`planned`:** everything that writes that JSON for the user. `Settings → LLM Integration` will
-locate the client's config file (`17 §4.2`'s detection matrix), back it up, merge the one key,
-write atomically, verify by re-reading, record the change in the audit log and offer one-click
-undo — and will never touch a key it did not add. `credmgr llm connect` will be the CLI half, and
-`credmgr mcp --print-config` will emit the snippet for a client with no known config path. None
-of those three exists.
+**`built` (ADR-164):** an agent token. When `CREDMGR_AGENT_TOKEN` is set in the server's environment, `credmgr mcp`
+presents it on every request and the broker scopes the server to that token's one node and capabilities instead of
+the cwd. The server reads **only** that variable and **only** a well-formed `cma_` value: it never reads
+`CREDMGR_TOKEN`, and it refuses to start on a malformed value or an owner login (`cmt_`), without echoing it, so an
+owner login exported into an agent's shell (K-6) never reaches the MCP surface. A revoked or expired token makes every
+call answer `session_expired`; the server does not fall back to the cwd scope.
+
+```json
+{ "mcpServers": { "credmgr": {
+    "command": "credmgr", "args": ["mcp"],
+    "env": { "CREDMGR_AGENT_TOKEN": "cma_…" }
+} } }
+```
+
+**`built` (ADR-141, ADR-142, ADR-143):** the writing of that JSON for the user, from the CLI and the app —
+not the broker (ADR-146). `Settings → Agents` and `credmgr agent connect` locate the client's config file
+(`17 §4.2`'s detection matrix), show the change as a diff, and on a click (`--yes` in the CLI) copy the file to
+`<file>.credmgr-backup-<time>`, merge the one key, write through a temporary file and a rename, and read it
+back — never touching a key they did not add and never writing Claude Code's `~/.claude.json` (its row shows the
+`claude mcp add` command). `credmgr mcp --print-config [<client>]` emits the snippet for any client, generic JSON
+for one with no known config path. **Not built, and not a gap:** an audit-log record and a one-click undo button
+for a connect; it is a file written by the owner's own process, and the backup beside it is the trail (ADR-142).
 
 Directories are registered with `credmgr node create … --workdir <dir>` or
 `credmgr node workdir <id> <dir>…` (ADR-066); until 2026-09-24 nothing could set them. If cwd
 matches no registered `workdirs`, scope falls back to `global` with `list` only, and
 `credmgr_whoami` will say so plainly along with how to register the folder. The fallback scope
 is **`built`** (`scope.rs::resolve_scope`); the explanatory text in the response is **`planned`**
-— `whoami` returns `node`, `capabilities` and `reachable`, and no guidance field.
+— `whoami` returns `node`, `capabilities`, `reachable` and (ADR-140) `level`, the caller's own node's security
+level, and no guidance field.
 
-## 4. The operation surface — 55 built, 28 more designed
+## 4. The operation surface — 72 built (`corpus_check`), the rest designed
 
 `18_ENDPOINT_INDEX.md` maps V1's surface onto V2's and is the index. This section is the
 inventory: what the broker dispatches, what it refuses, and what the finished surface will be.
@@ -640,11 +722,12 @@ built-but-refuse-only operations in §4.2, below. `18_ENDPOINT_INDEX.md §1.8` n
 either; that index lists them under `§1.1`. Nor do `node.policy`, `notes.read`/`notes.write` and the four
 `field.*` operations, ADR-071/072/078, listed there under `§1.3`/`§1.2`.)
 
-`maintenance.doctor` is reachable, but its `--rebuild-registry` mode is not: that mode refuses
-with `presence_required` for the same reason as the five operations in §4.2. `node.policy` is
+`maintenance.doctor` is reachable, and its `--rebuild-registry` mode needs a presence proof like the
+operations in §4.2 (diff first; `apply: true` writes and then locks the vault so the next unlock loads it from
+disk); with no presence key enrolled it refuses with `presence_required`. `node.policy` is
 reachable the same way: a patch that tightens or is neutral applies, and one that turns
-`descendantRead` on or `siblingVisibility` to `shared` refuses with `presence_required` and
-applies nothing (`ADR-071`, `06_ACCESS_GRAPH.md §10.1`). `requireTwoFactor` and `privateNames`
+`descendantRead` on or `siblingVisibility` to `shared` applies with a presence proof and otherwise refuses with
+`presence_required` and applies nothing (`ADR-071`, `ADR-098`, `06_ACCESS_GRAPH.md §10.1`). `requireTwoFactor` and `privateNames`
 are stored by it and **enforced** since 2026-10-24 (`ADR-085`, `ADR-083`); its `notEnforced` list is
 empty and the key stays. Its `maintenance.doctor` sibling gains an opt-in `purgeExpiredSeals`
 (`ADR-089`); §4.1c has the shapes.
@@ -670,17 +753,79 @@ Additive on every existing op; the one new op is `util.generate`. Examples are t
 
 | Op | Request | Answer |
 |---|---|---|
-| `util.generate` | `length?` (8–128, default 20), `symbols?` (default true), `pronounceable?` (default false); another key is `malformed_request`. Needs `create` or `update`. **Not an MCP tool.** | `{"value":"q7Vn-2xLw9RtZk4PdE8m","length":20,"symbols":true,"pronounceable":false,"entropyBits":124}` — `entropyBits` is `⌊length × log₂ pool⌋` (pronounceable: the exact figure, 64 at 20). The value is in this answer only: not audited, not stored. |
+| `util.generate` | `length?` (8–128, default 20), `symbols?` (default true), `pronounceable?` (default false), `hex?` (default false: lower-case `0-9a-f` only, same length bounds, 4 bits of entropy a character; refused with `pronounceable` or `symbols: true`, and `symbols` is reported false); another key is `malformed_request`. Needs `create` or `update`. **Not an MCP tool.** | `{"value":"q7Vn-2xLw9RtZk4PdE8m","length":20,"symbols":true,"pronounceable":false,"hex":false,"entropyBits":124}` — `entropyBits` is `⌊length × log₂ pool⌋` (pronounceable: the exact figure, 64 at 20). The value is in this answer only: not audited, not stored. |
 | `entry.create`, `entry.create_batch`, `node.create`, `node.update` | as before | gain `"warnings": ["mixed_script_name"]` when a name mixes Latin with Greek or Cyrillic letters (accepted, never refused). A look-alike of an existing name (`payroll` with a Cyrillic `а`) is the existing `entry_exists` refusal; names are compared by `credmgr_core::names::canonical_name` (ADR-084) and stored as typed. |
-| `graph.snapshot` | — | a `privateNames` node, to a reader that is not the owner's login: `{"id":"acme","nameHidden":true,"name":null,"label":null,"kind":"project","depth":1,"parentId":"global","entryCount":7,"counts":{"entries":7,"totp":null},"gate":{…},"health":null}`; below three entries `"entryCount":null,"countHidden":true`. The owner's row is unchanged plus `"nameHidden":true`. |
+| `entry.create`, `entry.create_batch` | on a `privateNames` node | **ADR-110 (issue #35):** to a caller that may not see names (an agent, MCP, a grantee), a name that is already taken is NOT refused with `entry_exists` - that answer would tell a guesser the name exists. The entry is created under a free name made from the typed one (`name (2)`, `name (3)`, …) and the reply is the same shape as for a free name, without the stored or the assigned name. The owner's login, and every node without `privateNames`, keep the plain `entry_exists` refusal. |
+| `entry.create`, `entry.create_batch`, `entry.update`, `entry.rotate`, `field.add`, `field.update`, `field.remove`, `field.reorder`; `entry.get` | as before | **ADR-111 (issue #40):** a field that could be a TOTP seed but is not typed as one (a plain lower-case or padded base32 run of 16-128 characters mixing letters with the digits 2-7; or any such run under a 2FA-like label) is named: the reply gains `"possibleSeedFields": ["f_…"]` (field ids) and `"possible_totp_seed"` in `warnings` (a batch item carries its own `possibleSeedFields`; the batch also warns). `entry.get` marks the field row `"possibleSeed": true`. Absent when there is none, so older replies keep their shape. A field its owner typed - to anything - is never flagged; the owner's answer is `field.update` with `patch: {"type": "totp-seed"}` (CLI: `credmgr field set <name> --field-id <id> --type totp-seed`). It is a hint, not a block: an untyped run stays readable to anything that may reveal the entry until it is typed. |
+| `maintenance.backup` | `{passphrase, retain?}` | now also `"complete": true`: the archive holds the whole vault (ADR-112); it is refused with `malformed_request` while a root-key rotation is half finished. **ADR-165 second addendum:** while the machine lock is on (the wrap sealed, or this Mac's bind record for the vault) the archive is written to `<state>/backups/<vault id>/`, outside the vault folder, and the answer says `"outsideVaultFolder": true`; a bound vault whose device key is gone, unreadable or different is `machine_lock_refused` with `reason` `backup_needs_device_key` and nothing is written. |
+| `graph.snapshot` | — | a `privateNames` node, to a reader that is not the owner's login: `{"id":"acme","nameHidden":true,"name":null,"label":null,"kind":"project","depth":1,"parentId":"global","entryCount":7,"counts":{"entries":7,"totp":null},"gate":{…},"health":null}`; `gate.twofa` is `"none"` on a vault with no second factor, `"enrolled"` while an enrolment is begun and not confirmed, `"required"` once the vault gate is confirmed and the node's `requireTwoFactor` asks for it (ADR-115, issue #37); below three entries `"entryCount":null,"countHidden":true`. The owner's row is unchanged plus `"nameHidden":true`. |
 | `entry.list` | — | same node, same reader: `{"node":"acme","ids":[],"names":[],"entries":[],"nameHidden":true,"count":7,"generation":12}` (`"count":null,"countHidden":true` below three). `search` skips the node; `entry.get` answers `name: null` and every field `label: null`; `vault.pending_list` answers `name: null` with `nameHidden: true`; `notes.read` answers `markdown: null` with `nameHidden: true` and the `generation`. |
 | `entry.reveal`, `totp.code`, and under `requireTwoFactor: always` also `entry.list`, `entry.get`, `notes.read`, `vault.pending_list` | — | with a confirmed gate and no fresh second factor: `two_factor_required` `{challenge:"totp", scope, expiresIn}` (ADR-085) |
 | `vault.gate_verify` | `{code}` from a logged-in owner session | a **step-up**: `{"locked":false,"elevated":true,"expiresIn":300}` — no token (ADR-085) |
 | `entry.undo` | `{node, id, generation, mode?}` | the old keys plus `"ok":true` and `"restored":{"action":"field.remove","entry":"e_…","fieldCount":3}` (or `{"action":"entry.remove","entry":…,"name":…}`); a field edit older than seven days is `not_undoable` (ADR-086). `credmgr_undo` is unchanged. |
-| `vault.approval_decide` | `{request, approved, passphrase, code?}` — **only while the vault is locked** | `{"request":"rq_…","node":"acme","entry":"e_…","approved":true,"authorisedBy":"factors"}`; wrong passphrase `wrong_passphrase`, no code with a gate `two_factor_required`, a wrong code or any recovery code `gate_verification_failed` (ADR-088). A reveal on a wholly locked vault now answers `approval_pending` (it used to be `vault_locked`). |
+| `vault.approval_decide` | `{request, approved, passphrase, code?}` — **only while the vault is locked** | `{"request":"rq_…","node":"acme","entry":"e_…","approved":true,"authorisedBy":"factors"}`; wrong passphrase `wrong_passphrase`, no code with a gate `two_factor_required`, a wrong code or any recovery code `gate_verification_failed` (ADR-088). A reveal on a wholly locked vault now answers `approval_pending` (it used to be `vault_locked`). From a login (no `passphrase`), `approved: true` needs a presence proof once a key is enrolled: `presence_required` without one (ADR-173); `approved: false` never does. |
 | `vault.approval_get` | `{request?}` — **read-only, works on a locked vault, decrypts nothing** (`ADR-090`) | with `request`: `{"request":"rq_…","node":"acme","entry":"e_…","nodeLabel":"Acme","entryName":"API_KEY","command":"entry.reveal","state":"pending","expiresIn":97,"requestedAt":1800000100}`; without: `{"pending":[…that shape…]}`, oldest first. A `privateNames` node's `nodeLabel` and `entryName` are `null` with `"nameHidden":true` (always, on a locked vault; the owner's login sees them); `cwd` is the owner's only. An unknown, expired or taken id is `not_found`. On an unlocked vault only the owner's login may ask (`capability_not_held` otherwise). Not an MCP tool. |
 | `maintenance.doctor` | `{apply?, purgeExpiredSeals?: bool}` | `fixes[]` gains `{"node":"old","type":"purged-expired-seal","sealedAt":…,"archiveRemoved":true}` (or `would-purge-expired-seal` with `apply: false`) (ADR-089) |
 | `node.policy` | — | `"notEnforced": []` |
+
+### 4.1d The 2.0.0 broker operations — wire shapes (ADR-130…135, 2026-11-06)
+
+Nine new ops. **None is an MCP tool** (the forbidden list in §3.2 and test I-13 are unchanged); every one that
+costs the owner's finger answers `presence_required` / `presence_failed` as ADR-095 defines, and every one that
+costs a fresh second factor answers `two_factor_required {challenge:"totp", scope, expiresIn}` — `scope` is
+`global` (the vault's gate) or the node's id (its own gate, ADR-135). Owner = a live login session, never an agent.
+
+| Op | Request | Answer |
+|---|---|---|
+| `node.rekey` | `{node}` — owner, `admin` on `global` and on the node, node unlocked, fresh second factor(s), presence proof. Refuses `orphan`, a sealed or unknown node, a node with locked-write tray entries (`malformed_request`). Runs under the exclusive request barrier. | `{"node":"acme","publicKey":"<64 hex>","entries":12,"note":true,"history":3,"removed":1}`. The second-factor window is spent. |
+| `orphan.destroy` | `{confirm: "destroy-sealed-entries", count, entries?: [id…]}` — owner, `admin`, fresh second factor, presence. `count` must equal what would be destroyed, an explicit `entries` list included (`malformed_request` naming the real number otherwise, checked before the presence proof is spent, ADR-148); an unknown id is `not_found`; absent `entries` = all. | `{"destroyed":4,"sealsForgotten":2,"archivesRemoved":2}`. Never undoable. |
+| `search.content` | `{term, node?}` — `reveal` capability; `term` 3–200 characters (`malformed_request`); 12 calls / 60 s per caller (`rate_limited` with the wait); `vault_locked` when locked. An agent never matches what it could not reveal without the owner's approval (ADR-148): nothing on a Sealed node, no high or critical entry on a Guarded one. | `{"results":[{"node":"acme","id":"e_…","name":"database"}],"truncated":false}` — exactly those keys; never a value, snippet, label or field id. |
+| `node.export` | `{node, passphrase \| recipients: [age1…]}` — owner, `reveal`, fresh second factor(s), presence; exactly one of passphrase (12+ characters) or 1–16 recipients; `orphan` refused. | `{"node":"acme","format":"age-v1","entries":12,"omittedSeeds":1,"archive":"<base64 age ciphertext>"}`. The plaintext never leaves the broker; 2FA seeds are redacted and counted. |
+| `audit.report` | `{from, to, node?}` — owner, `admin`; unix seconds, `from < to`, ≤ 366 days. | `{"from","to","node","records","decisions":{allow,deny,other},"byAction":[{action,count,allow,deny}],"byActor":[…],"byNode":[…],"denials":{"total","reasons":[{action,reason,count}],"recent":[{id,timestamp,actor,action,node,reason}]},"presence":{"uses","byOp":[{op,count}],"refused"},"chain":{"months":["2026-11"],"verified":true}}` — top 50 rows per table; no values, no entry names, no free text. |
+| `node.gate_enroll_begin` | `{node}` — owner, `admin` on the node; not `global` / `orphan`. A gate already in force needs its own code, fresh. | `{"node","otpauthUri"}` |
+| `node.gate_enroll_confirm` | `{node, code}` | `{"node","recoveryCodes":[10]}` once; `gate_not_enrolling` / `gate_verification_failed` as for the vault's. |
+| `node.gate_verify` | `{node, code}` — owner session; shares the unlock backoff | `{"node","elevated":true,"expiresIn":300}`; `malformed_request` "has no second factor of its own" when there is none. The window opens that node only. Written through to disk (ADR-148): a spent recovery code and the TOTP replay floor survive a restart. |
+| `node.gate_remove` | `{node}` + fresh own code + presence; **or** `{node, passphrase, recoveryCode}` (the last door; shares the backoff) | `{"node","removed":true}` |
+
+A node with a confirmed gate of its own changes `entry.reveal`, `totp.code`, `entry.get`, `search`, `search.content`,
+`notes.read`, … exactly where `requireTwoFactor` already asks (ADR-085): the owner is asked too, the answer's `scope` is
+the node's id, the vault's code does not satisfy it, and the node's code does not satisfy another node. A gated node asks
+its own code before **every** reveal even when its `requireTwoFactor` is `never` (ADR-148: that setting needs only the
+admin gate, so it cannot switch off a factor the admin gate never passed). A gated node is
+not sealed (`malformed_request`), and an agent's `entry.reveal` on it while the vault is locked is `vault_locked`, never
+an approval request.
+
+### 4.1e The doctor's tidy-up scan — wire shape (ADR-161, 2026-11-14)
+
+One new op, read-only, **not an MCP tool** (§3.2). It writes nothing; every change it proposes is applied by the
+owner, one `entry.move` at a time, with that op's own second factor and Touch ID (ADR-158), or every move of one
+report at once with `vault.doctor_apply` (ADR-169, below).
+
+| Op | Request | Answer |
+|---|---|---|
+| `vault.doctor_scan` | `{staleDays?, expiringDays?}` — each 1–3650 (`malformed_request` otherwise), defaults 365 and 30. The owner's login and `admin` on `global` (the gate of `audit.report`); no second factor, no presence. One at a time (`rate_limited`, retry 5 s); at most 10,000 entries, 10 s of value reading and 500 findings of each kind (`truncated: true` when cut). | `{"now","staleDays","expiringDays","nodesScanned","entriesScanned","valuesChecked","skipped":[{node,nodeLabel,reason:"locked"\|"second_factor"\|"not_listed",what:"all"\|"values"}],"truncated","counts":{duplicate_value,misfiled,similar_names,weak,mistyped,expired,expiring,stale},"findings":[{"kind","entries":[{node,nodeLabel,entry,ref,name,generation}],…,"proposal":{action,op:"entry.move"\|null,to?,toLabel?,move?:{node,entry,to,generation},keep?,options?}}]}` — per kind: `match` (`exact`/`probable`), `similarity` + `sameNode`, `field` (the field id) + `fieldLabel`, `reasons`/`reason`, `expiresAt` + `source` (`manifest`/`jwt`), `lastChanged` + `basis` (`rotated`/`modified`). Never a value, a hash, a length or a fragment: duplicates are found by HMAC-SHA256 under a key drawn for this scan and dropped when it returns. |
+| `vault.doctor_apply` (ADR-169) | `{moves: [{node, entry, to, generation}], reason?}` — 1 to 500 moves, each exactly a scan proposal's `move` (`generation` is the source node's as the scan read it; a node that is a source more than once carries the same generation each time). The owner's login, `admin` on every node named, a fresh second factor for the vault and for each named node that has its own, and **one** presence proof whose signed digest covers the whole request. Every step is checked first, in order and each seeing the earlier ones done (a stale generation `conflict`, the same entry twice, the same node or the orphan `malformed_request`, an entry not in its source or a node that is not there `not_found`, a name the destination already uses or an earlier step brings in `entry_exists`, a locked node `node_locked`), before any factor is asked for; then each move runs through `entry.move`'s crash-safe commit under the exclusive barrier. | `{"complete":true,"applied":[{…entry.move's answer…,"index"}],"notApplied":0}`; when a move after the first fails, `{"complete":false,"applied":[…],"stopped":{index,node,entry,to,code,message},"notApplied"}` (the moves applied stand, each a whole move, moved back with `entry.move`). A failure at the first move is the request's error, and nothing moved. Never a value. Audit: the generic record of the request, and per move the destination's `entry.move` record (`moved from <source>`), the source's (`moved to <destination> by vault.doctor_apply`) and a `grant.revoke` per revoked grant. |
+
+### 4.1f Tags and merges — wire shapes (ADR-167, ADR-168, 2026-11-20)
+
+Nine new ops, **none an MCP tool** (§3.2). No answer, error or audit record carries a value; no audit record carries a
+tag, a key or a name.
+
+| Op | Request | Answer |
+|---|---|---|
+| `entry.tag_set` | `{node, entry, generation, tags: [string]}` — the whole set; `[]` clears. Each tag is trimmed, lower-cased, inner white space to one `-`; then 1–32 letters, digits or `- _ . : /`; at most 16 distinct (`malformed_request` naming the index). The owner's sessions (`Origin::Agent` → `capability_not_held`), `update` on the node (a locked node `node_locked`), a stale generation `conflict`, a missing entry `not_found`. | `{node, entry, generation, tags}` (the stored, normalised set). `entry.get` and `entry.list`'s rows carry `tags` when there are any; `entry.list {node, tag?}` and `entry.search {node, term, tag?}` narrow to the entries carrying `tag` (normalised the same way) and echo `tag`; a node that hides its names drops `tags` from `entry.get` and refuses a filtered list (`node_access_denied`, rule `private_names`). |
+| `merge.suggestions` | `{node, includeDismissed?}` | `{node, generation, valuesCompared, truncated, dismissedCount, suggestions: [{key, kind, reasons, identical, keep, entries: [{entry, ref, name}], dismissed?}]}` — `kind` is `identical`, `shared_value` or `similar_names`; `key` is the entry ids sorted and joined with `+`; `keep` the lowest `ref`. At most 2,000 entries read and 200 suggestions. |
+| `merge.apply` | `{node, keep, drop: [id], generation}` — 1–19 distinct ids, none `keep`, all in the node. A fresh second factor after the checks; the generation and plan checked again under the node's write lock. | `{node, keep, merged: [{entry, name, undo}], aliasesAdded, tagsAdded, generation}` — `undo` is the audit id `entry.undo {node, id, generation}` takes to bring that entry back (its name returns; the merge's aliases leave the kept entry; the restore answer adds `mergedInto` and `mergeAliasesRemoved`). |
+| `merge.auto` | `{node, key, generation}` — an open `identical` suggestion only (`malformed_request` otherwise). A fresh second factor. | `merge.apply`'s answer plus `key`. |
+| `merge.auto_all` | `{node, apply?, generation?}` — without `apply: true` a dry run (no factor); with it `generation` is required and a fresh second factor. | `{node, dryRun, valuesCompared, planned: [suggestion], skipped: [{key, reason, entries}], generation}` and, applied, `merged: [{keep, merged, aliasesAdded, tagsAdded, key}]`. `reason` is `grant`, `aliases` or `tags`. |
+| `merge.dismiss` | `{node, key}` — 2–20 sorted ids, all in the node (`not_found` otherwise). | `{node, key, dismissed: true, generation}` (`already: true` when it was). |
+| `merge.undismiss` | `{node, key}` | `{node, key, restored, generation}` |
+| `merge.dismissed_list` | `{node}` | `{node, dismissed: [{key, entries: [{entry, name \| null}], dismissedAt}]}` newest first. |
+| `merge.restore_all` | `{node}` | `{node, restored, generation}` |
+
+Every `merge.*` op: the owner's login with `admin` on the node (else `capability_not_held`), not the orphan node
+(`malformed_request`), the node unlocked (`node_locked`). The decision memory is sealed to the node's key in
+`nodes/<id>/merge.env` and bound by `mergeSha256` in the signed manifest; a mismatching file is `internal`.
 
 ### 4.1b The multi-field operations — wire shapes (ADR-078) and the staged approval (ADR-079)
 
@@ -729,28 +874,160 @@ ADR-088) because a person can now decide it with the unlock factors; a decision 
 locked vault still answers `vault_locked` and releases nothing. Request ids are 128-bit hex. An undecided request
 expires and is denied after 120 seconds, as before.
 
-### 4.2 Built, but able only to refuse — 5 operations
+### 4.2 Built, and gated on a presence proof — 5 operations (+ `maintenance.doctor` rebuild, a widening `node.policy`)
 
-These five are fully implemented up to their gate. They parse and validate every parameter,
-resolve the capability against the access graph, and then return `presence_required`, because
-their positive path requires a live native presence attestation and **no transport this build has
-can set `presence_attested: true`**. The dispatcher hardcodes it to `false`, which is the correct
-conservative default until a native shell can make it real.
+These are fully implemented up to their gate. They parse and validate every parameter, resolve the capability
+against the access graph, and then require a **presence proof** (ADR-098; `04_CRYPTO_AND_KEYS.md §5.3`): the owner's
+login plus a Secure Enclave signature over the digest of a single-use broker challenge, bound to the operation, the
+exact params and the login session. With a verified proof they execute; without one — no presence key enrolled, an
+agent or fixture token (which can never hold a proof), any platform but macOS — they return `presence_required` and
+change nothing. A proof that was sent and fails answers `presence_failed` with a reason.
+
+How a client asks: `presence.challenge {op, params}` → `{nonce, digest, reason}`; sign the digest with the Enclave
+key (Touch ID, or the device password where no fingerprint is enrolled); repeat the original request with
+`params.presence = {nonce, signature}`. The CLI and the desktop shell do all three steps themselves when they receive
+`presence_required`; the page never sees a nonce, a digest or a signature.
 
 | Op | Why presence, not just a capability |
 |---|---|
 | `grant.create` | Creating a grant widens a boundary. A grant that an unattended process could create is not a boundary. |
-| `node.reparent` | Re-parenting changes a node's ancestor set and therefore what it can read — a grant by another name (F-8, I-23). |
+| `node.reparent` | Re-parenting changes a node's ancestor set and therefore what it can read — a grant by another name (F-8, I-23). With a proof, depth and kind follow; a cycle and `orphan` are refused. |
 | `audit.get` | The full, unredacted record of one decision. `audit.tail`'s redacted feed is the unattended-safe version. |
-| `totp.seed` | A code is worth thirty seconds; a seed is worth forever. |
-| `maintenance.rotate_root` (ADR-076) | Replacing the root key retires every wrap of the old one and issues a new recovery code — the most consequential act the vault has. The arm checks human origin, `admin` on `global`, and a fresh vault second factor (`two_factor_required`, scope `global`) **first**, then answers `presence_required`. The rotation itself, `BrokerState::rotate_root`, sits behind that wall and is exercised directly by `crates/brokerd/tests/rotate_root.rs`; the day a transport can attest presence the final `Err` becomes `return rotate_root_response(…)`. Takes `{passphrase}` (factor one, again) and is on the per-uid auth backoff. |
+| `totp.seed` | A code is worth thirty seconds; a seed is worth forever. The seed is returned only here, only to the owner's login with a proof; the desktop app shows it after a Touch ID check (and a fresh second factor if the vault has one), re-masks it after the reveal window, never copies it and clears it on lock (ADR-098), and the CLI has no command. |
+| `maintenance.rotate_root` (ADR-076) | Replacing the root key retires every wrap of the old one and issues a new recovery code — the most consequential act the vault has. The arm checks human origin, `admin` on `global`, and a fresh vault second factor (`two_factor_required`, scope `global`) **first**, then the presence proof, then runs `BrokerState::rotate_root` (`crates/brokerd/tests/rotate_root.rs`); the Touch ID wrap and the enrolment file are re-sealed to the same Enclave key. Takes `{passphrase}` (factor one, again) and is on the per-uid auth backoff. |
+| `maintenance.doctor` with `rebuildRegistry` | Rebuilding the registry rewrites what every node is allowed to read. A dry run shows the diff; `apply: true` with a proof writes, then locks the vault. |
+| `node.policy`, when the patch widens reach | `descendantRead` on or `siblingVisibility: shared` is a grant by another name (ADR-071). |
 
-This is an honest gap, not a bug: each arm already checks `presence_attested`, so nothing about
-these dispatch arms needs to change when a native transport can supply it. The parallel work that
-built the Tauri bridge (§5) is the first step toward that transport; it does not yet attest
-presence.
+Each arm asks the same `require_presence` check, so adding a new gated operation did not change the others.
 
-### 4.3 Planned operations — 28, by namespace
+### 4.2b Confirm before showing secrets — `session.confirm` (ADR-150), not an MCP tool
+
+A vault setting, off by default, kept on the `global` node's policy as `revealConfirm: {mode: off|window|everyTime,
+windowSeconds: 60|300|900|3600, scope: all|high}` and changed with `node.policy` on `global` by the owner's login only
+(turning it off or asking less needs a confirmation from the last 60 s). While it asks, `entry.reveal` (and the shell's
+copy) and `totp.code` answer the owner's login `confirmation_required` until it confirms; `totp.seed`, `orphan.reveal` and
+`node.export` keep their per-request presence proof instead. `graph.snapshot` gives the owner's login the policy as
+`revealConfirm`. A lock ends every confirmation; agents are never asked.
+
+| Op | Params → result | Gate |
+|---|---|---|
+| `session.confirm` | `{passphrase}` or a presence proof for `session.confirm` with params `{}` → `{confirmed, method: passphrase|presence, expiresIn}` | the owner's login. A wrong passphrase is `wrong_passphrase` and counts in the per-uid unlock backoff. CLI `credmgr confirm [--touch-id]` (passphrase from stdin) |
+
+### 4.2c The recovery-code unlock — `vault.recover` (ADR-163), not an MCP tool
+
+`vault.recover {recoveryCode, newPassphrase, code?}` → `{recovered: true, passphraseChanged: true, rotated: true,
+recoveryCode, locked, token?, completionPending, nodesRewrapped, nodesRekeyed, filesResealed, vaultGeneration,
+filesReplaced, artifactsResigned, notResigned}`. For a **locked** vault whose passphrase is forgotten: the printed root recovery code opens
+`root.wrap.recovery`, the vault is verified under the key it yields, and the same crash-safe root rotation as
+`vault.set_passphrase` makes a new root key, a passphrase wrap from `newPassphrase` and a wrap under a **new**
+recovery code, answered once; the used code and the old passphrase open nothing afterwards. Since ADR-165's fourth
+addendum (N5) the same rotation also gives every live node a new keypair and re-seals what it holds (`nodesRekeyed`, the
+ids; `filesResealed`, a count), as `vault.set_passphrase` does, so a copy of the folder from before plus the used code
+opens nothing written after. `token` is a login,
+as `vault.unlock` hands one out (absent, with `locked: true`, when the rotation committed but left its file moves
+to the next unlock). No login is needed. Refused: an agent (`capability_not_held`, before any code is read), an
+open vault (`malformed_request`), a vault with no recovery wrap (`not_found`; `vault.status` says
+`recoveryUnlock: false`), a wrong code (`recovery_code_mismatch`), an enrolled second factor not given
+(`two_factor_required`) or wrong (`gate_verification_failed`). The wrong code and the wrong second factor count in
+the per-uid unlock back-off shared with `vault.unlock`. A presence proof is never asked for. Every attempt is
+audited; one refused while the vault is locked is written at the next unlock. CLI `credmgr recover`; the app's
+Lock screen, "Forgot passphrase? Use recovery code".
+
+### 4.2d The machine lock — `keystore.*` (ADR-165), 3 operations, none an MCP tool
+
+The passphrase wrap `keys/root.wrap.pass` can be sealed a second time under a 256-bit device key kept at
+`<state>/machine/lock.key` (mode 0600, outside the vault folder): `CMMLOCK1 ‖ key id (8) ‖ nonce (12) ‖
+ChaCha20-Poly1305(device key, plain wrap)`. "Bound" is that form of the file. An unbound wrap is opened exactly as
+before. A bound one is opened with the device key first and then by the passphrase; a missing, different, unreadable
+key or a damaged file is `machine_lock_refused` with its `reason`, never `wrong_passphrase`. **Bind is a root rotation
+that re-keys every project** (ADR-165 addendum, review P0-1), so an older plain wrap or a whole copy made before the bind
+opens nothing written after it; what such a copy already held it still opens. A bind record outside the vault folder
+(`<state>/machine/vaults/`) lets `status` notice a plain file put back (`plainWhileBound`; an unlock then answers
+`machine_lock_refused` `plain_wrap_while_bound` when that file no longer opens the vault) and projects still on a
+pre-bind key (`preBindNodes`), and a record that names this folder under another vault id than its `vault.id` (`recordDetached`,
+ADR-165 M5: `vault.id` edited or removed, or the folder put back to an older copy; also the owner's `vault.status`
+`warnings: ["machine_lock_record_detached"]`, audited once, never repaired). Root rotation and `vault.set_passphrase` re-seal; `vault.recover` never needs the key
+and seals the new wrap to this Mac's key (made if missing), or answers `machineLockRemoved` when it cannot. A CredMgr
+backup carries the wrap **unsealed** inside its own encryption (addendum P0-2), so while bound it is written outside the
+vault folder, to `<state>/backups/<vault id>/` (second addendum, N2). The bind record is keyed by the vault's identity,
+`<vault>/vault.id` (32 random hex digits, written by the first bind), not by its path (N4). File tier only: it protects a copy of
+the vault folder made after the bind; not a stolen or unlocked Mac, Time Machine, whole-disk images, Migration Assistant
+or CredMgr backups.
+
+| Op | Params → result | Gate |
+|---|---|---|
+| `keystore.status` | `{}` → `{bound, tier: "file"/"off", secureEnclave: false, opensHere, sealedKeyId, damaged, deviceKeyPresent, deviceKeyId, deviceKeyUnreadable, deviceKeyModeOpen, deviceKeyForeignOwner, recoveryUnlock, markedBound, plainWhileBound, preBindNodes, inFolderArchives, warning, protects, doesNotProtect}` — public facts, never a key | the owner's login; an agent refused before anything is read. CLI `credmgr keystore status` |
+| `keystore.bind` | **two phases** (second addendum, N1), `phase` required. `{phase:"prepare", passphrase, recoveryCode}` → the status plus `phase`, `changed: false`, `already`, `newRecoveryCode` (the code the commit will install; `null` when `already`), `expiresIn` (seconds, 600) and `nodesToRekey`; nothing durable is written, and the prepared material (new root key, its wrap, the new code) lives in broker memory only, tied to the current root key, until it expires, the vault locks, a rotation happens or `cancel`. `{phase:"commit", recoveryCode}` (the new code typed back whole; omitted when `already`) → the status plus `changed`, `deviceKeyCreated`, `nodesRekeyed`, `rekeyFailed: [{node, reason}]`, `archivesMoved` and `archivesNotMoved: [{file, reason}]` (archives moved out of `<vault>/backups/`, third addendum M1), and, when it changed something, `orphanKeyReplaced`, `rotation` (as `maintenance.rotate_root` answers, without its `recoveryCode`), `completionPending` and `meta.vaultLocked` when the rotation's last step waits; a code that is not the one shown is `recovery_code_mismatch` (not counted: the same login was just shown it) and the prepared bind still waits; none prepared, expired or overtaken is `malformed_request` "the machine lock was not turned on (nothing changed)". `{phase:"cancel"}` → the status plus `changed: false`. A missing or unknown `phase` is `malformed_request`. A prepared bind belongs to the login that prepared it: another login's commit, cancel or prepare while it waits is `malformed_request` (M4) | the vault open, `admin`, the owner's login; prepare's passphrase opens the wrap (`wrong_passphrase`) and its code opens the current recovery wrap (`recovery_code_mismatch`), both counted in the per-uid back-off (only `prepare` is an auth path); a recovery code set up, a device key path outside the vault folder, every project unlocked, nothing in the tray or the sealed entries; otherwise `malformed_request`, nothing changed. Idempotent once finished. CLI `credmgr keystore bind` (prompts for both, shows the new code, asks for it back; an empty line cancels) |
+| `keystore.unbind` | `{passphrase?}` → the status plus `changed`; the device key stays | the vault open, `admin`, the owner's login, a fresh second factor when one is enrolled, a presence proof every time once a presence key is enrolled, and `passphrase` (counted in the back-off) when neither is; otherwise `malformed_request`. Idempotent. CLI `credmgr keystore unbind` (prompts for the passphrase; empty sends none) |
+
+Both writes take the exclusive request barrier and rewrite `root.wrap.pass` with one atomic write that is read back
+before it counts; a temporary file a crash leaves is swept under the vault lock, and a write that landed but could
+not be made durable says "the passphrase file WAS changed" (`internal`). The app's Settings > Security > Machine lock
+row asks first in a dialog that takes the passphrase and the current recovery code, says what a copy made before now
+still holds, that a replaced Mac or another Mac sharing the folder needs the recovery code, and what is not covered,
+then shows the new recovery code once.
+
+### 4.2a The presence and Touch ID operations — 8 operations (ADR-098), none an MCP tool
+
+| Op | Params → result | Gate |
+|---|---|---|
+| `presence.status` | `{}` → `{helper, secureEnclave, biometry, passcode, enrolled: [{id, label, createdAt}], touchIdUnlock}` — public facts only, never a key | the owner's login. CLI `credmgr presence status` |
+| `presence.challenge` | `{op, params}` → a single-use 32-byte nonce, the digest to sign and a sentence for the Touch ID dialog; 60 seconds. With `possession: true` (only for `op: "presence.enrol"`, ADR-148) → the challenge the key being enrolled signs, issued with nothing enrolled yet | the owner's login; only for the presence-gated ops |
+| `presence.enrol` | `{publicKey (base64 P-256 point), label?, possession: {nonce, signature}}` → the enrolment (key id, label, date). `possession` is the new key's own signature over a possession challenge for exactly these params (ADR-148); without it `malformed_request`, a wrong or spent one `presence_failed`. The enrolled list is kept in the signed registry, so deleting or replaying `keys/presence.enroll` changes nothing | the first key: `admin`, a human and a fresh second factor; any later one needs a proof from an existing key too. CLI `credmgr presence enrol` and the app sign the possession challenge themselves |
+| `presence.unenrol` | `{id}` | a proof from an enrolled key. CLI `credmgr presence unenrol` |
+| `device.enrol` | `{}` → seals the resident root key to the Secure Enclave key into `keys/root.wrap.se` (Touch ID unlock) | the vault open, `admin`, a fresh second factor and, once a presence key exists, a proof. CLI `credmgr touch-id enable` |
+| `device.remove` | `{}` → deletes `keys/root.wrap.se` | same gate as `device.enrol`. CLI `credmgr touch-id disable` |
+| `orphan.list` | `{}` → the sealed entries: id, name, ref, type, modified — no value | the owner's login. No CLI command |
+| `orphan.reveal` | `{entry, fieldIds?}` → the entry's field values | the owner, a fresh second factor **and** a presence proof every time; the second-factor window is dropped afterwards. The desktop app only: no CLI command |
+
+`vault.unlock` also takes `{method: "device"}` (ADR-098): the Secure Enclave opens the wrapped root key (the user
+authenticates with Touch ID or the device password) and the rest is the passphrase unlock's own tail — registry HMAC,
+rollback counter, second-factor gate. ADR-148: a caller the broker identifies as an agent (an agent token, or no token
+from inside a registered project folder) is refused (`capability_not_held`) before any prompt; for anyone else the
+dialog reads "Unlock CredMgr for <process> (pid …) <- <parent> …, in <folder>", filled by the server from the
+connecting process (a client's own `_peer` param is discarded; the names are a hint, not proof — ADR-148 addendum),
+and a `presence_failed` `cancelled` (a dismissed prompt, or one left until the helper's timeout) or `locked_out`
+counts against the per-uid unlock backoff. `keys/root.wrap.se` carries an HMAC tag under the root key; a root-key
+rotation re-seals only to a wrap whose tag verifies and refuses an untagged (pre-ADR-148) one until Touch ID unlock is
+turned off and on again. `vault.status` reports `touchIdUnlock` so the Lock screen can offer it. The
+passphrase and recovery wraps stay; Touch ID is an extra door on this Mac only. New CLI beside the above:
+`credmgr unlock --touch-id` and `credmgr node reparent`.
+
+### 4.2e Node-scoped agent tokens — 4 operations (ADR-164), none an MCP tool
+
+| Op | Params → result | Gate |
+|---|---|---|
+| `agent.token_issue` | `{node, label, capabilities: [list\|read\|reveal\|create\|update…], expiresIn?}` → `{id, label, node, capabilities, effectiveCapabilities, createdAt, expiresAt, lastUsedAt, rotatedAt, token, shownOnce: true}`. `token` is `cma_` + 64 hex, in this answer and nowhere else; `id` is `a_` + 16 hex. `capabilities` must be a non-empty subset of what the node's `agentAccess` gives agents (else `malformed_request` naming the capability); `expiresIn` is 60–604800 seconds, 86400 by default, never unlimited; at most 32 live tokens; not the Orphaned node and not Global (`malformed_request`: issue it for the project the agent works on) | the owner's login (`capability_not_held` to any agent), `admin` on the node, a fresh second factor where enrolled, then a Touch ID proof (`presence_required` with a challenge; the Touch ID sentence names the node, the capabilities, the life and the label). No passphrase fallback: with no presence key enrolled it is unreachable. CLI `credmgr agent token issue` |
+| `agent.token_status` | `{node?}` → `{tokens: [{id, label, node, capabilities, effectiveCapabilities, createdAt, expiresAt, lastUsedAt, rotatedAt}], max, defaultExpiresIn, maxExpiresIn}` — metadata only; replaces the planned `{hasToken, last4}` | the owner's login. CLI `credmgr agent token ls` |
+| `agent.token_rotate` | `{id, expiresIn?}` → as `token_issue`, with a new `token` and expiry; node and capabilities unchanged; the old secret is refused on its next request | as `token_issue`. CLI `credmgr agent token rotate` |
+| `agent.token_revoke` | `{id}` → `{revoked: true, id, label, node}`; the next request with the token answers `session_expired` | the owner's login; no proof (it only removes access). CLI `credmgr agent token revoke` |
+
+A request presenting an agent token is `Origin::Agent` scoped to **exactly** its node — no global, no ancestors, no
+descendants, no grants — with the token's capabilities intersected at every request with what the node's
+`agentAccess` gives agents now, and ADR-140's security levels applied as for any agent. It is audited as
+`Agent:a_…`; a refused request with a revoked, rotated, expired or node-gone token as
+`Agent:a_…(revoked|rotated|expired|node_gone)`. The audit records of an issue, rotate or revoke carry
+`token a_…; node …; caps …; expires …`. Tokens live in the broker's memory only: a broker restart revokes them all, and a
+token's life is checked against both the wall clock and a monotonic deadline. **Sealing a node revokes its tokens**, and a
+token whose node is not in the registry is dead, so `node.restore` or a reused id never revives one. A token presented
+from a folder registered to another node still works on its own node and writes `anomaly.agent_token_workdir_mismatch`,
+filed under the token's node and naming neither the other node nor the folder.
+
+**Who asked.** A reveal approval or a switchboard setting request made with an agent token carries `agentToken: {id,
+label}` in `approval.list|get` and `settings.request_list|get` for the owner only, and is keyed by the token's public
+id, so a rotation keeps the same request. `vault.approval_get` is refused to every identified agent (an agent token, or a
+folder registered to a node) whether the vault is locked or not: its list spans every node. The token-less Lock screen
+still reads it while locked, without `agentToken` or the folder. A label holds no control, direction-changing or
+invisible character (`malformed_request`).
+
+**The desktop app never puts the token in the webview** (ADR-057's rule for the login). Its `agent_token_issue` and
+`agent_token_rotate` commands are hand-written: the shell takes `token` and `shownOnce` off the broker's answer, writes the
+token to the concealed clipboard (cleared after 30 seconds and at lock), and answers the rest with `copied: true,
+clearAfterSeconds`. If the clipboard cannot take it, the shell revokes the token and answers `copied: false, revoked`.
+When a lock came between (which also ends the login a revoke needs), the shell keeps the token's public id, never the
+token, and revokes it right after the next unlock, answering `revoked: false, revokePending: true`.
+
+### 4.3 Planned operations — 3, by namespace
 
 Designed here and in `18_ENDPOINT_INDEX.md`; dispatched nowhere. Every one **will** conform to
 §1.2's envelope, **will** be authorised through `credmgr_core::access::resolve` rather than
@@ -758,16 +1035,10 @@ re-implementing authorisation, and **will** append an audit record like every ot
 
 | Namespace | Planned operations | What the namespace will do |
 |---|---|---|
-| `entry.*` (5) | `search` · `get_by_ref` · `history` · `move` · `expiring` | `get_by_ref` will resolve a vault-global short reference; `history` will list rotations without values; `move` will re-encrypt an entry to the destination node's key, which is why moving is not a metadata edit; `expiring` will drive the expiry surface. `entry.search` will be the node-scoped variant — the cross-scope case is already covered by the built top-level `search`. |
-| `merge.*` (8) | `suggestions` · `dismiss` · `undismiss` · `dismissed_list` · `restore_all` · `apply` · `auto` · `auto_all` | V1's auto-merge engine will survive with its decision memory intact — a dismissed suggestion will never return. It will operate **within one node only**, never proposing across a boundary, which is also why it matters less in V2. `auto_all` will dry-run first, always. |
-| `agent.*` (4) | `token_issue` · `token_status` · `token_rotate` · `token_revoke` | Node-scoped agent tokens. `token_status` will return `{hasToken, last4}` and nothing more; rotation will be the only way to see a value again. `token_issue` will be human-only. |
-| `llm.*` (4) | `detect` · `connect` · `disconnect` · `prompt` | The auto-MCP wiring of `17 §4`, as broker operations, so that a config change will be recorded in the audit log like any other decision. |
-| `keystore.*` (3) | `status` · `bind` · `unbind` | The cross-platform generalisation of V1's machine-lock. `status` will report the honest tier (`16 §3`) rather than a reassuring one. |
 | `audit.*` (2) | `report` · `purge` | `report` will add the stale-grant sweep; `purge` will be human-only and 2FA-gated. |
-| `vault.*` (1) | `set_passphrase` | V1's 4-digit dashboard PIN will become a real passphrase wrapped by the platform keystore. This is the op that will let the operator *change* the passphrase §1.4's last row now verifies. |
 | `node.export` (1) | `node.export` | 2FA, presence, and an explicit output path. Scope defined in `04 §7`. |
 
-Five operations left this table on 2026-09-24 and are in §4.1: `notes.read`/`notes.write` (`ADR-072`),
+The eight `merge.*` operations left this table on 2026-11-20 with `ADR-168` (none is an MCP tool; §3.2). The four `agent.token_*` operations left this table on 2026-11-14 with `ADR-164` (§4.2e). Three operations left this table on 2026-11-14 with `ADR-165`: `keystore.status`, `keystore.bind` and `keystore.unbind`, the machine lock (§4.2d); none is an MCP tool. `entry.move` left this table on 2026-11-14 with `ADR-158`: `{node, entry, to, generation, reason?}` re-seals one entry to the destination node's key in one crash-safe step (the registry write that binds both manifests is the commit; a stage settles forward or back on the next load) and answers `{node, entry, ref, name, from, generation, toGeneration, grantsRevoked, historyDropped, cleanupWarning?}`, never a value. The owner's login only, `Admin` on both nodes, a fresh second factor and a presence proof on every call; grants on the entry are revoked and its rotation history dropped; a name or alias the destination already uses is `entry_exists`. It is not an MCP tool (§3.2's forbidden list). Five operations left this table on 2026-11-09 with `ADR-156` (the post-launch quick wins): `entry.search`, `entry.get_by_ref`, `entry.history`, `entry.expiring` and `vault.set_passphrase`, which changes the passphrase §1.4's last row verifies and answers a new recovery code; the same change added `entry.set_expiry` and `vault.anomalies_ack`. None of the seven is an MCP tool. Five operations left this table on 2026-09-24 and are in §4.1: `notes.read`/`notes.write` (`ADR-072`),
 `node.update`/`node.policy` (`ADR-071`), and `entry.create_batch` (`ADR-073`). Five more left it on
 2026-10-03 with `ADR-078`: `entry.get` and `field.add`/`update`/`remove`/`reorder`. The batch's items take
 `fields: [...]` since then — already parsed, by the client, from the bulk grammar (`08 §3`): the broker never
@@ -799,7 +1070,7 @@ The desktop shell's JS-to-Rust bridge is **allowlisted**: anything not registere
 not callable from the webview, and that allowlist is the boundary that keeps a UI bug from
 becoming a vault bug. `18_ENDPOINT_INDEX.md §4` indexes the target command list.
 
-**`built`: a command for every one of the 55 broker ops**, each a thin pass-through to one op —
+**`built`: a command for every one of the 63 broker ops**, each a thin pass-through to one op —
 eight hand-written as of 2026-08-18 (`ADR-057`: `vault.status`, `vault.unlock`,
 `vault.gate_verify`, `vault.lock`, `whoami`, `graph.snapshot`, `entry.list`, `entry.reveal`) and
 forty-six generated from one `bridge_ops!` table (`ADR-062`'s thirty-four on 2026-09-24, five more the
@@ -816,10 +1087,12 @@ broker said, for the same reason the MCP tools do not.
 actions in `src/vault/actions/*` each make one bridge call and then re-read what it touched — there is no
 optimistic write and no local-only write path in a release build. What each control sends is tabulated in
 `RELEASE_VERIFICATION.md` (control → bridge command → broker op → expected result), with the real-app result
-column filled in by the verification pass. Five operations are sent for real and refused with
-`presence_required` until a presence transport exists (`grant.create`, `audit.get`, `totp.seed` — a TOTP
-field's "show seed" — `maintenance.rotate_root`, and `maintenance.doctor` with `rebuildRegistry`), and the
-app says so and changes nothing. With no shell at all
+column filled in by the verification pass. The presence-gated operations
+(`grant.create`, `audit.get`, `totp.seed` — a TOTP field's "show seed", which the app displays re-masked and never copies — `maintenance.rotate_root`,
+`maintenance.doctor` with `rebuildRegistry`, and opening a sealed entry with `orphan.reveal`) are sent for real:
+the shell answers the broker's `presence_required` by asking for Touch ID (ADR-098) and repeats the call, and
+with no presence key enrolled the broker refuses, the app says so and changes nothing. Settings → Security → Touch ID
+enrols and removes the key and turns Touch ID unlock on and off; the Lock screen shows a fingerprint icon beside the passphrase field. With no shell at all
 (a plain browser) a **release** build shows only the broker-unreachable screen; the design's in-memory demo
 vault exists in development and test builds alone and is asserted absent from the release bundle
 (`scripts/dc/verify-build.mjs`). **`planned`:** the rest of the allowlist, which **will** be:
@@ -827,12 +1100,12 @@ vault exists in development and test builds alone and is asserted absent from th
 | Command | Will return | Why it is a command rather than a broker op |
 |---|---|---|
 | ~~`broker_call(op, params)`~~ | — | **Superseded by ADR-062.** This row planned one generic pass-through so the allowlist would not grow one entry per op; ADR-062 instead gives every op its own command generated from one table, so the allowlist names every op explicitly and the drift guards can hold each command's wire keys against its op. |
-| `presence_verify(reason)` | `PresenceProof` | The biometric prompt. **This is the command that will make §4.2's five refusing operations reachable** — nothing else in this corpus can set `presence_attested: true`. |
-| `keystore_status()` | tier and capabilities | Will drive an honest Security panel; the tier must be reported as it is, not as the user would like it (`16 §3`). |
+| ~~`presence_verify(reason)`~~ | — | **Superseded by ADR-098.** This row planned one command returning a `PresenceProof` to the page. What was built is the opposite custody: the shell signs the broker's challenge itself through the `credmgr-presence` helper (`src-tauri/src/presence.rs`; commands `presence_probe`, `presence_key_create`, `presence_challenge`, `presence_enrol`, `presence_status`, `presence_unenrol`) and retries the call, so the page never holds a nonce, digest or signature. §4.2's operations are reachable through it on a Mac with an enrolled key. |
+| ~~`keystore_status()`~~ | — | **Built as a broker op (ADR-165).** The machine lock's tier is the broker's to report, so it is the bridged op `keystore.status` (commands `keystore_status`, `keystore_bind`, `keystore_unbind`, generated by `bridge_ops!`), which drives the Security panel's Machine lock row; the tier is reported as it is (a key file on this Mac, never the Secure Enclave). (`presence_status` tells the Touch ID row what this Mac can do.) |
 | ~~`clipboard_copy_concealed(text, ttl)`~~ | — | **Built under other names (WP-E).** The concealed clipboard is the shell's own commands `entry_copy(node, entry, field?)` (the shell reveals the one field itself, writes it with the concealed and transient markers and `CurrentHostOnly`, and clears it after 30 s only if the pasteboard is still its own — and on lock, sleep and quit) and `copy_text(text)` (non-secret text), in `src-tauri/src/clipboard.rs` and `generate_handler`. Both answer a receipt that names the fact and the clock, never the content. **Wired:** the Copy button of a field goes through `entry_copy`, and `navigator.clipboard` appears nowhere in `apps/desktop/src` (`tests/unit/architecture.test.ts`). |
 | `notify_approval(request)` | the user's decision | Will raise the one-tap approval prompt for F-15 and return the decision to `vault.approval_decide`. |
 | `open_external(url)` | `()` | **Allowlisted hosts only.** An unrestricted opener in a vault UI is a phishing primitive. |
-| `llm_detect()` / `llm_connect(client)` | status | Config wiring (`17 §4`). |
+| ~~`llm_detect()` / `llm_connect(client)`~~ | — | **Built under other names (ADR-143).** The shell's `agent_detect`, `agent_snippet`, `agent_plan`, `agent_apply` and `agent_prompt` do the config wiring (`17 §4`); none reaches the broker. |
 | `theme_get()` / `theme_set(mode)` | theme | Local preference, never a vault write. |
 | `app_integrity()` | signature check | Will have the shell verify its own signature (`21_RELEASE_AND_INTEGRITY.md`). |
 
@@ -906,22 +1179,22 @@ that fails when the registry disagrees with it.
 
 **Design.** `ADR-019`, `ADR-020`, `ADR-021`, `ADR-023`, `ADR-025`, `ADR-026`, `ADR-041`,
 `ADR-043`, `ADR-044`, `ADR-046`, `ADR-054`, `ADR-055`, `ADR-056`, `ADR-059`, `ADR-062`…`ADR-066`,
-`ADR-070` (the backoff's 1-hour cap), `ADR-071`…`ADR-073`, `ADR-075`…`ADR-079` in `14_DECISIONS.md`. `06_ACCESS_GRAPH.md` for the rules every op resolves against;
+`ADR-070` (the backoff's 1-hour cap), `ADR-071`…`ADR-073`, `ADR-075`…`ADR-079`, `ADR-098` (presence and Touch ID) in `14_DECISIONS.md`. `06_ACCESS_GRAPH.md` for the rules every op resolves against;
 `16_CROSS_PLATFORM.md` for the named-pipe transport and the keystore tiers §1.4's last row waits
 on.
 
-**Code.** `crates/brokerd/src/protocol.rs` (the envelope and the 25-variant `OpError`);
+**Code.** `crates/brokerd/src/protocol.rs` (the envelope and the 26-variant `OpError`, including `PresenceRequired` and `PresenceFailed`);
 `crates/brokerd/src/server.rs` (framing, the peer gate, `record_decision`, `record_anomaly`, the
 auth-backoff wiring); `crates/brokerd/src/scope.rs` (cwd and token scope resolution);
-`crates/brokerd/src/ops.rs` (53 dispatched ops, counted with `tools.corpus_check.broker_ops()` —
+`crates/brokerd/src/ops.rs` (63 dispatched ops, counted with `tools.corpus_check.broker_ops()` —
 the authority for every `built` marking in §4); `crates/brokerd/src/state/durable.rs` (§1.4's
 live unlock);
 `crates/mcp/src/tools.rs` (15 registered tools, `FORBIDDEN_OPS`) and `crates/mcp/src/server.rs`
-(the three JSON-RPC methods); `crates/core/src/fields.rs` and `crates/brokerd/src/entry_doc.rs` (§4.1b);
+(the three JSON-RPC methods); `crates/core/src/fields.rs` and `crates/brokerd/src/entry_doc.rs` (§4.1b); `crates/core/src/presence.rs`, `crates/keystore/src/secure_enclave.rs` and `native/macos/presence` (§4.2, §4.2a);
 `crates/cli/src/main.rs` and `crates/cli/src/fields.rs` (24 top-level match arms — counting every
 nested `node`/`grant`/`gate`/`pending`/`notes`/`field` arm as well gives 47, §2.1);
-`apps/desktop/src-tauri/src/commands.rs` (53 bridge commands — 8 hand-written, 45 from the
-`bridge_ops!` table — with the shell's own `entry_copy`, `copy_text` and `fields_preview` registered beside them in `src/lib.rs`);
+`apps/desktop/src-tauri/src/commands.rs` (a bridge command per broker op — 8 hand-written, the rest from the
+`bridge_ops!` table — with the shell's own `entry_copy`, `copy_text`, `fields_preview` and, since ADR-098, the Touch ID prompt commands in `src/presence.rs` registered beside them in `src/lib.rs`; the per-op command counts in this document were last re-derived at 53 and have not been re-measured for ADR-098);
 `scripts/emergency-decrypt.mjs` (envelope versions 1 and 2).
 
 **Tests.** `crates/brokerd/tests/isolation.rs` — I-11 (cwd scoping), I-12 (token/workdir

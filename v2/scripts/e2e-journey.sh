@@ -128,7 +128,7 @@ OUT=$(CREDMGR_TOKEN=$TOKEN "$BIN/credmgr" node seal beta 2>&1)
 expect "node seal works in a vault credmgr init made" 'echo "$OUT" | grep -q "\"sealed\":true"'
 expect "the sealed project left the graph" '! CREDMGR_TOKEN=$TOKEN "$BIN/credmgr" node ls 2>&1 | grep -qx beta'
 expect "its value is not readable through the product" '! CREDMGR_TOKEN=$TOKEN "$BIN/credmgr" get SEALME --node beta >/dev/null 2>&1'
-expect "the orphan cold key exists, owner-only" '[ -f "$E/v/keys/cold/orphan.key" ] && [ "$(stat -f %Lp "$E/v/keys/cold/orphan.key" 2>/dev/null || stat -c %a "$E/v/keys/cold/orphan.key")" = 600 ]'
+expect "the orphan cold key exists, owner-only" '[ -f "$E/v/keys/cold/orphan.key" ] && [ "$(stat -c %a "$E/v/keys/cold/orphan.key" 2>/dev/null || stat -f %Lp "$E/v/keys/cold/orphan.key")" = 600 ]'
 expect "no orphan private key was written under keys/nodes" '[ ! -e "$E/v/keys/nodes/orphan.key" ]'
 expect "the sealed node's files moved into the archive" '[ ! -e "$E/v/nodes/beta" ] && [ -f "$E/v/archive/beta/node.key" ]'
 stop; start d2c
@@ -167,7 +167,7 @@ expect "the login locked away is refused as session_expired (ADR-068)" 'echo "$O
 OUT=$(echo "$PW" | "$BIN/credmgr" unlock 2>&1)
 expect "unlock now answers two_factor_required" 'echo "$OUT" | grep -q two_factor_required'
 sleep 31   # the enrolment consumed this TOTP step; use the next one
-OUT=$("$BIN/credmgr" gate verify "$(totp "$URI")" 2>&1); TOKEN=$(echo "$OUT" | sed -n 's/^export CREDMGR_TOKEN=//p')
+OUT=$(totp "$URI" | "$BIN/credmgr" gate verify 2>&1); TOKEN=$(echo "$OUT" | sed -n 's/^export CREDMGR_TOKEN=//p')
 expect "gate verify completes the login" '[ -n "$TOKEN" ]'
 stop
 
@@ -215,7 +215,7 @@ echo "== 6. a second daemon refuses a live socket"
 start d4
 "$BIN/credmgrd" >"$E/d5.log" 2>&1; RC2=$?
 expect "second credmgrd exits non-zero" '[ $RC2 -ne 0 ]'
-expect "and says why" 'grep -q "another credmgrd is already serving" "$E/d5.log"'
+expect "and says why" 'grep -qE "another credmgrd is already serving|server error \(another_broker_serving\)" "$E/d5.log"'
 stop
 
 echo "== 7. no plaintext value anywhere under the vault directory"
