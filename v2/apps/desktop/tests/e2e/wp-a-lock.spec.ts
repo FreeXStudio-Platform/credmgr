@@ -254,6 +254,26 @@ test("a hidden window wipes revealed values and locks; coming back asks the brok
   expect(await page.content()).not.toContain("fixture-value-stripe-live");
 });
 
+test("a window that is only covered, or on another display that went dark, wipes revealed values but does not lock", async ({ app }) => {
+  const { page } = app;
+  const broker = (await app.open({ broker: { locked: false, windowState: { minimized: false, visible: true } } }))!;
+  await expect(app.screen("S1 Main")).toBeVisible();
+  await page.locator(".cm-rail .k-tree-row", { hasText: "atlas" }).first().click();
+  await page.locator("aside.cm-insp button.k-entry").first().click();
+  await page.getByRole("button", { name: "reveal", exact: true }).click();
+  await expect(page.locator(".k-field-value")).toHaveText("fixture-value-stripe-live");
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect.poll(async () => (await broker.calls("window_state")).length).toBeGreaterThan(0);
+  expect(await app.secretCount()).toBe(0);
+  await page.waitForTimeout(400);
+  await expect(app.screen("S1 Main")).toBeVisible();
+  expect((await broker.calls("vault_lock")).length).toBe(0);
+});
+
 test("session_expired mid-use goes to the Lock screen with the reason, drops the model and every name, and unlocking again works", async ({ app }) => {
   const { page } = app;
   const broker = (await app.open({ broker: { locked: false } }))!;
@@ -396,14 +416,18 @@ test("a broker that is not running at start is a screen with Retry: no session i
   const broker = (await app.open({ broker: { unreachable: true } }))!;
   await expect(app.screen("S16 Broker unreachable")).toBeVisible();
   await expect(page.getByText("credmgr cannot reach its broker")).toBeVisible();
-  expect(await broker.commands()).toEqual(["vault_status"]); // the one question, and nothing after it
+  // the one broker question, and nothing after it.  login_agent_status is the shell's own (ADR-156: Start at login is offered on this
+  // screen, with "Restore from a backup..." from ADR-166); it never reaches the broker, so it is not counted as a question.
+  const asked = async () => (await broker.commands()).filter((c) => c !== "login_agent_status");
+  expect(await asked()).toEqual(["vault_status"]);
+  await expect(page.getByRole("button", { name: "Restore from a backup…" })).toBeVisible();
   await expect(page.locator('input[type="password"]')).toHaveCount(0); // no passphrase is asked for until there is a broker to give it to
 
   // Retry while it is still gone: the same screen, exactly one more question
   await page.getByRole("button", { name: "Retry" }).click();
-  await expect.poll(async () => (await broker.commands()).length).toBe(2);
+  await expect.poll(async () => (await asked()).length).toBe(2);
   await expect(app.screen("S16 Broker unreachable")).toBeVisible();
-  expect(await broker.commands()).toEqual(["vault_status", "vault_status"]);
+  expect(await asked()).toEqual(["vault_status", "vault_status"]);
 
   // it comes back: Retry leads to the Lock screen, with no reason given (nothing ended), and the vault then opens
   await broker.set({ unreachable: false });
@@ -521,4 +545,26 @@ test("Lock does not wait for a slow broker: the Lock screen is there at once and
   await unlockButton(app).click();
   await expect(app.screen("S1 Main")).toBeVisible();
   expect((await broker.commands()).filter((c) => c === "vault_lock" || c === "vault_unlock")).toEqual(["vault_lock", "vault_unlock"]);
+});
+
+test("the Lock screen always shows the quick-unlock icon beside the passphrase field; not set up, it is dimmed and a press says how to turn it on", async ({ app }) => {
+  const { page } = app;
+  await app.open({ broker: { locked: true } });
+  await expect(app.screen("S16 Lock screen")).toBeVisible();
+
+  const icon = page.locator('[data-biometric-unlock="true"]');
+  await expect(icon).toHaveCount(1);
+  await expect(icon).toBeEnabled(); // pressable, so the press can explain; only the look says "off"
+  await expect(icon).toHaveAttribute("data-ready", "false");
+  await expect(icon).toHaveAttribute("aria-label", /is not set up yet/);
+
+  // beside the field: same row, to its right
+  const field = await passInput(app).boundingBox();
+  const btn = await icon.boundingBox();
+  expect(btn!.x).toBeGreaterThan(field!.x + field!.width - 1);
+  expect(Math.abs(btn!.y + btn!.height / 2 - (field!.y + field!.height / 2))).toBeLessThan(4);
+
+  await icon.click();
+  await expect(page.locator('[data-lock-note="true"]')).toContainText("Settings, Security, Set up");
+  await expect(passInput(app)).toBeVisible(); // nothing was submitted; the passphrase step is still there
 });

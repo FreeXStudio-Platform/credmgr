@@ -29,6 +29,17 @@ fn removed_entry_label(node_id: &str, entry_id: &str) -> String {
     format!("removed-entry/{node_id}/{entry_id}")
 }
 
+/// ADR-168: an entry removed by `merge.apply` remembers which entry kept its names, and which of those
+/// names the merge put on the kept entry as aliases, so restoring it can take them back off first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergedInto {
+    /// The entry the merge kept.
+    pub entry: String,
+    /// The aliases the merge added to the kept entry for this one (its name and its own aliases).
+    pub aliases: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RemovedEntryBody {
@@ -36,6 +47,10 @@ struct RemovedEntryBody {
     entry: ManifestEntry,
     /// Unix epoch seconds — ADR-040.
     removed_at: i64,
+    /// ADR-168: written only for an entry a merge removed, so every archive written before it existed
+    /// (and every plain removal) re-serialises byte-identically and still verifies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    merged_into: Option<MergedInto>,
 }
 
 /// The on-disk shape: [`RemovedEntryBody`]'s fields plus the HMAC tag over
@@ -95,6 +110,29 @@ pub fn remove(
     entry: &ManifestEntry,
     now: i64,
 ) -> Result<()> {
+    remove_with(paths, root_key, node_id, entry, now, None)
+}
+
+/// ADR-168: [`remove`] for an entry a merge takes out, recording [`MergedInto`] in the signed record.
+pub fn remove_merged(
+    paths: &VaultPaths,
+    root_key: &[u8; 32],
+    node_id: &str,
+    entry: &ManifestEntry,
+    now: i64,
+    merged_into: MergedInto,
+) -> Result<()> {
+    remove_with(paths, root_key, node_id, entry, now, Some(merged_into))
+}
+
+fn remove_with(
+    paths: &VaultPaths,
+    root_key: &[u8; 32],
+    node_id: &str,
+    entry: &ManifestEntry,
+    now: i64,
+    merged_into: Option<MergedInto>,
+) -> Result<()> {
     let dst = paths.removed_entry_env(node_id, &entry.id);
     let dir = archive_dir_of(paths, node_id, &entry.id);
     atomic::ensure_dir(&dir)?;
@@ -106,6 +144,7 @@ pub fn remove(
         node_id: node_id.to_string(),
         entry: entry.clone(),
         removed_at: now,
+        merged_into,
     };
     let hmac = sign_body(root_key, &body);
     let doc = RemovedEntryDoc { body, hmac };
@@ -160,6 +199,42 @@ pub fn resigned_meta(
     serde_json::to_vec(&resigned).map_err(|e| json_err(&path, e))
 }
 
+/// A removed entry's signed record with its snapshot's `sha256` replaced and re-signed under the same
+/// root key, **only if it verifies first** (`node.rekey`, ADR-130: the archived envelope was re-sealed, so
+/// its digest changed and a later restore must carry the new one). Returns the bytes to write.
+pub fn with_sha256(
+    paths: &VaultPaths,
+    root_key: &[u8; 32],
+    node_id: &str,
+    entry_id: &str,
+    sha256: &str,
+) -> Result<Vec<u8>> {
+    let doc = read_meta(paths, node_id, entry_id)?;
+    verify_meta(root_key, &doc)?;
+    let mut body = doc.body;
+    body.entry.sha256 = sha256.to_string();
+    let hmac = sign_body(root_key, &body);
+    let path = paths.removed_entry_meta(node_id, entry_id);
+    serde_json::to_vec(&RemovedEntryDoc { body, hmac }).map_err(|e| json_err(&path, e))
+}
+
+/// ADR-165 N5: [`with_sha256`] over bytes already in hand — the record a root rotation has just re-signed
+/// under `root_key` (the NEW root), whose archived envelope the same rotation re-seals to the node's new key.
+/// Verifies under `root_key` first; `path` only names the file in an error. Touches nothing.
+pub fn resign_bytes_with_sha256(
+    root_key: &[u8; 32],
+    path: &Path,
+    bytes: &[u8],
+    sha256: &str,
+) -> Result<Vec<u8>> {
+    let doc: RemovedEntryDoc = serde_json::from_slice(bytes).map_err(|e| json_err(path, e))?;
+    verify_meta(root_key, &doc)?;
+    let mut body = doc.body;
+    body.entry.sha256 = sha256.to_string();
+    let hmac = sign_body(root_key, &body);
+    serde_json::to_vec(&RemovedEntryDoc { body, hmac }).map_err(|e| json_err(path, e))
+}
+
 fn read_verified_and_unexpired(
     paths: &VaultPaths,
     root_key: &[u8; 32],
@@ -196,6 +271,18 @@ pub fn peek(
 ) -> Result<ManifestEntry> {
     let doc = read_verified_and_unexpired(paths, root_key, node_id, entry_id, now)?;
     Ok(doc.body.entry)
+}
+
+/// ADR-168: what [`peek`] answers, plus the merge record when a merge removed the entry.
+pub fn peek_merged(
+    paths: &VaultPaths,
+    root_key: &[u8; 32],
+    node_id: &str,
+    entry_id: &str,
+    now: i64,
+) -> Result<(ManifestEntry, Option<MergedInto>)> {
+    let doc = read_verified_and_unexpired(paths, root_key, node_id, entry_id, now)?;
+    Ok((doc.body.entry, doc.body.merged_into))
 }
 
 /// Move a removed entry's envelope back into `nodes/<nodeId>/entries/` and
@@ -282,11 +369,51 @@ mod tests {
             expires_at: None,
             rotated_at: None,
             has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
         }
     }
 
     fn seed_active_entry(paths: &VaultPaths, node_id: &str, entry_id: &str) {
         atomic::write(&paths.entry_env(node_id, entry_id), b"ciphertext-bytes").unwrap();
+    }
+
+    #[test]
+    fn a_merge_record_round_trips_and_a_plain_removal_carries_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = VaultPaths::new(dir.path().to_path_buf());
+        let rk = [4u8; 32];
+        seed_active_entry(&paths, "a", "e_bbbbbbbbbbbb");
+        let merged = MergedInto {
+            entry: "e_cccccccccccc".into(),
+            aliases: vec!["vps-root".into(), "root-box".into()],
+        };
+        remove_merged(
+            &paths,
+            &rk,
+            "a",
+            &sample_entry(),
+            1_700_000_000,
+            merged.clone(),
+        )
+        .unwrap();
+        let (snap, record) =
+            peek_merged(&paths, &rk, "a", "e_bbbbbbbbbbbb", 1_700_000_001).unwrap();
+        assert_eq!(snap, sample_entry());
+        assert_eq!(record, Some(merged));
+        // Tampering with the record is caught by the archive's signature.
+        let meta = paths.removed_entry_meta("a", "e_bbbbbbbbbbbb");
+        let text = String::from_utf8(atomic::read(&meta).unwrap()).unwrap();
+        atomic::write(&meta, text.replace("root-box", "other-box").as_bytes()).unwrap();
+        assert!(peek_merged(&paths, &rk, "a", "e_bbbbbbbbbbbb", 1_700_000_001).is_err());
+
+        // A plain removal writes no `mergedInto` key at all: older archives re-serialise as before.
+        seed_active_entry(&paths, "b", "e_bbbbbbbbbbbb");
+        remove(&paths, &rk, "b", &sample_entry(), 1_700_000_000).unwrap();
+        let plain = atomic::read(&paths.removed_entry_meta("b", "e_bbbbbbbbbbbb")).unwrap();
+        assert!(!String::from_utf8(plain).unwrap().contains("mergedInto"));
+        let (_, none) = peek_merged(&paths, &rk, "b", "e_bbbbbbbbbbbb", 1_700_000_001).unwrap();
+        assert_eq!(none, None);
     }
 
     #[test]

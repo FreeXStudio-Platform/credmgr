@@ -112,7 +112,17 @@ fn has_matching_grant(
                 return false;
             }
         }
-        if !grant.scope.contains(&capability) {
+        let entry_grant = matches!(grant.to, GrantTarget::Entry { .. });
+        // ADR-172: an entry-level grant also lists the one entry it names (its name, in `entry.list`), and
+        // nothing else: `grant_covers` below matches only `Target::Entry` of exactly that entry, never the
+        // node, so the implied `list` can never reach a sibling or the node's inventory.
+        let implied_list = entry_grant
+            && capability == Capability::List
+            && grant
+                .scope
+                .iter()
+                .any(|c| matches!(c, Capability::Read | Capability::Reveal));
+        if !grant.scope.contains(&capability) && !implied_list {
             return false;
         }
 
@@ -123,7 +133,9 @@ fn has_matching_grant(
             return true;
         }
 
-        if grant.direction == Direction::Mutual {
+        // ADR-172: an entry-level grant is one-way. Its mirror would open the whole `from` node to the entry's
+        // node, far wider than the one entry the grant names, so a `mutual` entry grant mirrors nothing.
+        if grant.direction == Direction::Mutual && !entry_grant {
             let to_node = grant.to.node_id();
             let subject_is_to_side =
                 to_node == subject_node || registry.is_strict_ancestor(to_node, subject_node);

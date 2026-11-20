@@ -23,6 +23,7 @@ import * as live from "../../lib/bridge";
 import { NotWiredError } from "../errors";
 import type { VaultModel } from "../model";
 import { otpSecretOf, qrPath, type QrPath } from "../qr";
+import { agentTokenWords } from "./switchboard";
 
 /** Starts vault creation.  Returns the root recovery code, shown once; the user may retype it into {@link confirmVault} (or skip: the shown code is sent). */
 export async function beginVault(m: VaultModel, passphrase: string): Promise<Awaited<ReturnType<typeof live.vaultInitBegin>>> {
@@ -207,6 +208,8 @@ export interface WaitingApproval {
   entry: string;
   /** What to call it on the screen: the names when the broker gave them, the ids when it withheld them (`privateNames`) or does not hold them. */
   title: string;
+  /** ADR-164 review P1-2: the agent token that asked ("agent token “ci” (a_…)"), or null when none did. */
+  askedBy: string | null;
   /** Unix milliseconds at which the request defaults to denied, from the broker's `expiresIn` at the moment it answered. */
   expiresAt: number;
 }
@@ -240,6 +243,7 @@ export async function waitingApprovals(m: VaultModel, now: number = Date.now(), 
       node: a.node,
       entry: a.entry,
       title: describeWaiting(a),
+      askedBy: agentTokenWords(a.agentToken),
       expiresAt: now + Math.max(0, a.expiresIn) * 1000,
     }));
 }

@@ -32,7 +32,7 @@ test("an entry of several fields sends exactly one entry_create with those field
   await expect(dlg.locator('[data-preview-summary="true"]')).toContainText("2 fields · 1 masked");
 
   // typing asked the SHELL, never the broker: no entry call, no audit record, and the secret never went over the socket
-  expect((await broker.calls()).map((c) => c.cmd).filter((c) => c.startsWith("entry_") && c !== "entry_list")).toEqual([]);
+  expect((await broker.calls()).map((c) => c.cmd).filter((c) => c.startsWith("entry_") && c !== "entry_list" && c !== "entry_similar")).toEqual([]);
   expect((await broker.calls("fields_preview")).length).toBeGreaterThan(0);
   expect((await broker.state()).audit).toEqual([]);
 
@@ -50,7 +50,7 @@ test("an entry of several fields sends exactly one entry_create with those field
   // no optimistic write: the counts and the list come from fresh reads
   expect((await broker.calls("graph_snapshot")).length).toBe(graphBefore + 1);
   const listCalls = (await broker.calls("entry_list")).filter((c) => c.args.node === "atlas");
-  expect(listCalls.length).toBe(2); // once when the vault loaded, once after the write
+  expect(listCalls.length).toBe(3); // when the vault loaded, when the node was selected (#23), and after the write
   await expect(page.locator("aside.cm-insp button.k-entry")).toHaveCount(4);
   await expect(page.locator("aside.cm-insp button.k-entry", { hasText: "billing" })).toBeVisible();
   await expect(page.locator(".cm-rail .k-tree-row", { hasText: "atlas" }).first()).toContainText("4");

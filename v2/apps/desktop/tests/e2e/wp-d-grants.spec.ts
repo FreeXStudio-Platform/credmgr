@@ -73,7 +73,7 @@ test("creating a grant sends grant.create and shows the broker's presence_requir
   await page.getByRole("button", { name: "+ New grant" }).click();
   const dialog = app.screen("S11 Grant");
   await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText("Creating a grant needs presence");
+  await expect(dialog).toContainText("Creating a grant asks for Touch ID");
   await expect(dialog.locator('input[placeholder="2FA code"]')).toHaveCount(0); // presence guards it, not a typed code
   await expect(dialog.getByText("expiry")).toHaveCount(0); // the broker takes no expiry
 
@@ -88,7 +88,7 @@ test("creating a grant sends grant.create and shows the broker's presence_requir
   await expect(create).toBeEnabled();
   await create.click();
 
-  await expect(page.getByRole("alert").filter({ hasText: "Needs presence (Touch ID)" })).toContainText("(grant.create)");
+  await expect(page.getByRole("alert").filter({ hasText: "Needs Touch ID" })).toContainText("(grant.create)");
   expect(await broker.calls("grant_create")).toEqual([
     { cmd: "grant_create", args: { from: "beacon", to: { kind: "node", nodeId: "atlas" }, scope: ["read", "reveal"], reason: "the build needs the registry token" } },
   ]);

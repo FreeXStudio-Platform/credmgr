@@ -147,7 +147,7 @@ export const graphMethods = {
       if(drag){ const d=drag; drag=null; d.n.pinned=false; this._dragging=false;
         if(!d.moved){ this.select(d.n.id); this._dragAnchors=null; this._draggedNodeId=null; }
         else { if(d.n.id!=='__orphan'){ const hitN=this.gd.nodes.find(o=>o.id!==d.n.id&&o.id!=='__orphan'&&Math.hypot(o.x-d.n.x,o.y-d.n.y)<this.nodeR(o)+this.nodeR(d.n.id==='global'?d.n:d.n)+8);
-          if(hitN){ this.setState(st=>({dialog:'grant',grant:{...st.grant,from:d.n.id,to:hitN.id}})); } } this.persistPositions(); this.startLoop(); }
+          if(hitN){ this.setState(st=>({dialog:'grant',grant:{...st.grant,from:d.n.id,to:hitN.id,reason:'',code:''}})); } } this.persistPositions(); this.startLoop(); }
         this.renderGraph(); return; }
       if(pan){ const p=pan; pan=null; if(!p.moved)this.setState({ctx:null,hover:null,searchOpen:false,vaultMenu:false,selected:this.state.selected}); }
     });
@@ -350,7 +350,7 @@ export const graphMethods = {
         if(a.pinned){ a.vx=0;a.vy=0; continue; }
         const slot=a.slot||{a:0,r:1,rot:0};
         const ring=a.baseR+20+this.typeReach(a.type,a.id)+slot.r*(20+Math.min(28,arr.length));
-        const ang=slot.a+this.rotT*slot.rot; // slow, steady drift — alive but calm
+        const ang=slot.a+(this.isReduced()?0:this.rotT*slot.rot); // slow, steady drift — alive but calm; none at all under reduced motion
         const tx=n.x+Math.cos(ang)*ring, ty=n.y+Math.sin(ang)*ring;
         const fx=(tx-a.x)*0.045, fy=(ty-a.y)*0.045;
         a.vx=(a.vx+fx)*0.85; a.vy=(a.vy+fy)*0.85;

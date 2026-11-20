@@ -10,7 +10,7 @@ surface: repo
 last_reviewed: 2026-08-19
 ---
 
-<!-- artifact-hardened: NEEDS RE-HARDENING — rewritten to ultimate-destination state on
+<!-- artifact-hardened: NEEDS RE-HARDENING — edited 2026-11-06 for ADR-098 (Touch ID honesty pass). Earlier note: rewritten to ultimate-destination state on
      2026-08-18 (Session 21), then corrected again on 2026-08-19 closing the round-2 independent
      verifier's findings (`v2/VERIFICATION_BACKLOG_S21_ROUND2.md` — `04_CRYPTO_AND_KEYS.md`
      section). The previous stamp (Approved With Known Risks @ d15a5c7, pass 2, reconciled
@@ -42,16 +42,18 @@ last_reviewed: 2026-08-19
 > P-1…P-5 and by a cross-implementation vector test. The **root-key layer is partial**:
 > **vault bootstrap is built** (`credmgr init`, ADR-061 — §2.3), so a real run now writes the
 > passphrase and recovery-code root wraps and the `global` node's wrapped private key to disk.
-> What remains partial is the keystore tier: the only implementation that exists is
-> `SoftwareKeystore` (Argon2id over a passphrase), there is no Secure Enclave, Windows Hello or
-> TPM code anywhere in `v2/crates`, so the hardware wrap (`root.wrap.se`) is the one wrap nothing
-> writes. Per-request passphrase selection at `vault.unlock` is **built** since 2026-09-24
+> What remains partial is the keystore tier: the base implementation is
+> `SoftwareKeystore` (Argon2id over a passphrase), and since ADR-098 there is **one hardware tier, on macOS**:
+> an optional Secure Enclave wrap of the root key (`keys/root.wrap.se`, Touch ID unlock) and a Secure
+> Enclave presence key that proves a person is present (§5.3). There is no Windows Hello, TPM or Linux code
+> anywhere in `v2/crates`. Per-request passphrase selection at `vault.unlock` is **built** since 2026-09-24
 > (ADR-063 — §2.3), and on that live Software-tier unlock **the root key stays resident until
 > lock** (§6) — a change from this document's earlier "RK is not kept resident", stated plainly
 > there rather than left to contradict it.
 > The **orphan cold key is built** (`keys/cold/orphan.key`, ADR-079 — §5.2): sealing a node works
-> across restarts and the key that protects its orphaned copies exists, but **unsealing is still planned** —
-> no operation opens that key to read data. **Two-factor is a check made by `credmgrd`, not part of the
+> across restarts and the key that protects its orphaned copies exists, and **unsealing is built since
+> ADR-098**: `orphan.reveal` opens it for one entry, in the desktop app only, after a fresh second factor and a
+> Touch ID proof (§5.2, §5.3). **Two-factor is a check made by `credmgrd`, not part of the
 > encryption** (§2.1): the passphrase or the recovery code, plus a copy of the vault folder, opens everything
 > offline with no second factor. **This system contains no signature primitive at all** — see §1.1,
 > which is a section rather than a sentence because that absence has already been asserted the
@@ -131,7 +133,8 @@ lands, every design that needs a signature is `planned` and will say so.
         ┌──────────────────────────────────────────────────────────┐
         │  PLATFORM KEYSTORE — one PlatformKeystore implementation │
         │  built: Software (Argon2id over a passphrase)            │
-        │  planned: Secure Enclave · Windows Hello/TPM · Linux TPM │
+        │  built (macOS, ADR-098): Secure Enclave wrap + presence  │
+        │  planned: Windows Hello/TPM · Linux TPM                  │
         └───────────────────────┬──────────────────────────────────┘
                                 │ wrap_root / unwrap_root
                                 ▼               ┌── recovery code (256-bit, printed once)
@@ -156,8 +159,9 @@ lands, every design that needs a signature is `planned` and will say so.
     ┌────────────────────────────────────────────────────┐
     │  ORPHAN COLD KEY — keys/cold/orphan.key (CMCK v1): │
     │  the orphan node's private half, sealed under      │
-    │  HKDF(RK, "orphan-cold"); never loaded; no op      │
-    │  opens it for use — unsealing is planned (§5)      │
+    │  HKDF(RK, "orphan-cold"); never in the hot set; only│
+    │  orphan.reveal opens it, per entry, after a presence│
+    │  proof and a fresh second factor (§5.2, §5.3)       │
     └────────────────────────────────────────────────────┘
 ```
 
@@ -168,7 +172,7 @@ be recoverable three independent ways.
 
 | Wrap | On-disk name | Unlocks with | Portable? | Status |
 |---|---|---|---|---|
-| Hardware | `keys/root.wrap.se` | platform presence (biometric / PIN / touch) | no — device-bound | **`planned`** — no hardware keystore exists |
+| Hardware | `keys/root.wrap.se` | platform presence (Touch ID, or the device password) | no — device-bound | **`built`** on macOS (ADR-098, §5.3): optional, written by `device.enrol`, opened by `vault.unlock {method:"device"}`. **`planned`** on Windows and Linux |
 | Passphrase | `keys/root.wrap.pass` | operator passphrase, Argon2id | yes | **`built`** — the wrap/unwrap (`SoftwareKeystore`) and the write at init (`vault.init_confirm`, ADR-061 — §2.3) |
 | Recovery code | `keys/root.wrap.recovery` | a 256-bit code, shown once | yes | **`built`** — the wrap format, generation, parsing and unwrap (`recovery.rs`), the write at init (`vault.init_confirm`, ADR-061 — §2.3), and the read by the last door (`vault.gate_recover`, ADR-064) |
 
@@ -266,10 +270,10 @@ The target design steps this closes:
 1. First run **generates** RK from `OsRng` and the `global` node's keypair. ✅
 2. It **wraps** RK two ways — the passphrase wrap and the recovery-code wrap — and writes both
    files at `0600` under a `0700` `keys/` directory. ✅ The platform-keystore hardware wrap
-   (`root.wrap.se`) is the one wrap this does NOT write, because no hardware keystore is built
-   yet (N3, macOS Secure Enclave — `16_CROSS_PLATFORM.md §4.2`); "**setup will refuse to finish
-   with only a hardware wrap**" is satisfied vacuously on the Software tier, since there is no
-   hardware-only path to finish with.
+   (`root.wrap.se`) is the one wrap init does NOT write: it is optional and is added later, on a Mac,
+   by `device.enrol` (ADR-098, §5.3; `16_CROSS_PLATFORM.md §4.2`). "**setup will refuse to finish
+   with only a hardware wrap**" holds because the wrap is only ever added beside the passphrase and
+   recovery wraps, never instead of them.
 3. It **displays** the recovery code exactly once (`vault.init_begin`'s response value, never
    stored, never re-fetchable — same shape `gate_enroll_confirm` already uses) and **requires**
    the operator to re-enter it (`vault.init_confirm`) before anything is written. ✅ *(The broker requires it; the desktop may send the code it shows when the person skips the retype — ADR-081.)*
@@ -284,9 +288,9 @@ The target design steps this closes:
 *The chain is complete and tested from the root key downward. Solid edges are built and
 persisted: the passphrase and recovery-code root wraps, and every node's wrapped private key
 (ADR-061 closed both root-wrap edges this session — previously dashed, now solid). The one edge
-still dashed is the hardware/platform-keystore wrap (`root.wrap.se`) — no hardware keystore
-exists yet (N3), so nothing writes it; the orphan cold key is likewise dashed, unaffected by this
-session's work. **Caption text corrected 2026-08-31; the rendered figure itself has not been
+that was dashed, the hardware/platform-keystore wrap (`root.wrap.se`), is built on macOS since
+ADR-098 (§5.3) but is optional and written after init; the orphan cold key is likewise solid now that
+`orphan.reveal` opens it. **Caption text corrected 2026-08-31; the rendered figure itself has not been
 regenerated and may still show the pre-ADR-061 edge states** — re-run `tools/docgen` for this
 document before trusting the image over this text.*
 
@@ -294,29 +298,37 @@ document before trusting the image over this text.*
 
 ### 2.4 What the Software tier protects and does not — the release disclosure (K-5)
 
-This release has **one** keystore tier, `Software`. The wording below is the product's own statement of it
-and is repeated, verbatim in substance, in `README.md`, `RELEASE.md`, `SECURITY.md`, `07 §3` and `16 §3`; if
-it changes, it changes in all of them.
+The vault's keys are wrapped in software, by the passphrase and the recovery code; since ADR-098 a macOS
+user may add Touch ID on top (§5.3). The wording below is the product's own statement of both and is repeated,
+verbatim in substance, in `README.md`, `RELEASE.md`, `SECURITY.md`, `07 §3` and `16 §3`; if it changes, it
+changes in all of them.
 
 - **Your passphrase is the key.** The vault's root key is stored in the vault folder encrypted two ways:
   under a key derived from your passphrase with Argon2id (256 MiB of memory, 3 passes, 4 lanes), and under
-  the 256-bit recovery code printed at `credmgr init`. Nothing is held in the Mac's Secure Enclave and nothing
-  is tied to this Mac: a copy of the vault folder can be attacked offline on any computer, slowed only by the
-  Argon2id cost of each passphrase guess. Use a long, unique passphrase and keep the recovery code offline.
+  the 256-bit recovery code printed at `credmgr init`. Those two wraps are the whole defence of a copy of the
+  vault folder: it can be attacked offline on any computer, slowed only by the Argon2id cost of each passphrase
+  guess. Use a long, unique passphrase and keep the recovery code offline.
+- **Touch ID is an extra door, not a replacement (ADR-098).** If the user turns it on, a third wrap seals the
+  root key to a key in this Mac's Secure Enclave (`keys/root.wrap.se`, §5.3): it opens only on this Mac, for the
+  person who passes Touch ID or the device password, and the passphrase and recovery wraps stay, so a copied
+  folder is exactly as attackable as before. Neither the wrap nor the enrolled presence key is in a backup.
 - **While the vault is unlocked,** `credmgrd` holds the root key and every unlocked project key in memory
   until it locks (idle timeout or `credmgr lock`; the desktop app also locks it when the Mac sleeps, the screen locks or the session switches, but a daemon running without the app does not). It does not lock its memory pages or block
   debuggers, so software able to read its memory — anything running as root, for example — can read those
   keys (R-1, R-3).
-- **No Touch ID, no presence.** Reading a sealed (Orphaned) entry is refused with `node_access_denied` (rule R0 in
-  `crates/core/src/access.rs`: the sealed store opens only to a native caller with a live presence attestation, and
-  none can give one yet); creating a grant, re-parenting a node and widening a node's sharing are refused with
-  `presence_required` (K-1).
+- **Presence is a check on this Mac's login, not on the folder (K-1, ADR-098).** With a presence key enrolled,
+  reading a sealed (Orphaned) entry (rule R0 in `crates/core/src/access.rs`: the sealed store opens only to a native
+  caller with a live presence attestation, which the broker mints itself after verifying a Secure Enclave
+  signature), creating a grant, re-parenting a node and widening a node's sharing run only with a proof (§5.3).
+  **With no presence key enrolled** they are refused as before: `presence_required`, or `node_access_denied` for a
+  sealed read.
 - **Two-factor guards the door, not the safe.** With two-factor on, `credmgrd` will not unlock your vault
   without a fresh code. That check is made by `credmgrd`, not by the encryption: anyone who has your
   passphrase or your recovery code *and* a copy of your vault folder can decrypt it without the second factor.
   Treat each of the passphrase and the recovery code as a complete key to your vault.
-- **The binaries are not code-signed or notarised;** check them against `SHA256SUMS` (`21 §2`). Hardware-backed
-  protection (Secure Enclave with Touch ID) is planned and is not part of this release.
+- **The binaries are not code-signed or notarised;** check them against `SHA256SUMS` (`21 §2`). Touch ID does not
+  need signing (a non-permanent Enclave key works in an ad-hoc-signed binary, ADR-098); signing and notarisation
+  wait for the operator's Apple Developer ID. Windows Hello, TPM and Linux wraps are planned and not built.
 
 ---
 
@@ -431,21 +443,19 @@ node, not `from` (`ADR-050`); revocation taking effect on the very next request 
 `i7_expired_grant_is_denied_and_reported_as_expired`. Both tests seed their grant directly into
 the fixture registry rather than through `grant.create` — the op that would actually create one.
 
-**`grant.create` is `partial`, the same shape as `node.reparent` (§6).** It validates the reason
-(≥ 8 characters), rejects `orphan` as either endpoint, restricts the requested scope to the
+**`grant.create` is `built` on a Mac with a presence key (ADR-098, §5.3), and `partial` everywhere else.** It
+validates the reason (≥ 8 characters), rejects `orphan` as either endpoint, restricts the requested scope to the
 `read`/`reveal`/`notes` set `03 §6` defines, checks the caller's capability ceiling, and resolves
-`Capability::Admin` against `to` for real — then reaches an unconditional
-`Err(OpError::PresenceRequired)` for every caller, including one already holding Admin
-(`crates/brokerd/src/ops.rs`, the `"grant.create"` arm). `ADR-050`'s own title says so:
-"`revoke` genuinely executes, `create` is presence-blocked like `node.reparent`." No live
-transport can ever complete it today, because `presence_attested` is hardcoded `false`
-everywhere (§5.2) and no presence-capable keystore exists to attest it. There is no working
-grant-creation path yet — every grant a test exercises was placed in the registry directly, not
-minted by this op.
+`Capability::Admin` against `to` for real — then requires a presence proof: with one it writes the grant, without
+one (no key enrolled, an agent or fixture token, any non-macOS host) it returns `Err(OpError::PresenceRequired)`
+(`crates/brokerd/src/ops.rs`, the `"grant.create"` arm). `ADR-050` said "`create` is presence-blocked like
+`node.reparent`"; ADR-098 lifted the block for a caller that can prove presence. The proof is the owner's login
+plus a Secure Enclave signature over the exact parameters; an agent can never hold one, so an agent still cannot
+create a grant (`crates/brokerd/tests/presence.rs`, `scripts/e2e-presence.sh`).
 
 ---
 
-## 5. The orphan cold key — **`partial`**
+## 5. The orphan cold key — **`built`** (sealing, cold key and, on macOS, the presence-gated reveal)
 
 Sealing (node removal) must produce data that is unreadable by *every automated path*,
 including a fully unlocked broker serving a fully authorised agent.
@@ -506,7 +516,7 @@ registered with a public half and no private half — there is nothing in the ho
 ever be unwrapped for it. Before sealing commits anything, `node.seal` opens the cold key once
 (§5.2) to prove it is recoverable.
 
-### 5.2 The cold key — **`built`**; unsealing — **`planned`**
+### 5.2 The cold key — **`built`**; unsealing — **`built`** on macOS (`orphan.reveal`, ADR-098)
 
 **The cold key exists (ADR-079).** One X25519 keypair. The public half is `orphan.publicKey` in the registry;
 the private half is the file `keys/cold/orphan.key`, format **`CMCK` v1**, exactly 98 bytes
@@ -515,7 +525,7 @@ the private half is the file `keys/cold/orphan.key`, format **`CMCK` v1**, exact
 ```
 magic    "CMCK"                                         4
 version  0x01                                           1
-kind     0x01 = root-derived (Software tier)            1   (0x02 is reserved for a Secure-Enclave wrap)
+kind     0x01 = root-derived (Software tier)            1   (0x02 stays reserved for a Secure-Enclave wrap of the cold key itself; not built)
 pub      the orphan X25519 public key                  32
 sealed   seal_under_root(RK, "credmgr/v2/orphan-cold/v1", private)
                                                        60   nonce(12) ‖ ciphertext(32) ‖ tag(16)
@@ -527,7 +537,7 @@ one. The HKDF label differs from `credmgr/v2/node-wrap/orphan`, so a cold blob n
 the reverse. **Custody rules, enforced and tested:** the key is never in the hot set or in `node_wrapped_keys`;
 the loader treats `orphan` as public-only whatever is on disk (a `keys/nodes/orphan.key` is ignored and
 reported by `maintenance.verify`); unlock never opens it; the only code that does is `node.seal`'s pre-flight,
-transient and zeroised. A missing or mismatched cold key refuses the seal and writes nothing. `credmgr init`
+transient and zeroised — and, since ADR-098, `orphan.reveal` (below). A missing or mismatched cold key refuses the seal and writes nothing. `credmgr init`
 creates it with the `orphan` node; an older vault gets both on its first `node.seal` or on
 `maintenance.doctor` — never as a side effect of unlock. The backup includes the file
 (without it a restored backup holds orphan envelopes with no key), and `maintenance.rotate_root` re-seals it
@@ -539,35 +549,78 @@ a different key each time. The gate proof is an authorisation precondition of a 
 material. The Software tier has two faithful choices, a key derived from RK or one derived from the
 passphrase (a second Argon2id); ADR-079 chose RK, because it adds no exposure (RK already opens every live and
 archived node key), survives a passphrase change, and is recoverable from the recovery code alone, where a
-passphrase-derived key would strand orphaned data. **So on the Software tier the cold property is enforced
-by the broker — R0 denies the orphan to everyone but a present human, no operation uses the key, no
-resident copy exists — and not by cryptography against a compromised broker:** RK, resident while the vault is
-unlocked (§6), derives it. A hardware tier would rewrap it under a Secure Enclave key with a per-use presence
-ACL and drop the root-derived wrap.
+passphrase-derived key would strand orphaned data. **So the cold property is enforced by the broker — R0 denies the orphan to everyone but a present human, only
+`orphan.reveal` opens the key, no resident copy exists — and not by cryptography against a compromised broker:**
+RK, resident while the vault is unlocked (§6), derives it. ADR-098 did not change this: the presence proof
+authorises the broker to use the key, it is not key material, and the cold key is still root-derived. A hardware
+wrap of the cold key itself (kind `0x02`, a per-use presence ACL, no root-derived wrap) is the stronger design and
+stays `planned`.
 
-**Unsealing remains `planned`.** There is **no unseal operation** among the 53 broker ops: nothing reads an
-orphaned value, and sealed data past day 7 is, at this moment, unreadable by anyone including the operator —
-the key to read it exists, and no code path is allowed to use it. The target design for the operation:
+**Unsealing is `built` on macOS (ADR-098) as `orphan.reveal`; the sealed list is `orphan.list`.** Past day 7 a
+sealed entry is read one entry at a time, and only by the owner's login in the desktop app. What the operation
+does, in order: it refuses anyone but the owner's session; it requires a **fresh second factor** (when one is
+on); it requires a **presence proof** (§5.3) for this exact call; it asks the access resolver itself (R0) with the
+`Origin::Native` / `presence_attested: true` subject the proof just earned; it opens the cold key under the
+resident root key for the one read and zeroises it; and it then **drops the second-factor window**, so the next
+reveal costs a code and a fingerprint again. The rules that stay true:
 
-- The orphan key will **never enter the broker's hot key set**. Unlocking the vault will not
-  unlock orphaned data. (Already true, and now by construction rather than absence.)
-- Every single reveal will cost one presence prompt **and** one fresh TOTP code. There will be
-  no session, no cache, no batch mode, no `--yes`.
-- There will be **no MCP tool and no CLI flag** that can reveal orphaned content. Not gated —
-  absent. The pure access resolver already enforces the authorisation half: `access.rs`'s rule
-  **R0** denies `orphan` as a target to every caller except one whose origin is the native app
-  *and* who carries a live presence attestation, and denies `orphan` as a *subject*
-  unconditionally under R8. Neither condition can be satisfied today — a Tauri bridge exists
-  (`ADR-057`, `ADR-062`), but that bridge, like every other transport, never constructs
-  `Origin::Native` with `presence_attested: true`, and no presence-capable keystore exists to attest it.
+- The orphan key **never enters the broker's hot key set**. Unlocking the vault does not unlock orphaned data.
+- Every single reveal costs one presence proof **and** one fresh second factor. There is no session, no cache,
+  no batch mode, no `--yes`.
+- There is **no MCP tool and no CLI command** that can reveal orphaned content. Not gated — absent.
+  `orphan.list` (names only) also has none. R0 denies `orphan` as a target to every caller except a native one
+  with a live presence attestation, and R8 denies `orphan` as a *subject* unconditionally.
+- Without an enrolled presence key, or off macOS, nothing can mint that attestation and the sealed store stays
+  unreadable by anyone, the operator included, exactly as before (`node_access_denied` / `presence_required`).
 - Names, refs and types stay in the manifest so a human can find what they are looking for.
-  That is the whole "only the name is available" requirement, and it is built.
 
 <!-- figure:seal-to-orphan-timeline -->
 
-*Removal has three distinct states, not two — reversible-by-move for seven days, then
-cold-copy-only forever; the fourth, per-item unseal, is a planned state with no implementation
-today.*
+*Removal has four states — reversible-by-move for seven days, then cold-copy-only; the fourth,
+per-item unseal by `orphan.reveal`, is built on macOS since ADR-098 and needs Touch ID and a fresh
+second factor every time. (The rendered figure predates ADR-098 and still draws it dashed.)*
+
+### 5.3 Presence proof and the device wrap — **`built`** on macOS (ADR-098)
+
+Two separate things share one hardware key type, a **non-permanent Secure Enclave P-256 key** whose opaque
+`dataRepresentation` CredMgr stores itself (CryptoKit). That kind of key works in an ad-hoc-signed binary; the
+keychain-permanent kind needs a team entitlement and is not used. Access control is `userPresence`: Touch ID,
+or the device password when no biometry is enrolled — never `biometryCurrentSet`, so re-enrolling a finger
+cannot destroy the wrapped root key. All Enclave and LocalAuthentication code is one Swift helper,
+`credmgr-presence` (`native/macos/presence`), driven over one JSON request on stdin and one reply on stdout
+(`probe`, `enroll`, `sign`, `ecdh`); it keeps no state and no secret.
+
+**The presence proof.** It is a signature, not a claim. `presence.challenge {op, params}` returns a single-use
+32-byte nonce, valid 60 seconds and bound to the op, the exact params and the login session, and the digest to sign:
+`SHA-256(domain ‖ nonce ‖ op ‖ canonical-JSON(params))` (`crates/core/src/presence.rs`). The Enclave signs it,
+which is what prompts the user; the request is repeated with `params.presence = {nonce, signature}`. The broker
+re-derives the digest from the request it actually received, finds the nonce, checks op, session and expiry,
+verifies the P-256 signature against an **enrolled public key**, and burns the nonce whether or not it verified.
+Enrolled keys live in `keys/presence.enroll`, HMAC'd under the root key; a file that fails its tag stops the vault
+opening (it is never read as "nothing enrolled"). The first key needs `admin`, a human and a fresh second factor;
+any later one, and removing one, needs a proof from an existing key. Agents and fixture tokens can never hold a
+proof, so the gate answers them with `presence_required`.
+
+**What a proof unlocks:** `audit.get`, `totp.seed`, `node.reparent`, `grant.create`, `node.policy` when it widens
+reach, `maintenance.rotate_root`, `maintenance.doctor` with `rebuildRegistry` (diff first; `apply: true` writes,
+then the vault locks itself so the next unlock loads it from disk), and `orphan.reveal` (§5.2). A bad proof
+answers `presence_failed` with a reason (`not_enrolled`, `expired`, `invalid`, `cancelled`, `locked_out`,
+`unavailable`).
+
+**The device wrap (Touch ID unlock).** `device.enrol` seals the resident root key to a Secure Enclave key with ECIES
+(ephemeral P-256 ECDH, HKDF-SHA256, ChaCha20-Poly1305) into `keys/root.wrap.se`. Sealing needs only the public
+key (no prompt); opening needs the chip, so the wrap works on this Mac only. `vault.unlock {method:"device"}`
+opens it and then runs the same tail as a passphrase unlock (registry HMAC, rollback counter, second-factor gate).
+The passphrase and recovery wraps stay (§2.1). A root-key rotation re-signs the enrolment and re-seals the device
+wrap to the same Enclave key silently. `device.remove` deletes the file. Neither `keys/presence.enroll` nor
+`keys/root.wrap.se` is in a backup.
+
+**What this does not do.** It does not protect a copy of the vault folder on another computer (the passphrase wrap
+still opens it); it is not a defence against code running as the owner with the owner's fingerprint; and
+`credmgrd` still holds the root key in memory while unlocked. Windows Hello, TPM and Linux have no equivalent yet.
+The sensor itself is the one thing a script cannot press: tests use an unattended helper variant that stands in for
+the finger (`crates/brokerd/tests/presence.rs`, `scripts/e2e-presence.sh`); the live check is in
+`RELEASE_VERIFICATION.md`.
 
 ---
 
@@ -575,17 +628,17 @@ today.*
 
 | Operation | What happens | Gate | Status |
 |---|---|---|---|
-| **Vault init** | RK generated; keystore wrap + passphrase wrap + recovery wrap written; `global` and `orphan` nodes created | first run | **`partial`** — `credmgr init` is built (`vault.init_begin`/`vault.init_confirm`, ADR-061 — §2.3): RK, the passphrase and recovery-code wraps, the `global` node key, the cold key `keys/cold/orphan.key`, the empty `orphan` node and its manifest, the initial manifest, the registry and the counter are all written (ADR-079). The **keystore (hardware) wrap is not** — no hardware keystore exists (§2.1) |
+| **Vault init** | RK generated; keystore wrap + passphrase wrap + recovery wrap written; `global` and `orphan` nodes created | first run | **`partial`** — `credmgr init` is built (`vault.init_begin`/`vault.init_confirm`, ADR-061 — §2.3): RK, the passphrase and recovery-code wraps, the `global` node key, the cold key `keys/cold/orphan.key`, the empty `orphan` node and its manifest, the initial manifest, the registry and the counter are all written (ADR-079). The **keystore (hardware) wrap is not written at init**: it is the optional Touch ID wrap `device.enrol` adds later on a Mac (ADR-098, §5.3) |
 | **Unlock** | one wrap unwraps RK → gate 2FA → all node private keys unwrapped into the hot set → RK dropped on the Pass-1 design; on the live Software-tier unlock, RK stays resident until lock (below) | passphrase (+ gate, when enrolled) | **`built`** — on the live daemon `BrokerState::unlock_with_passphrase` (a request-scoped keystore, load-and-verify from disk, ADR-063); `BrokerState::unlock` for in-memory fixtures; `install_hot_keys_from_root` |
 | **Lock** | every hot key zeroised **in place**, and the resident RK; elevations and in-flight gate challenges dropped | idle, explicit; the desktop shell adds sleep / screen lock / session switch (`external_lock_signal`; the daemon alone has no such observer) | **`built`** — `isolation.rs::after_lock_every_hot_set_buffer_is_all_zero`; `durable_vault.rs::locking_drops_the_passphrase_keystore_so_nothing_can_be_written_while_locked` |
 | **Create node** | new X25519 pair; private wrapped to RK, bound to the node id | unlock + `Capability::Admin` | **`built`** — `node.create` (`ADR-051`) |
 | **Rotate node key** | new pair; every entry in the node re-encrypted; old private retained 7 days then destroyed | unlock + 2FA | **`planned`** — no `node.rotate_key` op exists |
-| **Rotate root key** | new RK; all node keys re-wrapped; both root wraps that exist (passphrase, recovery) rewritten — the hardware wrap is `planned`, §2.1; every root-signed file re-signed together; recovery code reissued, shown once | unlock + Admin + 2FA + presence | **`partial`** — `maintenance.rotate_root` is built and tested (`ADR-076`, `crates/brokerd/tests/rotate_root.rs`): crash-safe by a stage / single commit record / roll-forward journal, so the vault opens with the old root key or the new one at every instant, and a per-vault lock serialises it against every recovery. On the wire it answers `presence_required` after the human, Admin and second-factor checks, because no transport can attest presence yet (`ADR-047`); the rotation itself is exercised directly. It re-seals the orphan cold key under the new root and refreshes every seal record's bindings (ADR-079), and refuses, changing nothing, while `keys/` holds a file it cannot re-wrap (`root.wrap.se`, any other file under `cold/`, a later build's addition) or a sealed node's files are not yet all in its archive. A copy of the vault made before a rotation still opens with the old passphrase and recovery code |
+| **Rotate root key** | new RK; all node keys re-wrapped; the passphrase and recovery wraps rewritten, and the Touch ID wrap re-sealed to the same Enclave key if one exists (§5.3); every root-signed file re-signed together; recovery code reissued, shown once | unlock + Admin + 2FA + presence | **`built`** — `maintenance.rotate_root` is built and tested (`ADR-076`, `crates/brokerd/tests/rotate_root.rs`): crash-safe by a stage / single commit record / roll-forward journal, so the vault opens with the old root key or the new one at every instant, and a per-vault lock serialises it against every recovery. On the wire it runs after the human, Admin and second-factor checks and a Touch ID proof (ADR-098, §5.3); with no presence key enrolled it answers `presence_required`. It re-seals the orphan cold key under the new root and refreshes every seal record's bindings (ADR-079), and refuses, changing nothing, while `keys/` holds a file it cannot re-wrap (any other file under `cold/`, a later build's addition; `root.wrap.se` is re-sealed, not refused, since ADR-098) or a sealed node's files are not yet all in its archive. A copy of the vault made before a rotation still opens with the old passphrase and recovery code |
 | **Seal node** | entries re-encrypted to the orphan public key; originals + node key retained in `archive/` for 7 days; the seal recorded in the signed registry | unlock + `Capability::Admin` | **`built`** — §5.1; durable and crash-safe since ADR-079 |
 | **Purge the archive** (day 7) | retained ciphertexts and the retained node key destroyed | automatic, no operator action | **`partial`** — `archive::purge_if_expired` is written and tested, but has no caller; §5.1 |
 | **Restore node** (≤ 7 d) | move originals back from `archive/`; verify against the signed seal record; re-register the node key | unlock + `Capability::Admin`, resolved against the *sealed* node | **`built`** — `ADR-053`, `i21b`; across restarts since ADR-079 |
-| **Unseal entry** (> 7 d) | orphan private unwrapped for one operation, zeroised immediately after | presence + fresh TOTP, native app only | **`planned`** — §5.2: the key exists, no operation uses it |
-| **Re-parent node** | ancestor set changes ⇒ readable set changes; treated as scope-widening | unlock + 2FA + presence + reason | **`partial`** — `node.reparent` is dispatched and validates its reason, capability and target, then returns `PresenceRequired` unconditionally; the re-parenting itself is unimplemented because presence attestation does not exist |
+| **Unseal entry** (> 7 d) | orphan private unwrapped for one operation, zeroised immediately after | presence + fresh TOTP, native app only | **`built`** on macOS — `orphan.reveal` (ADR-098, §5.2); refused with no presence key enrolled |
+| **Re-parent node** | ancestor set changes ⇒ readable set changes; treated as scope-widening | unlock + 2FA + presence + reason | **`built`** on macOS — `node.reparent` validates its reason, capability and target, then with a presence proof re-parents (depth and kind follow; cycles and `orphan` refused); with no presence key enrolled it returns `PresenceRequired` (ADR-098) |
 
 **RK is resident while a live vault is unlocked — corrected 2026-09-24 (ADR-063, as amended
 after review).** This paragraph used to read "RK is not kept resident", and for the live
@@ -603,8 +656,8 @@ consequence, stated rather than softened:** a memory capture of a running, unloc
 node keys *and* the root key, so it also yields the ability to unwrap future nodes and to forge
 the metadata HMACs until the vault locks (AR-2 in `05 §7`; R-3 below). Before the live unlock
 existed, RK went out of scope after unlock and `reauth_root_key` re-derived it through the keystore
-per use; in-memory fixtures still behave that way. Hardware tiers are `planned` and may choose
-otherwise — a Secure Enclave wrap can re-derive RK per use without keeping a passphrase resident.
+per use; in-memory fixtures still behave that way. The Touch ID wrap (§5.3) did not change this: after a Touch ID unlock RK is resident exactly as after a
+passphrase unlock. A tier that re-derives RK per use without keeping anything resident is `planned`.
 
 ### 6a · Integrity of the plaintext metadata — **`built`** [Pass 2 · F-2, F-3]
 
@@ -635,8 +688,9 @@ state directory (`crates/store/src/generation.rs`, `ADR-024`/`ADR-039`). Restori
 the vault directory does not restore the counter; a lower generation makes the broker refuse to
 open and name the discrepancy, pointing at `credmgr doctor --rebuild-registry` (`02 §7`). Since
 ADR-063 the live daemon applies this at unlock, and a **missing** counter is refused too, unless
-`credmgrd` is started with `CREDMGR_ACCEPT_MISSING_ROLLBACK_COUNTER=1` (the one legitimate case: a
-vault moved between machines). The counter only moves forward; a write interrupted between its
+`credmgrd` is started with `CREDMGR_ACCEPT_MISSING_ROLLBACK_COUNTER=1` (a vault folder moved between
+machines without its state directory), or (ADR-148 amendment) a restore left a one-shot marker whose
+ticket verifies under RK for exactly the registry on disk and its generation (§7). The counter only moves forward; a write interrupted between its
 manifests and its registry is recovered from the previous signed registry pair
 (`registry.json.prev`/`registry.sig.prev`) and a manifest exactly one generation ahead of its
 binding — each still authenticated under RK, and the counter still refusing anything older than
@@ -661,13 +715,36 @@ decision.
 ### 7.1 Backup — **`built`**
 
 `maintenance.backup` is dispatched, gated on `Capability::Admin` resolved against Global
-(`ADR-054`), and produces a **single encrypted archive**. The bundle
-(`crates/store/src/backup.rs`) contains every entry envelope, every manifest, the registry and
-its signature, the passphrase and recovery root wraps, the orphan cold key `keys/cold/orphan.key` (ADR-079), and every *wrapped* node key file —
-that last item was not named in earlier revisions of this section but is structurally required,
-since without it the envelopes are undecryptable even after recovering the root key. It
-excludes `root.wrap.se` (meaningless off the machine that made it), everything under `run/`,
-the audit log, notes, TOTP seeds, and archived sealed-node contents.
+(`ADR-054`), and produces a **single encrypted archive** that, since `ADR-112` (issue #36), is
+**complete**: `credmgr restore` rebuilds the same vault from it. The bundle
+(`crates/store/src/backup.rs`) holds `config.json`; the registry pair and its previous pair; every
+key file but `root.wrap.se` (the passphrase and recovery root wraps, every wrapped node key, the
+orphan cold key `keys/cold/orphan.key`, ADR-079); every node directory whole (entry envelopes, the
+manifest, the sealed note `notes.env`, the locked-write tray `pending/`); `totp/`; the audit log and
+its chain tip; the whole `archive/` tree (sealed nodes `archive/<id>/`, removed entries
+`archive/removed-entries/`, rotation history `archive/entry-history/`); under `_state/`, a restore ticket
+(`restore.ticket`, ADR-148 amendment: HMAC under RK over the archived `registry.json`'s SHA-256 and its
+generation) and **not** the external generation counter, which stays on the machine; and a manifest
+`_archive/manifest.json` listing every vault file, so a restore can tell a truncated archive from a
+complete one. It excludes `root.wrap.se` (meaningless off the machine that made it), `run/`,
+`backups/`, `rotation-pending/` (a backup is refused while a root-key rotation is half finished),
+dot files and links. It is a point-in-time copy of files that are each written atomically: take it
+while the vault is idle, and `credmgr verify` the restored vault.
+
+**Restore** (`credmgr restore`, `store::backup::restore_bundle`) is offline and all or nothing: the
+archive is decrypted in memory, validated whole (every path under a known top-level name, no `..`,
+no absolute or backslash path, the manifest matching the contents, a registry and the passphrase wrap
+present), staged in a sibling directory and moved into place with one rename. The target must not exist
+or be an empty directory and must not be inside a git working tree - a restore never merges into or
+overwrites a vault. The generation counter lives outside the vault directory on purpose, so that
+restoring an old copy of the directory does not restore it, and it is no longer archived: into a state
+directory that has none, the restore writes the archive's ticket as a one-shot marker
+(`restore-accept.marker`) that the first unlock accepts only for this vault's RK and exactly the restored
+registry and generation, then replaces with a counter (an archive made before the change still carries a
+counter, written as before); an existing counter is kept, and if it is ahead of the restored
+registry the vault refuses to open as rolled back (`doctor --rebuild-registry` is the documented way
+out). A version-1 archive (made before `ADR-112`) still restores, with a note that it never held the
+notes, sealed-node and history archives.
 
 The bundle is then encrypted with `credmgr_keystore::backup_passphrase::encrypt_with_passphrase`
 — Argon2id at `16 §4.1`'s parameters, then ChaCha20-Poly1305 — under a passphrase the caller
@@ -762,8 +839,8 @@ that no longer exists and had to be replaced rather than edited.
 | R-5 | Hand-rolled sealed-box construction rather than a reviewed HPKE library | Medium | Follows the RFC 9180 DHKEM(X25519, HKDF-SHA512) shape; cross-implementation vectors pinned. **The pinned vectors are not RFC vectors** (§8 item 11) | Open — adopting an audited HPKE crate is blocked on the same MSRV wall as `ADR-036` |
 | R-6 | Soft grants are void if the broker is compromised | **High if it happens** | Same blast radius as R-3; grants are logged, expiring and instantly revocable | Accepted, documented in §4 |
 | R-7 | ~~**No root wrap is ever written to disk**, so there is no vault to attack yet — and no vault to use~~ — **RESOLVED.** `credmgr init` writes the passphrase and recovery-code root wraps | — | `vault.init_begin`/`vault.init_confirm` (§2.3), round-tripped over real on-disk files by `crates/brokerd/tests/vault_init.rs` | Closed 2026-08-31 by ADR-061. The hardware wrap is still never written — that remainder is R-8, not this row |
-| R-8 | The only keystore tier is `Software`; no hardware backing exists on any platform | **High for the shipped product** | `Capabilities` reports `hardware_backed: false` honestly, so nothing can overstate it | `ADR-041` — Phase 5, all three platform implementations behind the same trait |
-| R-9 | Sealed data past the 7-day window is recoverable with the cold key by no shipped path — in practice unrecoverable, including by the operator | **High** | The 7-day archive path is built and covers the realistic case; the cold key exists (ADR-079), so the data is not lost, only unreachable | §5.2 — the unseal operation (presence-gated) is unimplemented |
+| R-8 | The base tier is `Software`; hardware backing exists only as the optional macOS Secure Enclave layer (ADR-098), and not at all on Windows or Linux | **High for the shipped product** | The Touch ID wrap is additive (the passphrase and recovery wraps stay), so it does not harden a copied vault folder; the software keystore still reports `hardware_backed: false` honestly | `ADR-041`, `ADR-098` — Windows Hello / TPM / Linux behind the same trait are `planned` |
+| R-9 | Sealed data past the 7-day window is readable only through `orphan.reveal`, which needs a presence key on a Mac; with none enrolled (or on another platform) it is unrecoverable, including by the operator | **Medium** (was High before ADR-098) | The 7-day archive path covers the realistic case; the cold key exists (ADR-079) and `orphan.reveal` opens it per entry (ADR-098) | §5.2, §5.3 — enrol a presence key to be able to read sealed entries; no CLI or MCP reveal exists by design |
 | R-10 | A sealed node's private key is not actually destroyed at day 7, because nothing calls the purge | Medium | Restore past the window is refused, so the key grants no in-product access; the destruction routine itself is written and tested | §5.1 — needs the daily maintenance pass `ADR-039` defers |
 
 `05 §7`'s accepted-risk register AR-1…AR-6 and `PHASE8_AUDIT_REPORT.md`'s K-1…K-8 are the
@@ -790,16 +867,18 @@ and does not supersede either.
 ## 11. Source
 
 **Design.** `ADR-002`, `ADR-003`, `ADR-024`, `ADR-027`, `ADR-036`, `ADR-037`, `ADR-039`,
-`ADR-041`, `ADR-045`, `ADR-050`, `ADR-051`, `ADR-053`, `ADR-054`, `ADR-063`, `ADR-064`, and
+`ADR-041`, `ADR-045`, `ADR-050`, `ADR-051`, `ADR-053`, `ADR-054`, `ADR-063`, `ADR-064`, `ADR-098`, and
 `ADR-059` for the status vocabulary every heading in this document uses.
 
 **Code.** `crates/core/src/keys.rs` (subkey derivation, node keypairs, node-key wrapping,
 `seal_under_root`/`open_under_root`),
 `crates/core/src/envelope.rs` (the CMV2 sealed box, its AAD, and the two payload kinds), `crates/core/src/cold.rs`
-(the orphan cold key, ADR-079), `crates/core/src/fields.rs` (the version-2 payload), `crates/core/src/recovery.rs`
+(the orphan cold key, ADR-079), `crates/core/src/presence.rs` (the presence digest, verifier and the device-wrap ECIES, ADR-098), `crates/core/src/fields.rs` (the version-2 payload), `crates/core/src/recovery.rs`
 (the 256-bit recovery code and its root wrap), `crates/core/src/signing.rs` (HMAC-SHA256 — a
 MAC, not a signature; §1.1), `crates/keystore/src/lib.rs` (the `PlatformKeystore` trait and the
-`KeystoreId` variants that have no implementation), `crates/keystore/src/software.rs` (Argon2id
+`KeystoreId` variants that have no implementation), `crates/keystore/src/secure_enclave.rs` and `presence_client.rs`
+(the Swift helper client, ADR-098), `native/macos/presence` (the helper), `crates/store/src/presence_file.rs`
+(`keys/presence.enroll`), `crates/keystore/src/software.rs` (Argon2id
 parameters), `crates/keystore/src/backup_passphrase.rs`, `crates/store/src/registry_file.rs`,
 `crates/store/src/manifest.rs`, `crates/store/src/generation.rs`, `crates/store/src/audit.rs`,
 `crates/store/src/archive.rs`, `crates/store/src/backup.rs`, `crates/store/src/paths.rs`,
@@ -815,7 +894,8 @@ load-and-verify, write-through, `gate_recover`),
 `crates/brokerd/tests/phase5_gate.rs` (`item3`), `crates/brokerd/tests/durable_vault.rs` (§2.3's
 live unlock, §6's lock, and the last door), `crates/keystore/src/software.rs`'s own unit tests,
 `crates/cli/tests/emergency_decrypt.rs`, and — ADR-078/079 — `crates/core/tests/field_doc.rs` (P-13…P-18),
-`crates/brokerd/tests/seal_durable.rs` and `rotate_root.rs`'s cold-key tests. `cargo test --workspace -- --list`:
+`crates/brokerd/tests/seal_durable.rs` and `rotate_root.rs`'s cold-key tests, and — ADR-098 — `crates/brokerd/tests/presence.rs`
+and `scripts/e2e-presence.sh`. `cargo test --workspace -- --list`:
 813 tests in 50 test binaries (2026-10-03); the last full run recorded: 571 passing, 0 failing, 41 test binaries, exit 0 (2026-10-02; earlier: 448 passing, 37 test binaries on 2026-09-24, re-measured 2026-10-01; 406 passing, 35
 test binaries as of 2026-09-13, run `34743281942`; 397 passing, 33 test binaries, verified
 2026-08-18).

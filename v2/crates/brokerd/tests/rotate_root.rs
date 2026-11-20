@@ -827,19 +827,12 @@ fn a_tampered_audit_month_is_left_unsigned_so_it_keeps_failing_verification() {
 
 /// The case the test above does not reach, and the review's P3: the tampered
 /// month is the one the rotation's own audit record is written to. The rotation
-/// still refuses to re-sign it — but `audit::append` signs a month's tip over
-/// whatever lines the log holds, for every request, so the record the rotation
-/// then appends makes the truncated month verify again under the new key.
-///
-/// That is `audit::append`'s existing behaviour, not something a rotation can
-/// undo, and the claim was wrong to say otherwise. So the rotation says so in
-/// the one place the operator reads — the `reason` of the `notResigned` entry —
-/// and this test pins both halves: the report is honest, and the weakness is as
-/// described. If `audit::append` is ever changed to refuse to re-sign a month
-/// that does not verify, the last assertion flips, and `CURRENT_MONTH_CAVEAT`
-/// and the ADR's wording must go with it.
+/// refuses to re-sign it, and since ADR-156 (K-9) `audit::append` signs a new tip
+/// only over a log its tip vouches for, so the record the rotation then appends
+/// does not make the truncated month verify again. (Before ADR-156 it did, and
+/// this test pinned that weakness and a caveat in the report; both are gone.)
 #[test]
-fn a_tampered_current_audit_month_is_reported_with_the_caveat_that_the_next_record_signs_it() {
+fn a_tampered_current_audit_month_stays_reported_after_the_rotation_appends_to_it() {
     let p = populated();
     let vault = &p.vault;
     let wall_now = std::time::SystemTime::now()
@@ -873,19 +866,20 @@ fn a_tampered_current_audit_month_is_reported_with_the_caveat_that_the_next_reco
         .find(|s| s.kind == "audit-tip" && s.id == month)
         .unwrap_or_else(|| panic!("the tampered month is reported: {:?}", outcome.skipped));
     assert!(
-        reported
-            .reason
-            .contains("the month the rotation's own audit record was appended to"),
-        "the report admits the month will verify again: {}",
+        !reported.reason.contains("rotation's own audit record"),
+        "no caveat is needed any more: {}",
         reported.reason
     );
-    // The weakness, as described (see the doc comment above).
     assert!(
-        audit::verify(&vault.paths(), &new_rk, &month).is_ok(),
-        "the rotation's own record signed the truncated month's tip over what is left"
+        audit::verify(&vault.paths(), &new_rk, &month).is_err(),
+        "the rotation's own record must not sign the truncated month's tip over what is left"
     );
     // Nothing else is wrong.
-    assert_eq!(failures_under(vault, &new_rk, &NODES), Vec::<String>::new());
+    let rest: Vec<String> = failures_under(vault, &new_rk, &NODES)
+        .into_iter()
+        .filter(|f| !f.starts_with(&format!("audit {month}")))
+        .collect();
+    assert!(rest.is_empty(), "{rest:?}");
 }
 
 #[test]
@@ -1975,7 +1969,8 @@ fn a_vault_holding_key_material_the_rotation_cannot_rewrap_is_refused_and_unchan
         "the vault `init` made holds the orphan cold key"
     );
     for planted in [
-        vault.paths().root_wrap_se(),
+        // ADR-098: `root.wrap.se` is recognised now; a wrap from a platform this build lacks is not.
+        vault.paths().keys_dir().join("root.wrap.tpm"),
         vault.paths().keys_cold_dir().join("orphan.key.bak"),
         vault
             .paths()

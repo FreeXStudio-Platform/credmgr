@@ -70,13 +70,13 @@ last_reviewed: 2026-09-13
      comment above this one. Updated 2026-09-24 for ADR-073 (the broker op `credmgr import` will
      call, `entry.create_batch`, exists in a single-value form; the command still does not, §5). -->
 
-# Migration — V2 ships empty, and there is no import from V1
+# Migration — V2 ships empty; the only V1 copy is an outside script
 
 `CredMgr V2` · the decision not to have a migration, and everything that follows from it · `2026-09-13`
 
-> **Status.** The decision is **in force and verifiable in code**: `grep -rni "migrat"` over
-> `v2/crates/**/*.rs` returns nothing, the CLI's 24 top-level subcommands include no `migrate`
-> (its one `import` reads `.env` text and nothing else, §5), and no crate contains a reader for any
+> **Status (2026-11-20).** The decision still holds for the product and is **verifiable in code**: `grep -rni "migrat"` over
+> `v2/crates/**/*.rs` returns nothing, the CLI's 46 top-level subcommands include no `migrate`
+> (`import` and `import-env` read `.env` text and nothing else, §5), and neither the CLI nor the app reads a V1 vault. **What changed since 2026-09-13:** a one-way, read-only copy script exists outside the crates, `tools/v1-to-v2/migrate.js` (`ADR-097`, scope in `ADR-147`; see the last section and `tools/v1-to-v2/README.md`); an in-app V1 copy is planned for `2.1`. `credmgr alias` and `credmgr import-env` (preview and collision options) are built (§4, §5), and no crate contains a reader for any
 > V1 file format. One thing this document describes is still **not built**: the short-name alias
 > display of `ADR-032` (§4); `credmgr import` for `.env` files (§5) is **built** as of 2026-10-02,
 > without the preview and the collision options its target design lists. Vault bootstrap and first-run setup (§1) **are**
@@ -95,12 +95,14 @@ last_reviewed: 2026-09-13
 
 ## 1. The decision
 
-**V2 ships empty. It does not import from V1. There is no migration, no dry run, no parallel
-window, no cut-over, and no retention clock.**
+**V2 ships empty. The product does not import from V1: no crate, CLI command or app screen reads a V1
+vault, and there is no parallel window, cut-over or retention clock. The one exception is an operator
+script outside the product, `tools/v1-to-v2/migrate.js` (dry run by default, `--apply` copies into an
+unlocked V2 vault through the V2 CLI, V1 is never written).**
 
 A user installs V2, runs first-run setup, creates nodes, and adds their own credentials. That is
 the whole story, and first-run setup is **built** as of `ADR-061` (2026-08-31, `b43e1d7`).
-`credmgr init` is one of the CLI's 24 top-level subcommands; it drives the broker's
+`credmgr init` is one of the CLI's 46 top-level subcommands; it drives the broker's
 `vault.init_begin` / `vault.init_confirm` ops, writes the vault tree and root wrap, and prints a
 one-time recovery code the user must retype before anything is committed
 (`crates/cli/src/main.rs::cmd_init`). `credmgrd`'s `main()` resolves the vault path, creates
@@ -130,7 +132,9 @@ V2's job was to *become* one specific existing vault.
 is: no V2 code path opens a V1 file. Not read-only, not behind a flag, not in a test fixture. An
 import path that exists but is disabled is still an attack surface, still a maintenance burden,
 and still a thing a future session can be talked into enabling. Absence is the strongest form of
-the guarantee, and it is the form that can be checked with a grep.
+the guarantee, and it is the form that can be checked with a grep. The copy script keeps that
+invariant for the crates: it reads V1 through V1's own library and writes through the V2 CLI, so no V2 crate
+contains a V1 reader.
 
 ## 2. What exists today
 
@@ -145,12 +149,13 @@ will not.
 | Vault bootstrap / first-run setup — actually creating that vault | `built` | `ADR-061` (2026-08-31, `b43e1d7`): `credmgr init` (`crates/cli/src/main.rs::cmd_init`) drives the broker's `vault.init_begin` / `vault.init_confirm` arms. Proven on disk by `crates/brokerd/tests/vault_init.rs::begin_then_confirm_writes_a_vault_a_separately_keyed_broker_can_unlock`, and over a real socket with the real binary by `crates/cli/tests/vault_init.rs::init_over_the_real_binary_and_socket_creates_a_vault` |
 | A `credmgrd` that serves `<vault>/run/broker.sock` outside a test | `built` | `crates/brokerd/src/main.rs` — `main()` creates `run/`, then calls `server::run(state, &paths.run_socket())`; since `ADR-063` its `vault.unlock` opens an existing vault from disk and every change is written through (`crates/brokerd/tests/durable_vault.rs`). `grep -rn "server::run" v2/crates --include='*.rs'` now matches that real call site plus four test fixtures (`broker_integration.rs`, `success_criteria.rs`, `vault_init.rs`, `mcp_integration.rs`), two doc-comments, and one unrelated call, `credmgr_mcp::server::run` in `crates/cli/src/main.rs`'s `cmd_mcp()` |
 | Absence of any V1 reader in any crate | `built` | `grep -rni "migrat" v2/crates --include='*.rs'` → 0 matches; no V1 format module exists |
-| Absence of a `migrate` CLI subcommand, and of any import that reads a V1 format | `built` | `crates/cli/src/main.rs::run` — 24 top-level arms, none of them `migrate`; the one `import` arm (`cmd_import`) parses `.env` text only (`crates/cli/src/dotenv.rs`) and has no relationship to V1 (§5) |
+| Absence of a `migrate` CLI subcommand, and of any import that reads a V1 format | `built` | `crates/cli/src/main.rs::run` — 46 top-level subcommands (`help` and `--version` aside), none of them `migrate`; the one `import` arm (`cmd_import`) parses `.env` text only (`crates/cli/src/dotenv.rs`) and has no relationship to V1 (§5) |
 | `emergency-decrypt.mjs` — disaster recovery for a **V2** vault | `built` | `v2/scripts/emergency-decrypt.mjs`, exercised by `crates/cli/tests/emergency_decrypt.rs` |
 | Manual carry of one value, V1 → V2 (§6) | `built` | The CLI plumbing is built and tested (`no_secret_in_argv.rs`), and the two rows above — the vault to write into, the running broker to write through — closed with `ADR-061`. No automated test pipes V1 into V2 and none can: that join needs a V1 install this workspace deliberately does not vendor |
-| `credmgr import` for `.env` files (§5) | `partial` | built 2026-10-02: `crates/cli/src/main.rs::cmd_import` parses `.env` text (`crates/cli/src/dotenv.rs`) and writes it through `entry.create_batch` (`ADR-073`, single-value form), all-or-nothing, into a node named by `--node`; locked-vault batches are held for review. Not built: the preview with confirmation, and the skip / `--replace` collision options. Proven by `crates/cli/tests/cli_parity.rs` (`import_*`, `an_import_*`) |
-| Short-name alias, and prefix-stripped display (§4) | `planned` | `grep -rni "alias" v2/crates` finds one unrelated comment in `store/src/paths.rs` and no alias support |
-| V1 → V2 migration tooling, dry run, parallel window, cut-over | `removed` | `12_BUILD_PLAN.md` Phase 4: "There is no migration tooling." `ADR-028` and `ADR-034` are marked VOID in `14_DECISIONS.md` |
+| `credmgr import` and `credmgr import-env` for `.env` files (§5) | `built` (preview, `--dry-run` and `--on-conflict refuse|skip` on `import-env`) | built 2026-10-02: `crates/cli/src/main.rs::cmd_import` parses `.env` text (`crates/cli/src/dotenv.rs`) and writes it through `entry.create_batch` (`ADR-073`, single-value form), all-or-nothing, into a node named by `--node`; locked-vault batches are held for review. Not built: the preview with confirmation, and the skip / `--replace` collision options. Proven by `crates/cli/tests/cli_parity.rs` (`import_*`, `an_import_*`) |
+| Entry aliases (`credmgr alias`, `entry.alias`) and similar-name lookup (`credmgr similar`) (§4) | `built` | `crates/cli/src/main.rs` dispatches `alias`, `similar`; broker ops `entry.alias` and `entry.similar`. The prefix-stripped short-name display is not built |
+| V1 → V2 migration inside the product (crates, CLI, app), parallel window, cut-over | `removed` (in-app copy `planned`, `2.1`, `ADR-147`) | `12_BUILD_PLAN.md` Phase 4: "There is no migration tooling." `ADR-028` and `ADR-034` are marked VOID in `14_DECISIONS.md` |
+| One-way read-only V1 copy script, `tools/v1-to-v2/migrate.js` (+ `setup.py` installer) | `built` | `ADR-097`; `node --test tools/v1-to-v2/`; carries values, expiry, aliases and sensitivity (last section) |
 | A build phase for migration | `removed` | the autonomous build's path is `0 → 1 → 2 → 3 → 4 → 5 → 7 → 8` (Phase 6 is the external UI track, `19_FRONTEND_DELIVERY_SCOPE.md`); no phase in it is a migration, and the deleted one was not renumbered into hiding |
 
 ## 3. Why this document used to say something else
@@ -232,7 +237,7 @@ behaviour instead. Recorded here so a later pass does not re-flag it as still op
 
 A reader who finds the CHANGELOG.md residue should treat this document as the authority.
 
-## 4. Names and aliases, without a migration — **`planned`**
+## 4. Names and aliases, without a migration — **`built`** (aliases, `credmgr alias`; the short-name display is `planned`)
 
 `ADR-032` was written as a migration rule: keep V1's long credential names verbatim, register the
 short form as an alias, and display the name with the node prefix stripped when it matches the
@@ -275,7 +280,7 @@ The previous text said…" The rule itself was never wrong; only its stated caus
 imported, so nothing is *kept*; the names are simply the ones the user typed, and the alias is a
 convenience over them.
 
-## 5. `credmgr import` — the only import V2 will ever have — **`partial`**
+## 5. `credmgr import` and `import-env` — the only import in the product — **`built`**
 
 V2 imports nothing at install. Separately from that, a credential manager needs a way to absorb a
 `.env` file, because that is where credentials arrive from in practice. `credmgr import` is that
@@ -463,3 +468,7 @@ removed `autobuild.sh` guard (`v2/scripts/autobuild.sh:261-264`); and the near-m
 would have caused, dashed because it never fired. Rendered from spec: `grep -c '<figure'
 v2/docs/11_MIGRATION.html` and `grep -c '&lt;svg' v2/docs/11_MIGRATION.html` verified after every
 build.
+
+## The V1 copy tool (ADR-097, ADR-147)
+
+The one-way, read-only copy is `tools/v1-to-v2/migrate.js`; this document's design (§4 names and aliases) is unaffected. What it carries per V1 entry: the values (as labelled fields), **expiry** (V1 `expiresAt` to `credmgr expire --at`, unix seconds; an unreadable date is reported and the entry still copied), **aliases** (V1 `aliases[].name` to `credmgr alias --add`), and **sensitivity** (`low`, `medium`, `high`, `critical` map one to one through `credmgr set --sensitivity`; unset leaves V2 to infer it; any other value is refused with a report line and the entry is not copied). Consolidated entries (wallet families, folded duplicates) take the earliest expiry, the highest sensitivity and the union of aliases. **Not carried:** the V1 description (V2 entries have no description field; notes are per node, not per entry) and the V1 alias field-label pointer (V2 aliases name the whole entry); both are counted in the report, by entry name only. Exclusions are configuration (`--exclude`, `--exclude-file`, `--exclude-project`), never built-in names.

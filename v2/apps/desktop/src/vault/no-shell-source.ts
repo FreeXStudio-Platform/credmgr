@@ -21,6 +21,9 @@ export class NoShellSource implements ModelSource {
   async unlock(): Promise<AuthLite> {
     return no();
   }
+  async unlockWithTouchId(): Promise<AuthLite> {
+    return no();
+  }
   async gateVerify(): Promise<AuthLite> {
     return no();
   }

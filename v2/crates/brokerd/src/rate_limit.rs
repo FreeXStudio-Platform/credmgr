@@ -6,6 +6,7 @@
 //! an attacker can't dodge the limiter by spreading guesses across targets.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,9 @@ const THRESHOLD: usize = 5;
 #[derive(Debug, Default)]
 pub struct RateLimiter {
     denials_by_uid: Mutex<HashMap<u32, Vec<Instant>>>,
+    /// ADR-156: trips nobody has looked at yet. In memory only — a restart clears it, and every trip is
+    /// also on the audit trail (`anomaly.cross_node_denials`), which is the durable record.
+    unseen_alarms: AtomicU64,
 }
 
 impl RateLimiter {
@@ -31,7 +35,21 @@ impl RateLimiter {
         let entries = map.entry(uid).or_default();
         entries.retain(|t| now.duration_since(*t) < WINDOW);
         entries.push(now);
-        entries.len() == THRESHOLD
+        let tripped = entries.len() == THRESHOLD;
+        if tripped {
+            self.unseen_alarms.fetch_add(1, Ordering::SeqCst);
+        }
+        tripped
+    }
+
+    /// ADR-156: how many times the alarm tripped since it was last acknowledged.
+    pub fn unseen_alarms(&self) -> u64 {
+        self.unseen_alarms.load(Ordering::SeqCst)
+    }
+
+    /// ADR-156: the owner has seen the alarm; returns how many trips that covered.
+    pub fn acknowledge_alarms(&self) -> u64 {
+        self.unseen_alarms.swap(0, Ordering::SeqCst)
     }
 
     #[cfg(test)]
@@ -58,6 +76,13 @@ mod tests {
             }
         }
         assert_eq!(tripped, 1);
+        assert_eq!(
+            limiter.unseen_alarms(),
+            1,
+            "a trip is an unseen alarm until acknowledged"
+        );
+        assert_eq!(limiter.acknowledge_alarms(), 1);
+        assert_eq!(limiter.unseen_alarms(), 0);
         assert_eq!(limiter.count(501, now), 7);
     }
 

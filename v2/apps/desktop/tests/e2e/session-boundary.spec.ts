@@ -79,7 +79,7 @@ test("a reveal the model dropped (the user left the node and came back) is not s
   // and the screen agrees with the model: still masked, offering "reveal", no countdown claiming otherwise
   await expect(page.locator(".k-field-value")).toHaveText("••••••••••••");
   await expect(page.getByRole("button", { name: "reveal", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "hide", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^hide(, re-masks in \d+ seconds)?$/ })).toHaveCount(0);
   expect(await page.content()).not.toContain(VALUE);
 });
 

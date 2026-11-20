@@ -39,7 +39,7 @@ export const fieldsMethods = {
   toggleFieldMenu(key){
     const opening = this.state.fieldMenu !== key;
     this.setState({ fieldMenu: opening ? key : null });
-    if(opening) setTimeout(() => { const el = document.querySelector('.cm-fieldmenu button:not([disabled])'); if(el) el.focus(); }, 30);
+    if(opening) setTimeout(() => { const el = document.querySelector('.cm-fieldmenu button:not([disabled])'); if(el){ el.focus(); el.setAttribute('data-focus-settled', 'true'); } }, 30); // the attribute says the move has landed (specs wait for it)
   },
 
   /** A field moves one place.  The ids stay, so nothing held is dropped: only the order changes. */
@@ -58,6 +58,29 @@ export const fieldsMethods = {
       this.routeError(e, { op: 'field.reorder', node, entry: en.id });
     }finally{
       this._reordering = false;
+    }
+  },
+
+  // ───────────────────────────── "This is a 2FA seed" (ADR-111, issue #40) ─────────────────────────────
+  /**
+   * The broker said this field could be a 2FA seed that is not typed as one.  One click types it `totp-seed` (field.update, `type` only):
+   * the seed is then withheld from every reveal and the field gives codes.  The notice names the entry, never the field's label.
+   */
+  async markSeed(node, en, f){
+    if(this._markingSeed || !f.id) return;
+    if(DEMO_BUILD&&this.model.kind!=='bridge'){ this.notify('info', NEEDS_APP); return; }
+    this._markingSeed = true;
+    try{
+      const r = await write.typeFieldAsSeed(this.model, node, en.id, f.id);
+      this.setState((st) => { const rv = { ...st.reveals }; for(const k of Object.keys(rv)) if(k.startsWith(en.id + ':')) delete rv[k]; return { reveals: rv }; });
+      const text = `Typed as a 2FA seed in “${en.name}”. It now gives codes and is never shown.`;
+      if(r.readbackError) this.savedButNotRefreshed(r.readbackError, text);
+      else this.notify('success', text);
+      this.offerUndo(node, en.id, write.auditOf(r), 'edit');
+    }catch(e){
+      this.routeError(e, { op: 'field.update', node, entry: en.id });
+    }finally{
+      this._markingSeed = false;
     }
   },
 

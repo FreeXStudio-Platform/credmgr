@@ -9,6 +9,7 @@
         <div class="t-caption" style="color:var(--mute)">published by FreexStudio</div>
         <div style="display:flex;gap:16px;margin-top:8px;font-family:var(--f-mono);font-size:var(--fs-sm)"><a href="#" style="display:inline-flex;align-items:center;min-height:24px" onClick="{{goDonate}}">Donate</a><a href="#" style="display:inline-flex;align-items:center;min-height:24px" onClick="{{goPrivacy}}">Privacy</a><a href="#" style="display:inline-flex;align-items:center;min-height:24px" onClick="{{goLicenses}}">Licences</a></div>
         <div data-about-version="true" style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute);margin-top:12px">{{aboutVersion}}</div>
+        <div data-about-build="true" title="the commit this build was made from" style="font-family:var(--f-mono);font-size:var(--fs-xs);color:var(--mute)">build {{aboutBuild}}</div>
         <sc-if value="{{cosmUnlocked}}" hint-placeholder-val="{{false}}"><span class="k-chip" data-state="ok" style="align-self:center">supporter</span></sc-if>
       </div>
     </sc-if>
@@ -42,7 +43,7 @@
         <button class="k-btn" onClick="{{goAboutMain}}" style="border:none;padding:0;color:var(--mute);align-self:flex-start">← About</button>
         <span class="t-eyebrow">privacy</span>
         <p class="t-body-sm" style="margin:0">CredMgr has no server, so there is nothing to collect. No account, no telemetry, no crash reporting, no analytics, no cloud sync. The app makes no network requests: no HTTP client is linked into it, and the window’s content policy refuses every request that is not to the app itself. It talks to the broker over a local socket only.</p>
-        <p class="t-body-sm" style="margin:0">Backups are encrypted files the broker writes in the vault’s own backups folder, under a passphrase you choose. Nothing about your vault — its structure, its node names, its contents — leaves this machine unless you copy a backup file somewhere yourself. A revealed value lives in memory for the reveal window and is cleared when you lock; it is never written to storage or to a log.</p>
+        <p class="t-body-sm" style="margin:0">Backups are encrypted files the broker writes in the vault’s own backups folder (or, while the vault is locked to this machine, in CredMgr’s state folder on this machine), under a passphrase you choose. Nothing about your vault — its structure, its node names, its contents — leaves this machine unless you copy a backup file somewhere yourself. A revealed value lives in memory for the reveal window and is cleared when you lock; it is never written to storage or to a log.</p>
         <p class="t-body-sm" style="margin:0">The app never sends anything for a donation. If you choose to e-mail a donation proof to get a supporter code, that e-mail and its attachment reach the maintainer like any other e-mail you send.</p>
         <div class="t-mono-label">what this window keeps on disk</div>
         <p class="t-body-sm" style="margin:0">Only these small settings, in the window’s local storage. None of them holds a secret, a node name or an entry name.</p>
@@ -67,6 +68,7 @@
         <p class="t-body-sm" style="margin:0">CredMgr is published by FreexStudio. The names and brand assets are not covered by the licence; see <span style="font-family:var(--f-mono)">TRADEMARKS.md</span>.</p>
         <p class="t-body-sm" style="margin:0">For permission to do something the licence does not allow, or for a commercial arrangement, write to <span style="font-family:var(--f-mono);user-select:all">Admin@freexstudio.com</span>. Donations are separate from the licence and buy no rights.</p>
         <p class="t-body-sm" style="margin:0">The typefaces bundled with the app — Inter, Inter Tight and JetBrains Mono — are under the SIL Open Font Licence 1.1; their texts ship in <span style="font-family:var(--f-mono)">third_party/fonts</span>.</p>
+        <p class="t-body-sm" style="margin:0">QR-code images added in Add entry are read on this computer by jsQR (Cosmo Wolfe), under the Apache Licence 2.0; the full list of bundled components and their licences is in <span style="font-family:var(--f-mono)">THIRD_PARTY_NOTICES.md</span>.</p>
       </div>
     </sc-if>
   </div>

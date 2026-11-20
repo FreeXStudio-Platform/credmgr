@@ -59,6 +59,20 @@ pub struct ManifestEntry {
     /// `crates/store/tests/alpha6_golden.rs` pin this.
     #[serde(default, skip_serializing_if = "is_false")]
     pub has_totp: bool,
+    /// ADR-121: other names this entry answers to, in the node's one name space
+    /// (each is unique against every name and alias, canonically, ADR-084).
+    /// Plaintext metadata like `name`, so the same `skip_serializing_if` rule
+    /// applies as for `has_totp`: written only when there is one, so every
+    /// manifest written before aliases existed re-serialises byte-identically
+    /// and still verifies.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
+    /// ADR-167: free-text tags the owner put on this entry, normalised by `credmgr_core::tags`.
+    /// Names-level metadata like `aliases` (hidden from a reader who may not see names, never an index
+    /// across nodes), and written only when there is one for the same reason: every manifest written
+    /// before tags existed re-serialises byte-identically and still verifies.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 // `skip_serializing_if` hands the predicate a `&bool`, hence the reference.
@@ -94,6 +108,11 @@ pub struct ManifestBody {
     pub counts: Counts,
     pub notes_sha256: Option<String>,
     pub generation: u64,
+    /// ADR-168: the SHA-256 of the node's sealed merge decision memory (`nodes/<id>/merge.env`), as
+    /// `notes_sha256` is the note's, so an older file put back over it is refused. Written only when there
+    /// is a memory, so every manifest written before it existed re-serialises byte-identically.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_sha256: Option<String>,
 }
 
 impl ManifestBody {
@@ -104,6 +123,7 @@ impl ManifestBody {
             counts: Counts::default(),
             notes_sha256: None,
             generation: 0,
+            merge_sha256: None,
         }
     }
 
@@ -285,6 +305,8 @@ mod tests {
             expires_at: None,
             rotated_at: None,
             has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
         });
         body
     }

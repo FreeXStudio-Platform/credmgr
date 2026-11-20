@@ -19,6 +19,9 @@
 
 pub mod backup_passphrase;
 pub mod error;
+pub mod machine_lock;
+pub mod presence_client;
+pub mod secure_enclave;
 pub mod software;
 
 pub use error::{KeystoreError, Result};

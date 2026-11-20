@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- ADR-162: Contents/MacOS/credmgrd, the broker, Mac App Store edition. A TEMPLATE (tokens from
+     packaging/mas/identity.conf). launchd starts it as an SMAppService agent, so it cannot inherit the app's
+     sandbox (its parent is launchd): it carries its own, and the one app group. NO network entitlement, ever:
+     the broker has no network code (A-1, scripts/airlock-check.sh) and must not be able to open a socket off
+     the machine even if it had. Add nothing here without an ADR. -->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>@MAS_APP_GROUP@</string>
+    </array>
+</dict>
+</plist>

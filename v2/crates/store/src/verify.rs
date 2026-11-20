@@ -160,6 +160,8 @@ mod tests {
             expires_at: None,
             rotated_at: None,
             has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
         }
     }
 

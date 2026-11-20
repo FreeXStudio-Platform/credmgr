@@ -73,7 +73,8 @@ say(`   v2    ${V2}`);
 if (skipBuild) {
   say("\n== build skipped (CREDMGR_REAL_SKIP_BUILD=1): using build/ and credmgrd as they are");
 } else {
-  step("1/4 build credmgrd from this source", cargoBinary(), ["build", "-p", "credmgr-brokerd", "--bin", "credmgrd", "--locked"], {
+  // ADR-166: and the command line, which the shim runs for backup_restore as the shell runs the bundled one.
+  step("1/4 build credmgrd and credmgr from this source", cargoBinary(), ["build", "-p", "credmgr-brokerd", "--bin", "credmgrd", "-p", "credmgr-cli", "--bin", "credmgr", "--locked"], {
     cwd: V2,
     env: { ...process.env, CARGO_INCREMENTAL: "0" },
   });

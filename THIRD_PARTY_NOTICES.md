@@ -373,11 +373,12 @@ Linked into `credmgr`, `credmgrd` and the desktop shell, across all supported pl
 | `zlib-rs` | 0.6.8 | Zlib |
 | `zmij` | 1.0.23 | MIT |
 
-## npm packages: Desktop app (`v2/apps/desktop`) (5)
+## npm packages: Desktop app (`v2/apps/desktop`) (6)
 
 | Name | Version | Licence |
 |---|---|---|
 | `@tauri-apps/api` | 2.12.1 | Apache-2.0 OR MIT |
+| `jsqr` | 1.4.0 | Apache-2.0 |
 | `qrcode-generator` | 2.0.4 | MIT |
 | `react` | 19.3.0 | MIT |
 | `react-dom` | 19.3.0 | MIT |

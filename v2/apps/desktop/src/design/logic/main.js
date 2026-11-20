@@ -6,6 +6,8 @@
 
 import { lockNode, renameNode, unlockNode, write } from "../../vault/index";
 
+import { nodeFilterIds } from "./finder.js";
+
 export const mainMethods = {
   /** Finish a rename: send the new label, or just close the editor if there is nothing to send.  The label on screen is whatever the broker last said. */
   async commitRename(id){
@@ -63,9 +65,11 @@ export const mainMethods = {
       select:()=>this.select(n.id),
       menu:(ev)=>{ev.preventDefault();const pos=this.ctxPosFor(ev.clientX,ev.clientY);this.setState({ctx:{x:pos.x,y:pos.y,node:n.id}});} // B3-2
     });};
-    const globalNode=this.node('global'); if(globalNode)push(globalNode,0); // the view is empty until the model has loaded
-    for(const p of v.nodes.filter(n=>n.depth===1)){ push(p,0); for(const c of this.children(p.id)) push(c,1); }
-    railRows.push({id:'__orphan',label:'orphaned',kind:'orphan',count:String(v.orphans.length),indent:'0px',current:s.selected==='__orphan'?'true':'false',color:s.selected==='__orphan'?'var(--ash)':'var(--mute)',border:'1px dashed var(--faint)',badges:'',lockColor:'var(--mute)',renaming:false,notRenaming:true,select:()=>this.select('__orphan'),menu:(ev)=>ev.preventDefault()}); // the orphaned node is never renamed: without notRenaming the row drew no label at all
+    // rc.2 item 3: the rail's node filter (finder.js) narrows the rows in the page; null shows every node
+    const fIds=nodeFilterIds(v.nodes,s.nodeFilter), keep=(n)=>!fIds||fIds.has(n.id);
+    const globalNode=this.node('global'); if(globalNode&&keep(globalNode))push(globalNode,0); // the view is empty until the model has loaded
+    for(const p of v.nodes.filter(n=>n.depth===1)){ if(keep(p))push(p,0); for(const c of this.children(p.id)) if(keep(c))push(c,1); }
+    if(!fIds||'orphaned'.includes(String(s.nodeFilter).trim().toLowerCase()))railRows.push({id:'__orphan',label:'orphaned',kind:'orphan',count:String(v.orphans.length),indent:'0px',current:s.selected==='__orphan'?'true':'false',color:s.selected==='__orphan'?'var(--ash)':'var(--mute)',border:'1px dashed var(--faint)',badges:'',lockColor:'var(--mute)',renaming:false,notRenaming:true,select:()=>this.select('__orphan'),menu:(ev)=>ev.preventDefault()}); // the orphaned node is never renamed: without notRenaming the row drew no label at all
     // tree view rows
     const tShape=this.cosmEff().shape; const treeRows=railRows.map(r=>{ const n=r.id==='__orphan'?{kind:'orphan',counts:{entries:v.orphans.length,totp:null},gate:{locked:false,twofa:'none'}}:this.node(r.id);
       return { ...r, indent:(parseInt(r.indent)*2)+'px', guide:parseInt(r.indent)>0?'1px solid var(--hair)':'none',
@@ -93,7 +97,7 @@ export const mainMethods = {
       {label:'Open',color:'var(--bone)',go:()=>this.select(s.ctx.node)},
       {label:'New entry',color:'var(--bone)',go:()=>this.openAddDlg(s.ctx.node)},
       ...(ctxNode&&ctxNode.depth<2?[{label:ctxIsGlobal?'New project':'New sub-node',color:'var(--bone)',go:()=>this.setState({dialog:'addNode',newNodeParent:s.ctx.node,ctx:null})}]:[]),
-      {label:'Grant access…',color:'var(--bone)',go:()=>this.setState(st=>({dialog:'grant',grant:{...st.grant,from:s.ctx.node},ctx:null}))},
+      {label:'Grant access…',color:'var(--bone)',go:()=>this.setState(st=>({dialog:'grant',grant:{...st.grant,from:s.ctx.node,reason:'',code:''},ctx:null}))},
       ...(ctxIsGlobal?[]:[{label:'Rename',color:'var(--bone)',go:()=>this.setState(st=>({ctx:null,renamingNode:s.ctx.node,renameVal:ctxNode?ctxNode.label:''}))}]),
       {label:ctxNode&&ctxNode.gate.locked?'Unlock node':'Lock now',color:'var(--bone)',go:()=>this.setNodeLock(s.ctx.node,!(ctxNode&&ctxNode.gate.locked))},
       {label:'Remove node…',color:'var(--danger-fg)',go:()=>this.setState({dialog:'seal',sealTarget:s.ctx.node,sealTyped:'',ctx:null})}

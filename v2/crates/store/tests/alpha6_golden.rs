@@ -72,6 +72,8 @@ fn entry(has_totp: bool) -> ManifestEntry {
         expires_at: None,
         rotated_at: None,
         has_totp,
+        aliases: Vec::new(),
+        tags: Vec::new(),
     }
 }
 

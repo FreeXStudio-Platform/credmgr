@@ -10,7 +10,7 @@ surface: repo
 last_reviewed: 2026-08-18
 ---
 
-<!-- artifact-hardened: NEEDS RE-HARDENING — rewritten to ultimate-destination state on
+<!-- artifact-hardened: NEEDS RE-HARDENING — edited 2026-11-06 for ADR-098 (Touch ID honesty pass). Earlier note: rewritten to ultimate-destination state on
      2026-08-18 (Session 21). Every factual claim in this document was checked against live
      source in that pass, but the corpus-wide hardening stamp is the operator's to assign after
      their own review, not this session's to self-award. The seven stamps that were carried here
@@ -37,7 +37,7 @@ last_reviewed: 2026-08-18
 
 `CredMgr V2` · the index to the design corpus, and the contract every document in it follows · `2026-08-18`
 
-> **Status.** The **backend is built and audited**: 55 broker ops, 15 MCP tools, 27 CLI
+> **Status.** The **backend is built and audited**: 63 broker ops, 15 MCP tools, 27 CLI
 > subcommands, the workspace suite green (see `BUILD_LOG.md`'s latest entry for the current
 > count). Since 2026-09-24 the running daemon opens its own vault — passphrase unlock, load from
 > disk, write-through (`ADR-063`) — and the first packaged build, `2.0.0-alpha.6`, is an
@@ -45,12 +45,13 @@ last_reviewed: 2026-08-18
 > is `2.0.0-beta.1`. Entries hold **several fields** (`ADR-078`) and a vault made by `credmgr init`
 > can **seal and restore** a project across restarts (`ADR-079`). The **desktop application is built
 > and wired**: `v2/apps/desktop/` hosts the KEEP design, precompiled and served under the strict CSP
-> (`ADR-075`), and a command bridge reaches all 55 broker ops (`ADR-057`, `ADR-062`, `ADR-076`,
-> `ADR-078`, `ADR-087`, `ADR-090`); every screen reads from the broker and every change goes to it — first run, unlock with
+> (`ADR-075`), and a command bridge reaches all 63 broker ops (`ADR-057`, `ADR-062`, `ADR-076`,
+> `ADR-078`, `ADR-087`, `ADR-090`, `ADR-098`); every screen reads from the broker and every change goes to it — first run, unlock with
 > the second factor, the graph and inspector, entries with their fields, the review tray, nodes, grants,
-> the audit trail and maintenance. Five operations are sent for real and refused with `presence_required`
-> until a presence transport exists (`10 §4.2`). What is *not* done is the real-app verification pass
-> (`RELEASE_VERIFICATION.md`), signing and notarisation (K-5), and presence (Touch ID, K-1). The
+> the audit trail and maintenance. The five presence-gated operations (and the sealed read) run on macOS after a
+> Touch ID proof from a Secure Enclave key (`ADR-098`, `10 §4.2`); with no presence key enrolled they are still
+> refused with `presence_required`. What is *not* done is the real-app verification pass
+> (`RELEASE_VERIFICATION.md`), signing and notarisation (K-5), and any hardware tier off macOS (Windows Hello, TPM, Linux; K-1). The
 > **organisation vault and sync, and an optional commercial-licence certificate, are designed but
 > unbuilt**. The licence itself is settled: **MIT for everyone, organisations included, with
 > nothing gated by payment** (`ADR-074`). This corpus describes all three states and labels which
@@ -84,15 +85,16 @@ but does not yet do everything its document specifies), **`planned`** (does not 
 | Envelope crypto (versions 1 and 2), node keys, durable seal/restore, the orphan cold key | `built` | `crates/core/`, `crates/keystore/`, `ADR-078`, `ADR-079`, `crates/brokerd/tests/seal_durable.rs` |
 | Multi-field entries — the field document, `entry.get`, `field.*` | `built` | `ADR-078`, `crates/core/src/fields.rs`, `crates/brokerd/tests/field_model.rs` |
 | Storage, manifests, generation counter | `built` | `crates/store/` |
-| Broker, 55 ops, access resolution | `built` | `crates/brokerd/src/ops.rs` |
-| Root-key rotation, crash-safe (`maintenance.rotate_root`) | `partial` | `ADR-076`, `crates/brokerd/tests/rotate_root.rs`; built and tested directly, but on the wire it answers `presence_required` until presence can be attested |
+| Broker, 63 ops, access resolution | `built` | `crates/brokerd/src/ops.rs` |
+| Root-key rotation, crash-safe (`maintenance.rotate_root`) | `built` | `ADR-076`, `crates/brokerd/tests/rotate_root.rs`; on the wire it runs after a Touch ID proof (`ADR-098`, `crates/brokerd/tests/presence.rs`) and answers `presence_required` when no presence key is enrolled |
+| Presence proof (Secure Enclave key, single-use broker challenge) and the presence-gated operations; Touch ID unlock | `built` (macOS) | `ADR-098`, `crates/core/src/presence.rs`, `crates/keystore/src/secure_enclave.rs`, `crates/brokerd/tests/presence.rs`, `scripts/e2e-presence.sh`; the sensor itself is checked by a human (`RELEASE_VERIFICATION.md`) |
 | Live vault — passphrase unlock, load from disk, write-through | `built` | `ADR-063`, `crates/brokerd/src/state/durable.rs`, `durable_vault.rs` |
 | CLI, 27 top-level subcommands | `built` | `crates/cli/src/main.rs` |
-| MCP server, 15 tools | `built` | `crates/mcp/src/tools.rs` |
+| MCP server, 21 tools (six are the ADR-155 switchboard) | `built` | `crates/mcp/src/tools.rs`; the LLM knowledge base `docs/LLM_KB.md` |
 | Two-factor gate (TOTP + recovery codes), persisted, with the last door | `built` | `crates/brokerd/`, `phase5_gate.rs`, `durable_vault.rs` (`ADR-064`) |
 | Session login (`vault.unlock` mints a real token that reaches every node but Orphaned) | `built` | `ADR-056`, `ADR-065`, `session_login.rs`, `durable_vault.rs` |
 | Node isolation suite | `partial` | `isolation.rs` runs I-1…I-25 and I-27…I-29 (27 tests; I-26 was never written); **I-10 is implemented nowhere** — accepted risk K-1 |
-| Cross-platform keystore | `partial` | trait + macOS path built; Windows and Linux backends designed, see `16` |
+| Cross-platform keystore | `partial` | macOS Secure Enclave tier built (`ADR-098`: Touch ID presence and unlock); Windows and Linux backends designed, not built, see `16` |
 | Desktop application (screens) | `built` | the KEEP design, precompiled and hosted under the strict CSP (`ADR-075`, `apps/desktop/`); every screen goes through the broker, with no demo data and no local-only write path in a release build — see `09`, `19`, and `RELEASE_VERIFICATION.md` for the control-by-control map (its real-app result column is filled by the verification pass, so the claim is `built`, not yet `verified in the real app`) |
 | Tauri↔broker command bridge | `built` | all 54 ops reachable from `invoke()` (`ADR-057`, `ADR-062`, `ADR-078`) plus three shell commands (`entry_copy`, `copy_text`, `fields_preview`), a typed client `apps/desktop/src/lib/bridge.ts`, a real CSP, a concealed clipboard and lock-on-sleep in the shell; the shell's suite lists 186 tests, in CI. Until 2026-09-24: 8 of 40 |
 | Organisation vault, departments | `planned` | `22` |
@@ -101,11 +103,11 @@ but does not yet do everything its document specifies), **`planned`** (does not 
 | Release signing and update channel | `planned` | `21`. A minimal unsigned path is `built`: `scripts/release.sh` (tarball + `SHA256SUMS`) and `credmgr --version`/`credmgrd --version` — K-5 |
 
 **The counts are load-bearing and were re-derived from source on 2026-10-26**, not carried
-forward: 55 broker ops (counted with `tools.corpus_check.broker_ops()`, never a grep —
+forward: 63 broker ops (counted with `tools.corpus_check.broker_ops()`, never a grep —
 ADR-064 added `vault.gate_recover`, ADR-066 `node.set_workdirs`, ADR-071…073 `node.update`,
 `node.policy`, `notes.read`, `notes.write` and `entry.create_batch`, ADR-076
 `maintenance.rotate_root`, ADR-078 `entry.get` and `field.add`/`update`/`remove`/`reorder`, ADR-087
-`util.generate`, and ADR-090 `vault.approval_get`), 15 MCP
+`util.generate`, ADR-090 `vault.approval_get`, and ADR-098 `presence.status`/`challenge`/`enrol`/`unenrol`, `device.enrol`/`remove` and `orphan.list`/`reveal`), 15 MCP
 tools (ADR-078 added `credmgr_get_metadata` and `credmgr_field_add`/`_update`/`_remove`), 27 top-level
 CLI subcommands (ADR-078 added `field`; 2026-10-24 `generate` and `approve`; 2026-10-26 `approvals`), ADR-001…ADR-091 (ADR-083…089 the
 2026-10-24 backend wave: private names, canonical names, per-node second factor, field-edit undo, the
@@ -116,8 +118,8 @@ vault-bootstrap track, which added `vault.init_begin` and `vault.init_confirm`; 
 the live-vault work; ADR-067…069 from its review — the envelope digest, the refused dead token,
 the durable tray; ADR-070…073 from the design side's handoff — the one-hour backoff cap, node
 rename and policy patch, notes, the batch create; ADR-074 the licensing decision —
-MIT for everyone, 2026-10-01), 25 broker error codes (ADR-077 added `node_locked`; ADR-078 and ADR-079 added
-none), isolation tests I-1…I-25 (except the unimplemented I-10) and I-27…I-29.
+MIT for everyone, 2026-10-01), 26 broker error codes (ADR-077 added `node_locked`; ADR-078 and ADR-079 added
+none; ADR-098 added `presence_failed`), isolation tests I-1…I-25 (except the unimplemented I-10) and I-27…I-29.
 `cargo test --workspace -- --list` lists 813 tests in 50 test binaries (45 compiled test executables plus
 five doc-test targets that find no doc test), counted 2026-10-03; the last full pass/fail run recorded is 571
 passing, 0 failing, in 41 test binaries (2026-10-02; 406 passing on 2026-09-13; 443 on 2026-09-24; 448 in 37

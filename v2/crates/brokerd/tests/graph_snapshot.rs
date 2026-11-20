@@ -73,6 +73,7 @@ fn manifest(node_id: &str, entries: u32, totp: u32) -> ManifestBody {
         counts: Counts { entries, totp },
         notes_sha256: None,
         generation: 1,
+        merge_sha256: None,
     }
 }
 
@@ -322,8 +323,8 @@ fn gate_twofa_reflects_node_policy_and_the_vault_wide_gates_own_state() {
     let nodes = response["nodes"].as_array().unwrap();
     assert_eq!(
         node_by_id(nodes, "a")["gate"]["twofa"],
-        "enrolled",
-        "a's default reveal policy, but the vault gate is not yet confirmed"
+        "none",
+        "issue #37: no second factor exists, so the default reveal policy shows none"
     );
     let b_response = ops::dispatch(&f.state, &b_scope, NOW, "graph.snapshot", &json!({}))
         .expect("graph.snapshot for b's own scope");
@@ -331,6 +332,23 @@ fn gate_twofa_reflects_node_policy_and_the_vault_wide_gates_own_state() {
         node_by_id(b_response["nodes"].as_array().unwrap(), "b")["gate"]["twofa"],
         "none",
         "b's policy is requireTwoFactor: never"
+    );
+
+    // An enrolment begun and not yet confirmed is `enrolled`.
+    ops::dispatch(
+        &f.state,
+        &admin_scope(),
+        NOW,
+        "vault.gate_enroll_begin",
+        &json!({}),
+    )
+    .expect("enroll_begin");
+    let response = ops::dispatch(&f.state, &a1_scope(), NOW, "graph.snapshot", &json!({}))
+        .expect("graph.snapshot while enrolling");
+    assert_eq!(
+        node_by_id(response["nodes"].as_array().unwrap(), "a")["gate"]["twofa"],
+        "enrolled",
+        "begun, not confirmed"
     );
 
     // `vault.gate_enroll_begin`/`_confirm` are global-scoped `Admin`

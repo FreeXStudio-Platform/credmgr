@@ -76,7 +76,27 @@ fn temp_path_for(target: &Path) -> PathBuf {
 /// previous content or exactly `data`, in full — never truncated, never a
 /// mix — even if the process is killed at any point during this call.
 /// Creates `target`'s parent directory (mode `0700`) if it doesn't exist.
+///
+/// On every error path this call returns, its temporary file is removed (ADR-165 review P1-2: a temporary
+/// file left beside `target` is a second copy of `data` under a name nothing reads, and nothing sweeps a dot
+/// file). A process killed between the temporary file's fsync and the rename can still leave one; a caller
+/// whose data must not linger removes them with [`remove_stray_temps`]. An error **after** the rename (the
+/// directory fsync) means `target` already holds `data`: a caller that must report what is on disk re-reads it.
 pub fn write(target: &Path, data: &[u8]) -> Result<()> {
+    let tmp = write_temp(target, data)?;
+    if let Err(e) = fs::rename(&tmp, target) {
+        let _ = fs::remove_file(&tmp);
+        return Err(io_err(target, e));
+    }
+    let dir = target.parent().unwrap_or_else(|| Path::new("."));
+    fsync_dir(dir)?;
+    Ok(())
+}
+
+/// The first half of [`write`]: `data` in a new, uniquely named temporary file beside `target` (mode `0600`,
+/// fsynced), whose path is returned; `target` is not touched. Removed again on its own failure. Public so a
+/// test can leave exactly what a crash between the fsync and the rename leaves.
+pub fn write_temp(target: &Path, data: &[u8]) -> Result<PathBuf> {
     let dir = target.parent().unwrap_or_else(|| Path::new("."));
     ensure_dir(dir)?;
 
@@ -86,9 +106,8 @@ pub fn write(target: &Path, data: &[u8]) -> Result<()> {
         .create_new(true)
         .open(&tmp)
         .map_err(|e| io_err(&tmp, e))?;
-    set_file_mode(&tmp, &file)?;
-
     let result: Result<()> = (|| {
+        set_file_mode(&tmp, &file)?;
         file.write_all(data).map_err(|e| io_err(&tmp, e))?;
         file.sync_all().map_err(|e| io_err(&tmp, e))?;
         Ok(())
@@ -99,10 +118,40 @@ pub fn write(target: &Path, data: &[u8]) -> Result<()> {
         let _ = fs::remove_file(&tmp);
         return Err(e);
     }
+    Ok(tmp)
+}
 
-    fs::rename(&tmp, target).map_err(|e| io_err(target, e))?;
-    fsync_dir(dir)?;
-    Ok(())
+/// Remove every temporary file [`write`] could have left beside `target` (`.<name>.tmp.<pid>.<n>`), as a
+/// crash between its fsync and its rename leaves them. Answers how many went. Only regular files with that
+/// exact prefix are touched. The caller must hold whatever lock keeps other writers of `target` out: a
+/// temporary file another live writer is about to rename is indistinguishable from a crash's.
+pub fn remove_stray_temps(target: &Path) -> Result<usize> {
+    let dir = target.parent().unwrap_or_else(|| Path::new("."));
+    let Some(name) = target.file_name().map(|f| f.to_string_lossy().into_owned()) else {
+        return Ok(0);
+    };
+    let prefix = format!(".{name}.tmp.");
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(io_err(dir, e)),
+    };
+    let mut removed = 0;
+    for entry in entries {
+        let entry = entry.map_err(|e| io_err(dir, e))?;
+        if !entry.file_name().to_string_lossy().starts_with(&prefix) {
+            continue;
+        }
+        let path = entry.path();
+        if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            fs::remove_file(&path).map_err(|e| io_err(&path, e))?;
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        fsync_dir(dir)?;
+    }
+    Ok(removed)
 }
 
 /// fsync the containing directory so the rename itself is durable, not just
@@ -251,6 +300,41 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
             .collect();
         assert!(leftovers.is_empty(), "temp file(s) leaked: {leftovers:?}");
+    }
+
+    /// ADR-165 review P1-2: a rename that fails leaves no temporary file behind (it would be a second copy of
+    /// the data under a name nothing reads).
+    #[test]
+    fn a_failed_rename_removes_its_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        // A non-empty directory where the file should go: the rename fails on every Unix filesystem.
+        let target = dir.path().join("root.wrap.pass");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("occupant"), b"x").unwrap();
+        assert!(write(&target, b"plain wrap bytes").is_err());
+        let leftovers: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(leftovers.is_empty(), "temp file(s) leaked: {leftovers:?}");
+    }
+
+    /// What a crash between the fsync and the rename leaves is found and removed, and nothing else is.
+    #[test]
+    fn stray_temporary_files_of_one_target_are_removed_and_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("root.wrap.pass");
+        write(&target, b"live").unwrap();
+        let stray = write_temp(&target, b"left by a crash").unwrap();
+        assert!(stray.exists());
+        let other = dir.path().join(".root.wrap.recovery.tmp.1.1");
+        fs::write(&other, b"not ours").unwrap();
+        assert_eq!(remove_stray_temps(&target).unwrap(), 1);
+        assert!(!stray.exists());
+        assert!(other.exists());
+        assert_eq!(fs::read(&target).unwrap(), b"live");
+        assert_eq!(remove_stray_temps(&target).unwrap(), 0);
     }
 
     #[cfg(unix)]

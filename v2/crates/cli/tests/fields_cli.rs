@@ -116,7 +116,12 @@ fn start_fixture_broker() -> Fixture {
             depth: 1,
             parent_id: Some(GLOBAL_ID.to_string()),
             workdirs: vec![acme_workdir.to_string_lossy().into_owned()],
-            policy: NodePolicy::default(),
+            // ADR-140: these tests read `high` entries as an agent and are about the CLI/MCP surface; the security-level
+            // behaviour has its own suite (`crates/brokerd/tests/security_levels.rs`).
+            policy: NodePolicy {
+                security_level: credmgr_core::registry::SecurityLevel::Open,
+                ..NodePolicy::default()
+            },
         },
     );
     state.set_registry(registry);
@@ -138,6 +143,8 @@ fn start_fixture_broker() -> Fixture {
         expires_at: None,
         rotated_at: None,
         has_totp: false,
+        aliases: Vec::new(),
+        tags: Vec::new(),
     });
     state.set_manifest("acme", manifest);
     state.unlock(0).expect("fixture keystore unlocks itself");
@@ -1327,4 +1334,534 @@ fn credmgr_totp_code_takes_a_field_and_refuses_an_ambiguous_entry() {
     );
     assert_eq!(named["code"].as_str().unwrap().len(), 6);
     assert!(!named.to_string().contains(SEED_B));
+}
+
+// ---- rc.2: `credmgr totp` -------------------------------------------------
+
+#[test]
+fn credmgr_totp_prints_the_code_alone_and_the_time_left_on_stderr() {
+    let fx = start_fixture_broker();
+    let t = fx.owner();
+    const SEED_A: &str = "JBSWY3DPEHPK3PXP";
+    const SEED_B: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    mcp_ok(
+        &fx,
+        "credmgr_create",
+        json!({
+            "node": "acme", "name": "TOTP_CLI",
+            "fields": [
+                { "label": "user", "value": "svc" },
+                { "label": "authenticator", "value": SEED_A, "type": "totp-seed" },
+            ],
+        }),
+    );
+    let out = ok(&fx, &t, &["totp", "TOTP_CLI", "--node", "acme"], None);
+    let code = out.stdout.trim_end();
+    assert!(
+        code.len() == 6 && code.chars().all(|c| c.is_ascii_digit()),
+        "{:?}",
+        out.stdout
+    );
+    assert_eq!(
+        out.stdout.matches('\n').count(),
+        1,
+        "the code alone on stdout"
+    );
+    assert!(out.stderr.contains("valid for"), "{}", out.stderr);
+    assert!(!out.leaks(&[SEED_A]), "the seed must never be printed");
+
+    let out = ok(
+        &fx,
+        &t,
+        &["totp", "TOTP_CLI", "--node", "acme", "--json"],
+        None,
+    );
+    let v: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(v["code"].as_str().unwrap().len(), 6);
+    let left = v["validForSeconds"].as_u64().unwrap();
+    assert!((1..=30).contains(&left), "{left}");
+    assert_eq!(v.as_object().unwrap().len(), 2);
+
+    let two = mcp_ok(
+        &fx,
+        "credmgr_create",
+        json!({
+            "node": "acme", "name": "TOTP_TWO_CLI",
+            "fields": [
+                { "label": "first", "value": SEED_A, "type": "totp-seed" },
+                { "label": "second", "value": SEED_B, "type": "totp-seed" },
+            ],
+        }),
+    );
+    let bad = run(&fx, &t, &["totp", "TOTP_TWO_CLI", "--node", "acme"], None);
+    assert!(
+        !bad.ok && bad.stderr.contains("pass params.field"),
+        "{}",
+        bad.stderr
+    );
+    assert!(!bad.leaks(&[SEED_A, SEED_B]));
+    let by_label = ok(
+        &fx,
+        &t,
+        &[
+            "totp",
+            "TOTP_TWO_CLI",
+            "--node",
+            "acme",
+            "--field",
+            "second",
+        ],
+        None,
+    );
+    assert_eq!(by_label.stdout.trim_end().len(), 6);
+    let id = two["fieldIds"][1].as_str().unwrap();
+    let by_id = ok(
+        &fx,
+        &t,
+        &["totp", "TOTP_TWO_CLI", "--node", "acme", "--field-id", id],
+        None,
+    );
+    assert_eq!(by_id.stdout.trim_end().len(), 6);
+
+    let plain = run(
+        &fx,
+        &t,
+        &["totp", "TOTP_CLI", "--node", "acme", "--field", "user"],
+        None,
+    );
+    assert!(
+        !plain.ok && plain.stderr.contains("not a TOTP seed"),
+        "{}",
+        plain.stderr
+    );
+    let missing = run(&fx, &t, &["totp", "NOPE", "--node", "acme"], None);
+    assert!(
+        !missing.ok && missing.stderr.contains("no entry named"),
+        "{}",
+        missing.stderr
+    );
+    let usage = run(&fx, &t, &["totp"], None);
+    assert!(!usage.ok && usage.stderr.contains("usage: credmgr totp"));
+}
+
+// ---- rc.2: `generate --hex` and `--copy` ----------------------------------
+
+#[test]
+fn generate_hex_prints_lower_case_hex_and_refuses_contradictions() {
+    let fx = start_fixture_broker();
+    let t = fx.owner();
+    let out = ok(&fx, &t, &["generate", "--hex", "--length", "32"], None);
+    let v = out.stdout.trim_end();
+    assert_eq!(v.len(), 32, "{v}");
+    assert!(
+        v.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+        "{v}"
+    );
+    assert!(out.stderr.contains("128 bits"), "{}", out.stderr);
+    let default = ok(&fx, &t, &["generate", "--hex"], None);
+    assert_eq!(default.stdout.trim_end().len(), 20);
+    let json = ok(&fx, &t, &["generate", "--hex", "--json"], None);
+    let j: Value = serde_json::from_str(&json.stdout).unwrap();
+    assert_eq!(j["hex"], true);
+    assert_eq!(j["symbols"], false);
+
+    for args in [
+        &["generate", "--hex", "--pronounceable"][..],
+        &["generate", "--copy", "--json"][..],
+        &["generate", "--hex", "--length", "7"][..],
+        &["generate", "--hex", "--length", "129"][..],
+    ] {
+        let bad = run(&fx, &t, args, None);
+        assert!(!bad.ok, "{args:?} should be refused");
+        assert!(bad.stdout.is_empty(), "{args:?} printed {:?}", bad.stdout);
+    }
+}
+
+/// A fake `pbcopy` / `pbpaste` pair over a plain file, first on `PATH`, so `--copy` is exercised without
+/// touching the real clipboard.
+struct FakeClipboard {
+    dir: tempfile::TempDir,
+}
+
+impl FakeClipboard {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let script = |name: &str, body: &str| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        script("pbcopy", "cat > \"$FAKE_CLIP\"");
+        script("pbpaste", "cat \"$FAKE_CLIP\"");
+        std::fs::write(dir.path().join("clip"), "").unwrap();
+        FakeClipboard { dir }
+    }
+    fn file(&self) -> PathBuf {
+        self.dir.path().join("clip")
+    }
+    fn holds(&self) -> String {
+        std::fs::read_to_string(self.file()).unwrap()
+    }
+    fn set(&self, text: &str) {
+        std::fs::write(self.file(), text).unwrap();
+    }
+    /// Runs the real binary with the fake clipboard first on PATH.
+    fn run(&self, fx: &Fixture, token: &str, args: &[&str], stdin: Option<&str>) -> Out {
+        let path = format!("{}:/usr/bin:/bin", self.dir.path().display());
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_credmgr"));
+        cmd.args(args)
+            .current_dir(&fx.acme_workdir)
+            .env("CREDMGR_VAULT_DIR", &fx.vault_dir)
+            .env("CREDMGR_TOKEN", token)
+            .env("PATH", path)
+            .env("FAKE_CLIP", self.file())
+            .stdin(if stdin.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = cmd.spawn().expect("launch credmgr");
+        if let Some(text) = stdin {
+            let mut pipe = child.stdin.take().unwrap();
+            let _ = pipe.write_all(text.as_bytes());
+        }
+        let output = child.wait_with_output().unwrap();
+        Out {
+            ok: output.status.success(),
+            code: output.status.code(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        }
+    }
+}
+
+#[test]
+fn copy_puts_the_value_on_the_clipboard_and_never_echoes_it() {
+    let fx = start_fixture_broker();
+    let t = fx.owner();
+    let clip = FakeClipboard::new();
+    const SEED: &str = "JBSWY3DPEHPK3PXP";
+
+    // generate --copy
+    let out = clip.run(
+        &fx,
+        &t,
+        &["generate", "--hex", "--length", "40", "--copy"],
+        None,
+    );
+    assert!(out.ok, "{}", out.stderr);
+    let made = clip.holds();
+    assert_eq!(made.len(), 40, "the clipboard holds the generated value");
+    assert!(made.bytes().all(|b| b.is_ascii_hexdigit()));
+    assert!(
+        out.stdout.is_empty(),
+        "stdout must stay empty: {:?}",
+        out.stdout
+    );
+    assert!(
+        !out.leaks(&[made.as_str()]),
+        "the value was echoed: {}",
+        out.all()
+    );
+    assert!(out.stderr.contains("copied"), "{}", out.stderr);
+
+    // get --copy: one field copies; several refuse and copy nothing; --json / --all conflict.
+    clip.set("");
+    let got = clip.run(
+        &fx,
+        &t,
+        &["get", "OLD_PASS", "--node", "acme", "--copy"],
+        None,
+    );
+    assert!(got.ok, "{}", got.stderr);
+    assert_eq!(clip.holds(), LEGACY_VALUE);
+    assert!(
+        got.stdout.is_empty() && !got.leaks(&[LEGACY_VALUE]),
+        "{}",
+        got.all()
+    );
+    make_prod_db(&fx, &t);
+    clip.set("untouched");
+    let many = clip.run(
+        &fx,
+        &t,
+        &["get", "PROD_DB", "--node", "acme", "--copy"],
+        None,
+    );
+    assert!(
+        !many.ok && many.stderr.contains("--field"),
+        "{}",
+        many.stderr
+    );
+    assert_eq!(clip.holds(), "untouched");
+    let one = clip.run(
+        &fx,
+        &t,
+        &[
+            "get", "PROD_DB", "--node", "acme", "--field", "password", "--copy",
+        ],
+        None,
+    );
+    assert!(one.ok, "{}", one.stderr);
+    assert_eq!(clip.holds(), V_PASS);
+    for conflict in [["--json"], ["--all"]] {
+        let bad = clip.run(
+            &fx,
+            &t,
+            &["get", "OLD_PASS", "--node", "acme", "--copy", conflict[0]],
+            None,
+        );
+        assert!(!bad.ok && bad.stdout.is_empty());
+    }
+
+    // totp --copy: six digits on the clipboard, none on stdout.
+    mcp_ok(
+        &fx,
+        "credmgr_create",
+        json!({ "node": "acme", "name": "TOTP_COPY",
+                "fields": [{ "label": "authenticator", "value": SEED, "type": "totp-seed" }] }),
+    );
+    clip.set("");
+    let code = clip.run(
+        &fx,
+        &t,
+        &["totp", "TOTP_COPY", "--node", "acme", "--copy"],
+        None,
+    );
+    assert!(code.ok, "{}", code.stderr);
+    let digits = clip.holds();
+    assert!(
+        digits.len() == 6 && digits.chars().all(|c| c.is_ascii_digit()),
+        "{digits:?}"
+    );
+    assert!(
+        code.stdout.is_empty() && !code.leaks(&[digits.as_str(), SEED]),
+        "{}",
+        code.all()
+    );
+}
+
+#[test]
+fn the_clearer_empties_the_clipboard_only_while_it_still_holds_the_value() {
+    use sha2::{Digest, Sha256};
+    fn sha(text: &str) -> String {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        for b in Sha256::digest(text.as_bytes()) {
+            let _ = write!(out, "{b:02x}");
+        }
+        out
+    }
+    let fx = start_fixture_broker();
+    let t = fx.owner();
+    let clip = FakeClipboard::new();
+    const VALUE: &str = "generated-placeholder-7c1d";
+    let want = sha(VALUE);
+
+    // Still ours: cleared.
+    clip.set(VALUE);
+    let done = clip.run(&fx, &t, &["__clipboard-clear", "0"], Some(&want));
+    assert!(done.ok, "{}", done.stderr);
+    assert_eq!(clip.holds(), "", "the unchanged value is cleared");
+
+    // The person copied something else meanwhile: left alone.
+    clip.set("something the person copied");
+    let done = clip.run(&fx, &t, &["__clipboard-clear", "0"], Some(&want));
+    assert!(done.ok, "{}", done.stderr);
+    assert_eq!(clip.holds(), "something the person copied");
+
+    // Not even a longer string that merely contains it.
+    clip.set(&format!("{VALUE} and more"));
+    clip.run(&fx, &t, &["__clipboard-clear", "0"], Some(&want));
+    assert_eq!(clip.holds(), format!("{VALUE} and more"));
+
+    // A value far longer than any read buffer (generated, 20 000 characters) is still cleared, and a one
+    // character change to it is left alone: the clearer compares digests, so length cannot matter.
+    let long = "q9".repeat(10_000);
+    let long_digest = sha(&long);
+    clip.set(&long);
+    let done = clip.run(&fx, &t, &["__clipboard-clear", "0"], Some(&long_digest));
+    assert!(done.ok, "{}", done.stderr);
+    assert_eq!(
+        clip.holds(),
+        "",
+        "a value longer than 4096 bytes must still be cleared"
+    );
+    let changed = format!("{long}!");
+    clip.set(&changed);
+    clip.run(&fx, &t, &["__clipboard-clear", "0"], Some(&long_digest));
+    assert_eq!(clip.holds(), changed, "a changed clipboard is left alone");
+
+    // Not a digest, or no delay: a usage error, nothing cleared.
+    clip.set(VALUE);
+    assert!(
+        !clip
+            .run(&fx, &t, &["__clipboard-clear", "0"], Some(VALUE))
+            .ok
+    );
+    assert_eq!(clip.holds(), VALUE);
+    assert!(!clip.run(&fx, &t, &["__clipboard-clear"], Some(&want)).ok);
+}
+
+// ---- rc.2: `credmgr import --format json` ---------------------------------
+
+const J_ONE: &str = "gen-one-4e81";
+const J_HOST: &str = "db-json.fields.test";
+const TEST_J_PASS: &str = "gen-pass-62ac";
+
+fn json_import_text() -> String {
+    json!([
+        { "name": "TEST_JSON_TOKEN", "value": J_ONE },
+        { "name": "JSON_DB", "fields": [
+            { "label": "host", "value": J_HOST },
+            { "label": "password", "value": TEST_J_PASS, "type": "password" },
+        ]},
+        { "name": "JSON_EMPTY", "value": "" },
+    ])
+    .to_string()
+}
+
+#[test]
+fn import_reads_json_by_extension_or_flag_in_one_batch() {
+    let fx = start_fixture_broker();
+    let t = fx.owner();
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("secrets.json");
+    std::fs::write(&file, json_import_text()).unwrap();
+    let path = file.to_str().unwrap();
+
+    // Detected by the .json extension.
+    let out = ok(&fx, &t, &["import", path, "--node", "acme"], None);
+    assert!(
+        out.stdout.contains("created  TEST_JSON_TOKEN"),
+        "{}",
+        out.stdout
+    );
+    assert!(out.stdout.contains("created  JSON_DB"), "{}", out.stdout);
+    assert!(
+        out.stdout.contains("imported 2 of 2 entries"),
+        "{}",
+        out.stdout
+    );
+    assert!(out.stdout.contains("skipped 1 empty value(s)") && out.stdout.contains("JSON_EMPTY"));
+    assert!(
+        !out.leaks(&[J_ONE, J_HOST, TEST_J_PASS]),
+        "import printed a value: {}",
+        out.all()
+    );
+    assert!(
+        out.stderr.contains("still holds the plaintext"),
+        "{}",
+        out.stderr
+    );
+
+    // Both shapes read back through the binary.
+    assert_eq!(get_field(&fx, &t, "TEST_JSON_TOKEN", "value"), J_ONE);
+    let m = meta(&fx, &t, "JSON_DB");
+    assert_eq!(labels(&m), ["host", "password"]);
+    assert_eq!(get_field(&fx, &t, "JSON_DB", "host"), J_HOST);
+    assert_eq!(get_field(&fx, &t, "JSON_DB", "password"), TEST_J_PASS);
+    assert!(!names(&fx, &t).contains(&"JSON_EMPTY".to_string()));
+
+    // `--format json` on stdin (no extension to go by); a second run collides on the names and saves nothing.
+    let again = run(
+        &fx,
+        &t,
+        &["import", "-", "--node", "acme", "--format", "json"],
+        Some(&json_import_text()),
+    );
+    assert!(!again.ok, "{}", again.stdout);
+    assert!(
+        !again.leaks(&[J_ONE, J_HOST, TEST_J_PASS]),
+        "{}",
+        again.all()
+    );
+
+    // `--format env` forces the .env parser on a .json-named file: the JSON is no NAME=value file.
+    let forced = run(
+        &fx,
+        &t,
+        &["import", path, "--node", "acme", "--format", "env"],
+        None,
+    );
+    assert!(!forced.ok);
+    assert!(
+        !forced.leaks(&[J_ONE, J_HOST, TEST_J_PASS]),
+        "{}",
+        forced.all()
+    );
+    let bad = run(
+        &fx,
+        &t,
+        &["import", path, "--node", "acme", "--format", "yaml"],
+        None,
+    );
+    assert!(
+        !bad.ok && bad.stderr.contains("json or env"),
+        "{}",
+        bad.stderr
+    );
+}
+
+#[test]
+fn json_import_refusals_save_nothing_and_name_no_value() {
+    let fx = start_fixture_broker();
+    let t = fx.owner();
+    let before = names(&fx, &t);
+    for (what, text) in [
+        (
+            "an unknown key",
+            json!([{ "name": "J_BAD", "value": J_ONE, "extra": 1 }]),
+        ),
+        ("not an array", json!({ "name": "J_BAD", "value": J_ONE })),
+        (
+            "value and fields",
+            json!([{ "name": "J_BAD", "value": J_ONE, "fields": [] }]),
+        ),
+        (
+            "a broker-refused type",
+            json!([{ "name": "J_BAD", "fields": [{ "label": "x", "value": J_ONE, "type": "no-such-type" }] }]),
+        ),
+        (
+            "a duplicate name",
+            json!([{ "name": "J_DUP", "value": J_ONE }, { "name": "J_DUP", "value": TEST_J_PASS }]),
+        ),
+        (
+            "nothing to import",
+            json!([{ "name": "J_BAD", "value": "" }]),
+        ),
+    ] {
+        let out = run(
+            &fx,
+            &t,
+            &["import", "-", "--node", "acme", "--format", "json"],
+            Some(&text.to_string()),
+        );
+        assert!(!out.ok, "{what}: {}", out.stdout);
+        assert!(
+            !out.leaks(&[J_ONE, TEST_J_PASS]),
+            "{what} echoed a value: {}",
+            out.all()
+        );
+        assert_eq!(names(&fx, &t), before, "{what} must save nothing");
+    }
+    // Over the ceiling is refused before anything is sent.
+    let many: Vec<Value> = (0..501)
+        .map(|i| json!({ "name": format!("J_{i}"), "value": "x" }))
+        .collect();
+    let out = run(
+        &fx,
+        &t,
+        &["import", "-", "--node", "acme", "--format", "json"],
+        Some(&Value::Array(many).to_string()),
+    );
+    assert!(
+        !out.ok && out.stderr.contains("at most 500"),
+        "{}",
+        out.stderr
+    );
+    assert_eq!(names(&fx, &t), before);
 }

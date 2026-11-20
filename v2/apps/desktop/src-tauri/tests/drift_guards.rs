@@ -21,7 +21,9 @@
 use std::path::{Path, PathBuf};
 
 use desktop_lib::error::BROKER_ERROR_CODES;
-use desktop_lib::vault_paths::{RUN_DIR_NAME, SOCKET_FILE_NAME, VAULT_DIR_ENV};
+use desktop_lib::vault_paths::{
+    LOGS_DIR_NAME, LOG_DIR_ENV, RUN_DIR_NAME, SOCKET_FILE_NAME, VAULT_DIR_ENV,
+};
 
 /// `<repo>/v2` — this crate is at `v2/apps/desktop/src-tauri`.
 fn v2_root() -> PathBuf {
@@ -134,7 +136,8 @@ fn the_bridges_error_vocabulary_matches_the_brokers_exactly() {
 /// on 2026-09-24; 47/49 until ADR-076 added `maintenance.rotate_root`, and 48/50
 /// (raw 51/53) until ADR-078 added `entry.get` and the four `field.*` ops, and
 /// 53/55 until ADR-087 added `util.generate`, and 54/56 until ADR-090 added
-/// `vault.approval_get`.)
+/// `vault.approval_get`, and 55/58 (raw 56/59) until ADR-121 and ADR-122 added `entry.alias`,
+/// `entry.similar` and `entry.import_env`.)
 fn top_level_arms(source: &str) -> Vec<(String, String)> {
     const INDENT: &str = "        \""; // the `match op {` arms in `dispatch`
     let lines: Vec<&str> = source.lines().collect();
@@ -206,12 +209,7 @@ fn params_read_by(body: &str) -> Vec<(String, bool)> {
 /// with the reason it is sent anyway. Anything not listed here and not read
 /// by the arm fails the build: a param the broker ignores is a UI bug in
 /// waiting — the screen believes it said something the vault never heard.
-const FORWARD_DECLARED: &[(&str, &str, &str)] = &[(
-    "audit.get",
-    "id",
-    "the positive path needs presence, which no transport can attest yet (ADR-047), so \
-     the arm refuses before reading anything — sent so the call site is already right",
-)];
+const FORWARD_DECLARED: &[(&str, &str, &str)] = &[];
 
 #[test]
 fn the_bridge_covers_every_op_the_broker_dispatches_and_nothing_else() {
@@ -222,8 +220,8 @@ fn the_bridge_covers_every_op_the_broker_dispatches_and_nothing_else() {
     dispatched.dedup();
     assert_eq!(
         dispatched.len(),
-        55,
-        "parsed {} distinct top-level arms out of ops.rs, expected the 55 that \
+        111,
+        "parsed {} distinct top-level arms out of ops.rs, expected the 111 that \
          tools/corpus_check.py::broker_ops reports — either the broker grew an op (wire it, \
          then update this number and that tool's expectation together) or this parser broke",
         dispatched.len()
@@ -231,8 +229,8 @@ fn the_bridge_covers_every_op_the_broker_dispatches_and_nothing_else() {
     // The raw-arm miscount, pinned so nobody re-derives 54 as the op count from this file.
     assert_eq!(
         match_arm_labels(&ops_rs).len(),
-        56,
-        "55 ops + 1 nested entry.undo arm (entry.remove; the multi-pattern entry.rotate | \
+        112,
+        "111 ops (76 + the 8 settings.* of ADR-155 + the 7 quick wins of ADR-156 + entry.move of ADR-158 + vault.doctor_scan of ADR-161 + vault.recover of ADR-163 + the 4 agent.token_* of ADR-164 + the 3 keystore.* of ADR-165 + entry.tag_set of ADR-167 + the 8 merge.* of ADR-168 + vault.doctor_apply of ADR-169) + 1 nested entry.undo arm (entry.remove; the multi-pattern entry.rotate | \
          field.* arm has no `=>` after its first label and is not counted)"
     );
 
@@ -498,4 +496,97 @@ fn the_per_platform_vault_defaults_still_match_crates_store() {
              src-tauri/src/vault_paths.rs::vault_dir_from mirrors its branch table"
         );
     }
+}
+
+/// ADR-159: the diagnostic log's directory rule is copied in `vault_paths::log_dir_from`.
+#[test]
+fn the_log_dir_rule_still_matches_crates_store() {
+    let paths_rs = read("crates/store/src/paths.rs");
+    let body = paths_rs
+        .split("pub fn default_log_dir")
+        .nth(1)
+        .expect("crates/store still defines default_log_dir()");
+    let body = &body[..body.find("\n}\n").unwrap_or(body.len())];
+    assert!(
+        body.contains(&format!("\"{LOG_DIR_ENV}\"")),
+        "{LOG_DIR_ENV} is no longer the log override in crates/store; vault_paths.rs still honours it"
+    );
+    for expected in [
+        "\"Library\"",
+        "\"Logs\"",
+        "LOCALAPPDATA",
+        "XDG_STATE_HOME",
+        "\".local\"",
+        "\"state\"",
+        "\"credmgr\"",
+        &format!("\"{LOGS_DIR_NAME}\""),
+    ] {
+        assert!(
+            body.contains(expected),
+            "default_log_dir() no longer mentions {expected}; \
+             src-tauri/src/vault_paths.rs::log_dir_from mirrors its branch table"
+        );
+    }
+}
+
+#[test]
+fn the_mas_group_container_layout_still_matches_crates_store() {
+    // ADR-162. The group id cannot drift (both workspaces `include_str!` packaging/mas/identity.conf); the
+    // layout around it can, so it is read off disk like the rest of this file.
+    use desktop_lib::vault_paths::{GROUP_CONTAINERS, MAS_IDENTITY, MAS_VAULT_SUBDIR};
+    let paths_rs = read("crates/store/src/paths.rs");
+    assert!(
+        paths_rs.contains("include_str!(\"../../../packaging/mas/identity.conf\")"),
+        "crates/store no longer reads packaging/mas/identity.conf; vault_paths.rs still does"
+    );
+    assert_eq!(
+        MAS_IDENTITY,
+        read("packaging/mas/identity.conf"),
+        "the shell's compiled-in identity is not the file on disk"
+    );
+    assert!(
+        paths_rs.contains(&format!(
+            "pub const MAS_VAULT_SUBDIR: &str = \"{MAS_VAULT_SUBDIR}\";"
+        )),
+        "crates/store's MAS vault folder is no longer {MAS_VAULT_SUBDIR:?}"
+    );
+    assert!(
+        paths_rs.contains(&format!("join(\"{GROUP_CONTAINERS}\")")),
+        "crates/store no longer builds the group container under {GROUP_CONTAINERS:?}"
+    );
+    let real_home = paths_rs
+        .split("pub fn real_home")
+        .nth(1)
+        .expect("crates/store still defines real_home()");
+    let body = &real_home[..real_home.find("\n}\n").unwrap_or(real_home.len())];
+    for token in ["\"Data\"", "\"Containers\"", "\"Library\"", "n - 4"] {
+        assert!(
+            body.contains(token),
+            "crates/store's real_home() no longer mentions {token}; vault_paths.rs::real_home mirrors it"
+        );
+    }
+    // Same answer from both rules for the shapes that matter.
+    for (home, want) in [
+        (
+            "/Users/alice/Library/Containers/com.credmgr.desktop/Data",
+            "/Users/alice",
+        ),
+        ("/Users/alice", "/Users/alice"),
+    ] {
+        assert_eq!(
+            desktop_lib::vault_paths::real_home(Path::new(home)),
+            PathBuf::from(want)
+        );
+    }
+    // The MAS default must still be a flavour branch of default_vault_dir, with the override first.
+    let default_dir = paths_rs
+        .split("pub fn default_vault_dir")
+        .nth(1)
+        .expect("crates/store still defines default_vault_dir()");
+    let over = default_dir.find("CREDMGR_VAULT_DIR").expect("the override");
+    let mas = default_dir.find("mas_vault_dir").expect("the MAS branch");
+    assert!(
+        over < mas,
+        "CREDMGR_VAULT_DIR must still win over the MAS default, as vault_paths.rs assumes"
+    );
 }

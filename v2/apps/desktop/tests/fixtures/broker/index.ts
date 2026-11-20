@@ -27,16 +27,30 @@ export interface BrokerOptions {
   initialized?: boolean;
   /** The root recovery code `vault_gate_recover` wants with the passphrase (default {@link FIXTURE_ROOT_RECOVERY_CODE}). */
   rootRecoveryCode?: string;
+  /** ADR-163: `false` is a vault with no recovery wrap (made before they existed): `vault_recover` is `not_found` and `vault_status` leaves out `recoveryUnlock`. Default `true`. */
+  recoveryUnlock?: boolean;
   /** The code that confirms a gate enrolment (default {@link FIXTURE_ENROL_CODE}). */
   enrollCode?: string;
   /** Every broker call fails with `broker_unreachable` until `set({ unreachable: false })`. */
   unreachable?: boolean;
+  /** Presence is attested (Touch ID set up, prompt approved): `totp_seed` answers the seed instead of `presence_required` (ADR-098). `set({ touchId })` toggles it. */
+  touchId?: boolean;
+  /** ADR-173: a presence key is enrolled, so approving an agent's request from a login is `presence_required` without `touchId` (the locked, passphrase form is unchanged). */
+  presenceKey?: boolean;
   passphrase?: string;
   gateCode?: string;
   /** Agent requests already waiting when the vault starts (ADR-090): `{ rq_x: { node, entry, expiresIn? } }`. */
   approvals?: Record<string, { node: string; entry: string; expiresIn?: number }>;
+  /** ADR-150: the vault's "Confirm before showing secrets" policy at start (default off). With `touchId`, `session_confirm` without a passphrase succeeds. */
+  revealConfirm?: { mode: "off" | "window" | "everyTime"; windowSeconds?: number; scope?: "all" | "high" };
   /** Node ids whose name is private (`privateNames`): `vault_approval_get` withholds their names while the vault is locked. */
   privateNodes?: string[];
+  /** What the shell's `window_state` answers (default: a minimised window). */
+  windowState?: { minimized: boolean; visible: boolean };
+  /** ADR-155: `app.*` values the registry already holds, e.g. `{ "app.autoLockMins": 60 }` (each with a history record). */
+  settings?: Record<string, unknown>;
+  /** ADR-155: agents' requests waiting for the owner when the vault starts. `from` defaults to `null`, `expiresIn` to 600 s. */
+  settingRequests?: Array<{ id: string; to: unknown; from?: unknown; reason?: string; node?: string; cwd?: string; request?: string; expiresIn?: number }>;
 }
 
 export interface Call {
@@ -62,6 +76,8 @@ export interface BrokerState {
   pending: Record<string, Array<{ id: string; name: string }>>;
   audit: Array<{ action: string; node: string | null; entry: string | null; decision: string }>;
   grants: Array<{ id: string }>;
+  /** Each node's generation once something changed it (a node never changed is at 1 and absent here). */
+  generation: Record<string, number>;
 }
 
 export class Broker {

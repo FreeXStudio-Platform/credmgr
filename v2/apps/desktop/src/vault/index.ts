@@ -62,7 +62,7 @@ export type { LockResult } from "./source";
 export { BridgeSource } from "./bridge-source";
 export { classifyError, errorCode, isSessionEnded, lockUnconfirmedText, NotWiredError, routeError } from "./errors";
 export type { ErrorContext, ErrorRoute, NoticeKind, RouteHost } from "./errors";
-export { copyEntry, loadEntryDetail, loadNotes, lockNode, readTotp, readTotpSeed, renameNode, revealUnmasked, searchEntries, unlockNode } from "./actions/read";
+export { copyEntry, loadEntryDetail, loadNotes, lockNode, readTotp, readTotpSeed, renameNode, seedSlot, revealUnmasked, searchEntries, unlockNode } from "./actions/read";
 export type { CopyOutcome, TotpShown } from "./actions/read";
 export type { DEntry, DEntryDetail, DField, DGrant, DLink, DNode, DOrphan, DPending, DSealed, DView, ModelStatus, RefreshSpec } from "./types";
 
@@ -71,6 +71,9 @@ export type { DEntry, DEntryDetail, DField, DGrant, DLink, DNode, DOrphan, DPend
 export * as admin from "./actions/admin";
 export * as read from "./actions/read";
 export * as session from "./actions/session";
+export * as switchboard from "./actions/switchboard";
 export * as write from "./actions/write";
 export { AUTO_LOCK_CHOICES, defaultPrefs, loadPrefs, PREF_KEYS, PREFS_KEY, RETAIN_CHOICES, REVEAL_CHOICES, savePrefs, storedPrefs } from "./prefs";
 export type { PrefKey, Prefs } from "./prefs";
+export { decodeQrImageFile, QR_IMPORT_TEXT, QrImportError } from "./qr-import";
+export type { ImageApi, QrImportCode } from "./qr-import";

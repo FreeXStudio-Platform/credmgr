@@ -333,3 +333,113 @@ fn a_node_that_is_not_private_is_unchanged_for_an_agent() {
         .iter()
         .any(|n| n == "plain-name"));
 }
+
+// ADR-110 (issue #35): `entry.create` must not answer "that name exists" to a
+// reader who may not see names.
+#[test]
+fn an_agents_create_does_not_tell_a_hidden_name_from_a_free_one() {
+    let (f, owner, _) = private_vault();
+
+    // The guessed name exists (exact, other case): the answer is a plain
+    // success, the same shape as for a name that is free.
+    let hit = as_agent(
+        &f,
+        "entry.create",
+        json!({ "node": "acme", "name": SECRET_NAME, "value": "probe" }),
+    )
+    .expect("a create on a hidden node must not refuse for a taken name");
+    let hit_upper = as_agent(
+        &f,
+        "entry.create",
+        json!({ "node": "acme", "name": SECRET_NAME.to_uppercase(), "value": "probe" }),
+    )
+    .expect("a case-insensitive guess is answered the same way");
+    let miss = as_agent(
+        &f,
+        "entry.create",
+        json!({ "node": "acme", "name": "no-such-name-xyzzy", "value": "probe" }),
+    )
+    .expect("a free name");
+    let keys = |v: &Value| {
+        let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
+        k.sort();
+        k
+    };
+    assert_eq!(keys(&hit), keys(&miss), "same shape: {hit} vs {miss}");
+    assert_eq!(keys(&hit_upper), keys(&miss));
+    assert_eq!(hit["pending"], miss["pending"]);
+    assert!(
+        !dump(&hit).contains(SECRET_NAME) && !dump(&hit).contains("(2)"),
+        "the answer must not echo a stored or disambiguated name: {hit}"
+    );
+
+    // Nothing was overwritten; the owner sees the twins beside the original.
+    let list = send(
+        &f,
+        None,
+        Some(&owner),
+        "entry.list",
+        json!({ "node": "acme" }),
+    )
+    .unwrap();
+    let names: Vec<String> = list["names"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n.as_str().unwrap().to_string())
+        .collect();
+    assert!(names.contains(&SECRET_NAME.to_string()), "{names:?}");
+    assert!(
+        names.contains(&format!("{SECRET_NAME} (2)")),
+        "the first probe is kept under a free name: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.ends_with("(3)")),
+        "the second probe takes the next free suffix: {names:?}"
+    );
+
+    // The batch route behaves the same.
+    let batch_hit = as_agent(
+        &f,
+        "entry.create_batch",
+        json!({ "node": "acme", "entries": [{ "name": SECRET_NAME, "value": "p" }] }),
+    )
+    .expect("batch on a hidden node");
+    assert_eq!(batch_hit["complete"], true, "{batch_hit}");
+    assert!(!dump(&batch_hit).contains("entry_exists"));
+}
+
+#[test]
+fn the_owner_and_an_open_node_still_get_entry_exists() {
+    let (f, owner, _) = private_vault();
+    let e = send(
+        &f,
+        None,
+        Some(&owner),
+        "entry.create",
+        json!({ "node": "acme", "name": SECRET_NAME, "value": "again" }),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(e, credmgr_brokerd::protocol::OpError::EntryExists { .. }),
+        "{e:?}"
+    );
+    send(
+        &f,
+        None,
+        Some(&owner),
+        "node.policy",
+        json!({ "node": "acme", "reason": "open", "policy": { "privateNames": false } }),
+    )
+    .unwrap();
+    let e = as_agent(
+        &f,
+        "entry.create",
+        json!({ "node": "acme", "name": SECRET_NAME, "value": "again" }),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(e, credmgr_brokerd::protocol::OpError::EntryExists { .. }),
+        "{e:?}"
+    );
+}

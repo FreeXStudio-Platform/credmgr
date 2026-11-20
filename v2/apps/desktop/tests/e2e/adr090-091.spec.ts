@@ -71,7 +71,7 @@ test.describe("a name that mixes scripts is accepted and said", () => {
     await expect(app.screen("S1 Main")).toBeVisible();
     await page.locator(".cm-rail .k-tree-row", { hasText: "atlas" }).first().click({ button: "right" });
     await page.locator(".cm-ctxmenu").getByRole("button", { name: "Rename" }).click();
-    const input = page.locator(".cm-rail input");
+    const input = page.locator(".cm-rail li input");
     await input.fill(MIXED);
     await input.press("Enter");
     await expect(notice(app)).toContainText("Renamed.");

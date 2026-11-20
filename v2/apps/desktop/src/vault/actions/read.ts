@@ -37,6 +37,59 @@ export async function searchEntries(m: VaultModel, term: string): Promise<Array<
   return results.map((r) => ({ node: r.node, id: r.id, name: r.name }));
 }
 
+/** A reference the header search reads as one: `1042` or `#1042` (the CLI's `credmgr ref <number>`). */
+export const REF_TERM = /^#?(\d{1,9})$/;
+
+/**
+ * Which entry a vault-global short reference names (`entry.get_by_ref`, rc.2 §1 item 3).  `null` when the broker says `not_found`, which
+ * is also its answer for an entry the caller could not list, so a number never says what exists elsewhere.  A read: nothing is refreshed.
+ */
+export async function entryByRef(m: VaultModel, reference: number): Promise<{ node: string; entry: string; name: string; ref: number } | null> {
+  needsBroker(m, "entry.get_by_ref");
+  try {
+    return await live.entryGetByRef(reference);
+  } catch (e) {
+    if ((e as { code?: unknown } | null)?.code === "not_found") return null;
+    throw e;
+  }
+}
+
+/**
+ * Names and aliases on ONE node that contain `term`, case-insensitive (`entry.search`, rc.2 §1 item 3).  Never values.  The term is trimmed
+ * and at most 200 characters (the broker's bound); an empty term finds nothing and asks nothing.
+ */
+export async function searchInNode(m: VaultModel, node: string, term: string): Promise<Array<{ id: string; name: string; alias?: string }>> {
+  const t = term.trim();
+  if (!t) return [];
+  needsBroker(m, "entry.search");
+  const { results } = await live.entrySearch(node, Array.from(t).slice(0, 200).join(""));
+  return results.map((r) => (r.alias ? { id: r.id, name: r.name, alias: r.alias } : { id: r.id, name: r.name }));
+}
+
+export type AuditReport = live.AuditReport;
+
+/**
+ * A summary of the audit log for `[from, to)` in unix seconds, optionally for one node (`audit.report`, rc.2 §1 item 3): counts by action,
+ * by actor (public session ids, never a token) and by node, the denials with their reasons, presence uses and whether the chain verified.
+ * No value and no entry name is in it.  The owner's login only; at most 366 days.  A read: nothing is refreshed.
+ */
+export async function auditReport(m: VaultModel, from: number, to: number, node?: string): Promise<AuditReport> {
+  needsBroker(m, "audit.report");
+  return live.auditReport(from, to, node);
+}
+
+export type EntryHistory = live.EntryHistory;
+
+/**
+ * One entry's trail (`entry.history`, ADR-156): its audit records, oldest first, the newest `limit` kept, plus its edit, rotation and expiry
+ * times.  Actions and times only: the broker never stores a value in the trail, so none can reach the page.  A read: nothing is refreshed.
+ * Human sessions only (ADR-077 §5); the app's login is one.
+ */
+export async function entryHistory(m: VaultModel, node: string, entry: string, limit?: number): Promise<EntryHistory> {
+  needsBroker(m, "entry.history");
+  return live.entryHistory(node, entry, limit);
+}
+
 /**
  * Read one node's note into the view (`m.refresh({ notes: node })`).  `capability_not_held` (the `notes` capability is not
  * implied by `read`) and `node_locked` leave the note `null`; any other failure is thrown for the caller to route.
@@ -88,8 +141,8 @@ export interface TotpShown {
  * where a revealed value would sit) until the end of its 30 s step, or `maxWindowMs` if that is sooner, and is read back with
  * `m.plain(node, entry, field ?? 0)`.  On an entry with several fields `field` names the one that holds the seed (ADR-078).
  * It goes through the same ticketed path as a reveal (`holdFetched`), so a code that arrives after the window was hidden, the
- * node changed or the vault locked is discarded, exactly like a revealed value.  The broker never returns the seed
- * (`totp.seed` is presence-gated); this is the only way a TOTP entry is shown.
+ * node changed or the vault locked is discarded, exactly like a revealed value.  The seed itself is a separate,
+ * presence-gated read ({@link readTotpSeed}); this is how a TOTP entry is shown by default.
  */
 export async function readTotp(m: VaultModel, node: string, entry: string, maxWindowMs = Number.POSITIVE_INFINITY, field?: string): Promise<TotpShown> {
   needsBroker(m, "totp.code");
@@ -109,13 +162,32 @@ export async function readTotp(m: VaultModel, node: string, entry: string, maxWi
   return { expiresAt, held };
 }
 
+/** The private-store slot a shown seed sits in: beside the field's current code (which keeps the field's own slot), never over it. */
+export const seedSlot = (fieldKey: string | number): string => `${fieldKey}#seed`;
+
 /**
- * Asks for a TOTP seed.  The broker refuses every time (`presence_required`, ADR-047): there is no transport that can attest
- * presence yet.  Anything it ever returned would be discarded here, never shown and never kept.
+ * Asks for a TOTP seed (`totp.seed`, presence-gated: ADR-047/ADR-098).  The desktop shell attaches the Touch ID proof when it
+ * dispatches the call; without one the broker refuses with `presence_required`, and so does a cancelled prompt, and that error
+ * propagates here with nothing kept.  When the broker does answer, the seed is held exactly like a revealed value: in the model's
+ * private store (slot {@link seedSlot}), for at most `windowMs`, through the same ticketed path as a reveal (`holdFetched`), so an
+ * answer that arrives after the window was hidden, the node changed or the vault locked is dropped on arrival.  It is read back
+ * with `m.plain(node, entry, seedSlot(field ?? 0))`; never copied, never logged, never persisted.
  */
-export async function readTotpSeed(m: VaultModel, node: string, entry: string, field?: string): Promise<void> {
+export async function readTotpSeed(m: VaultModel, node: string, entry: string, windowMs: number, field?: string): Promise<{ expiresAt: number; held: boolean }> {
   needsBroker(m, "totp.seed");
-  await live.totpSeed(node, entry, field);
+  let expiresAt = 0;
+  const { held } = await m.holdFetched(
+    node,
+    entry,
+    seedSlot(field ?? 0),
+    () => m.withPresence(() => live.totpSeed(node, entry, field)), // the Touch ID sheet takes focus meanwhile (ADR-149)
+    (r) => {
+      if (typeof r.seed !== "string") throw new Error("totp.seed answered without a seed");
+      expiresAt = m.options.now() + windowMs;
+      return { value: r.seed, windowMs };
+    },
+  );
+  return { expiresAt, held };
 }
 
 /** What {@link copyEntry} reports.  Never the value. */

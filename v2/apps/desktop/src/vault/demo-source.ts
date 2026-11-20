@@ -147,6 +147,11 @@ export class DemoSource implements ModelSource {
     return this.auth();
   }
 
+  /** The demo vault has no Secure Enclave. */
+  async unlockWithTouchId(): Promise<AuthLite> {
+    throw { source: "bridge", code: "presence_unavailable", message: "The demo has no Touch ID." };
+  }
+
   async gateVerify(code: string): Promise<AuthLite> {
     if (!/^\d{6}$/.test(code)) throw CODE_REJECTED;
     this.locked = false;

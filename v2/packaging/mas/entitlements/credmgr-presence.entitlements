@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- ADR-162: Contents/MacOS/credmgr-presence, the Touch ID / Secure Enclave helper (ADR-098), Mac App Store
+     edition. Exactly the two keys Apple allows on a helper that inherits its parent's sandbox: it only ever runs
+     as a child of a sandboxed CredMgr process (the broker, the app or the CLI) and takes that process's sandbox
+     and app group. It cannot be run on its own from Terminal, by design. No other key may be added: macOS
+     refuses to start an inherit helper that carries any. -->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.inherit</key>
+    <true/>
+</dict>
+</plist>

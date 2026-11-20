@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- ADR-162: Contents/MacOS/credmgr, the bundled CLI and MCP server, Mac App Store edition. A TEMPLATE (tokens
+     from packaging/mas/identity.conf). It is started from Terminal and by other apps (credmgr mcp), whose
+     processes are not sandboxed, so it cannot inherit a sandbox: it carries its own and the one app group to
+     reach the broker's socket. No network, no file-access entitlement: a file named on its command line is out
+     of reach, which is why the MAS CLI refuses those commands with the way round (crates/cli main.rs mas_limit).
+     Add nothing here without an ADR. -->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>@MAS_APP_GROUP@</string>
+    </array>
+</dict>
+</plist>

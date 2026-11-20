@@ -99,7 +99,12 @@ fn start_fixture_broker() -> Fixture {
             depth: 1,
             parent_id: Some(GLOBAL_ID.to_string()),
             workdirs: vec![acme_workdir.to_string_lossy().into_owned()],
-            policy: NodePolicy::default(),
+            // ADR-140: these tests read a `high` entry as an agent and are about the CLI, not about approvals; the
+            // security-level behaviour has its own suite (`crates/brokerd/tests/security_levels.rs`).
+            policy: NodePolicy {
+                security_level: credmgr_core::registry::SecurityLevel::Open,
+                ..NodePolicy::default()
+            },
         },
     );
     state.set_registry(registry);
@@ -134,6 +139,8 @@ fn start_fixture_broker() -> Fixture {
         expires_at: None,
         rotated_at: None,
         has_totp: false,
+        aliases: Vec::new(),
+        tags: Vec::new(),
     });
     state.set_manifest("acme", manifest);
 
@@ -229,7 +236,55 @@ fn status_reports_unlocked() {
     let fixture = start_fixture_broker();
     let (ok, stdout, stderr) = credmgr(&fixture, &fixture.acme_workdir, &["status"]);
     assert!(ok, "{stderr}");
-    assert_eq!(stdout.trim(), "locked: false");
+    let mut lines = stdout.lines();
+    assert_eq!(lines.next(), Some("locked: false"));
+    // ADR-159: the last line says where the diagnostic log is.
+    assert!(
+        lines
+            .next()
+            .is_some_and(|l| l.starts_with("diagnostic log: ")),
+        "{stdout}"
+    );
+}
+
+/// ADR-159: `credmgr status --log` answers from the filesystem, with no broker at all — the case the
+/// diagnostic log exists for — and says whether a log has been written.
+#[test]
+fn status_log_names_the_log_file_without_a_broker() {
+    let tmp = tempfile::tempdir().unwrap();
+    let logs = tmp.path().join("logs");
+    let run = |dir: &Path| {
+        let out = Command::new(env!("CARGO_BIN_EXE_credmgr"))
+            .args(["status", "--log"])
+            .env("CREDMGR_VAULT_DIR", tmp.path().join("no-vault-here"))
+            .env("CREDMGR_LOG_DIR", dir)
+            .output()
+            .expect("credmgr");
+        assert!(out.status.success(), "{out:?}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let none = run(&logs);
+    assert!(
+        none.contains(&logs.join("credmgrd.log").display().to_string()),
+        "{none}"
+    );
+    assert!(none.contains("none written"), "{none}");
+    assert!(none.contains("CREDMGR_DIAG_LOG=1"), "{none}");
+
+    std::fs::create_dir_all(&logs).unwrap();
+    std::fs::write(logs.join("credmgrd.log"), vec![b'x'; 3000]).unwrap();
+    let some = run(&logs);
+    assert!(some.contains("(3 KiB; no names or values in it)"), "{some}");
+
+    let both = Command::new(env!("CARGO_BIN_EXE_credmgr"))
+        .args(["status", "--log", "--ack"])
+        .env("CREDMGR_LOG_DIR", &logs)
+        .output()
+        .unwrap();
+    assert!(
+        !both.status.success(),
+        "--log and --ack together is a usage error"
+    );
 }
 
 #[test]

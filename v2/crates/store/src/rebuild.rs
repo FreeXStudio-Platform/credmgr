@@ -39,6 +39,13 @@ pub struct RebuildDiff {
     /// Sealed nodes the registry on disk has that the candidate lacks: applying
     /// the candidate would forget the seal, leaving the archive unrestorable.
     pub sealed_removed: Vec<String>,
+    /// ADR-148 addendum: the enrolled presence key ids the rebuilt registry will hold. [`apply`] keeps the
+    /// registry on disk's list (a backup's older list would re-enrol a removed key or drop a new one), so this
+    /// is that list — shown, not a change. Empty when the registry on disk predates `presenceKeys`.
+    pub presence_keys_kept: Vec<String>,
+    /// ADR-148 addendum: ids of presence keys in the candidate that [`apply`] will **not** restore, because the
+    /// registry on disk no longer enrols them.
+    pub presence_keys_not_restored: Vec<String>,
 }
 
 impl RebuildDiff {
@@ -51,6 +58,7 @@ impl RebuildDiff {
             && self.policy_changes.is_empty()
             && self.sealed_added.is_empty()
             && self.sealed_removed.is_empty()
+            && self.presence_keys_not_restored.is_empty()
     }
 }
 
@@ -123,6 +131,22 @@ pub fn diff(
         .collect();
     sealed_removed.sort();
 
+    let (presence_keys_kept, presence_keys_not_restored) = match &on_disk.presence_keys {
+        Some(kept) => {
+            let kept_ids: Vec<String> = kept.iter().map(|k| k.id.clone()).collect();
+            let mut dropped: Vec<String> = candidate
+                .presence_keys
+                .iter()
+                .flatten()
+                .filter(|k| !kept_ids.contains(&k.id))
+                .map(|k| k.id.clone())
+                .collect();
+            dropped.sort();
+            (kept_ids, dropped)
+        }
+        None => (Vec::new(), Vec::new()),
+    };
+
     RebuildDiff {
         nodes_added,
         nodes_removed,
@@ -132,6 +156,8 @@ pub fn diff(
         policy_changes,
         sealed_added,
         sealed_removed,
+        presence_keys_kept,
+        presence_keys_not_restored,
     }
 }
 
@@ -158,6 +184,15 @@ pub fn apply(
     .unwrap_or(0)
         + 1;
     candidate.vault_generation = new_generation;
+    // ADR-148 addendum: who may prove presence, and which Touch ID unlock wrap may open the vault, are the
+    // registry on disk's — never a backup's older lists (that would re-enrol a removed key, or bring back a
+    // removed Touch ID unlock).
+    if on_disk.presence_keys.is_some() {
+        candidate.presence_keys.clone_from(&on_disk.presence_keys);
+    }
+    if on_disk.device_wraps.is_some() {
+        candidate.device_wraps.clone_from(&on_disk.device_wraps);
+    }
     // Never write an older format than this build understands (ADR-079): a
     // candidate reconstructed from an alpha backup is format 1.
     candidate.format = candidate.format.max(registry_file::REGISTRY_FORMAT);
@@ -231,6 +266,50 @@ mod tests {
         let d = diff(&on_disk, &candidate, &revoked);
         assert_eq!(d.resurrected_revoked_grants, vec!["g_revoked".to_string()]);
         assert!(!d.is_empty());
+    }
+
+    fn presence_key(id: &str) -> crate::presence_file::PresenceKeyRecord {
+        crate::presence_file::PresenceKeyRecord {
+            id: id.to_string(),
+            public: "04".repeat(65),
+            label: id.to_string(),
+            created_at: 1_700_000_000,
+        }
+    }
+
+    /// ADR-148 addendum: a rebuild from an older backup keeps the presence keys (and Touch ID unlock wraps)
+    /// the registry on disk holds, and the diff shows both what is kept and what the backup would have
+    /// re-enrolled.
+    #[test]
+    fn a_rebuild_keeps_the_registry_on_disks_presence_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = VaultPaths::new(dir.path().to_path_buf());
+        let root = [9u8; 32];
+        let counter = FileGenerationCounter::new(dir.path().join("state"));
+
+        let mut on_disk = RegistryDocument::new();
+        on_disk.presence_keys = Some(vec![presence_key("new")]);
+        on_disk.device_wraps = Some(Vec::new());
+        let mut candidate = RegistryDocument::new();
+        candidate.presence_keys = Some(vec![presence_key("removed"), presence_key("new")]);
+        candidate.device_wraps = Some(vec!["04ab".into()]);
+
+        let d = diff(&on_disk, &candidate, &HashSet::new());
+        assert_eq!(d.presence_keys_kept, vec!["new".to_string()]);
+        assert_eq!(d.presence_keys_not_restored, vec!["removed".to_string()]);
+        assert!(!d.is_empty());
+
+        let written = apply(&paths, &root, &counter, &on_disk, candidate).unwrap();
+        let ids: Vec<String> = written
+            .presence_keys
+            .unwrap()
+            .into_iter()
+            .map(|k| k.id)
+            .collect();
+        assert_eq!(ids, vec!["new".to_string()]);
+        assert_eq!(written.device_wraps, Some(Vec::new()));
+        let back = registry_file::load(&paths, &root).unwrap();
+        assert_eq!(back.presence_keys.unwrap().len(), 1);
     }
 
     #[test]

@@ -282,3 +282,96 @@ fn the_main_window_is_created_content_protected() {
         "the main window must set contentProtected: true"
     );
 }
+
+#[test]
+fn the_main_window_leaves_file_drops_to_the_page() {
+    // ADR-160: a QR image dropped on Add entry must arrive as a DOM drop, which the native drag-and-drop handler would take
+    // instead. With it off, `src/main.ts` refuses every drop no zone handled, so the webview never opens a dropped file.
+    let windows = config()["app"]["windows"].clone();
+    let main = windows
+        .as_array()
+        .and_then(|w| w.iter().find(|w| w["label"] == "main"))
+        .expect("a window labelled main")
+        .clone();
+    assert_eq!(main["dragDropEnabled"], Value::Bool(false));
+    let main_ts = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/main.ts"),
+    )
+    .expect("read src/main.ts");
+    assert!(
+        main_ts.contains("window.addEventListener(\"drop\", (ev) => ev.preventDefault());"),
+        "the page refuses stray drops"
+    );
+}
+
+#[test]
+fn the_app_bundles_credmgrd_where_start_at_login_looks_first() {
+    // Deferred quick win (ADR-157): `CredMgr.app` carries its own broker in `Contents/MacOS`, beside the
+    // Touch ID helper, so Start at login (`login_agent.rs`) has a `credmgrd` to point at without a separate
+    // install. The bundler copies `bundle.macOS.files`; `release-app.sh` builds the source path first.
+    let files = config()["bundle"]["macOS"]["files"].clone();
+    let files = files.as_object().expect("bundle.macOS.files is an object");
+    assert!(
+        files.contains_key("MacOS/credmgr-presence"),
+        "the Touch ID helper stays bundled"
+    );
+    let source = files
+        .get("MacOS/credmgrd")
+        .and_then(Value::as_str)
+        .expect("bundle.macOS.files bundles MacOS/credmgrd");
+
+    // The source is the workspace's release build of the broker, the same path release-app.sh checks.
+    let workspace = desktop_lib::login_agent::normalize(&manifest_dir().join("../../.."));
+    let resolved = desktop_lib::login_agent::normalize(&manifest_dir().join(source));
+    assert_eq!(resolved, workspace.join("target/release/credmgrd"));
+    let members =
+        std::fs::read_to_string(workspace.join("Cargo.toml")).expect("workspace Cargo.toml");
+    assert!(
+        members.contains("[workspace]") && members.contains("crates/brokerd"),
+        "the path is relative to the v2 workspace that builds credmgrd"
+    );
+
+    // Where it lands is the first place Start at login looks.
+    let exe = Path::new("/Applications/CredMgr.app/Contents/MacOS/CredMgr");
+    let first = desktop_lib::login_agent::daemon_candidates(exe)
+        .into_iter()
+        .next()
+        .expect("at least one candidate");
+    let bundled = Path::new("/Applications/CredMgr.app/Contents").join(
+        files
+            .keys()
+            .find(|k| k.ends_with("/credmgrd"))
+            .expect("the bundled key"),
+    );
+    assert_eq!(first, bundled);
+}
+
+#[test]
+fn the_app_bundles_the_command_line_where_restore_looks_first() {
+    // ADR-166: Settings > Backup > Restore runs the bundled `credmgr restore --json` (src/restore.rs), so the
+    // app carries the command line beside the broker, built from the same workspace release-app.sh builds.
+    let files = config()["bundle"]["macOS"]["files"].clone();
+    let files = files.as_object().expect("bundle.macOS.files is an object");
+    let source = files
+        .get("MacOS/credmgr")
+        .and_then(Value::as_str)
+        .expect("bundle.macOS.files bundles MacOS/credmgr");
+    let workspace = desktop_lib::login_agent::normalize(&manifest_dir().join("../../.."));
+    let resolved = desktop_lib::login_agent::normalize(&manifest_dir().join(source));
+    assert_eq!(resolved, workspace.join("target/release/credmgr"));
+    let release_app = std::fs::read_to_string(workspace.join("scripts/release-app.sh"))
+        .expect("scripts/release-app.sh");
+    assert!(
+        release_app.contains("-p credmgr-cli --bin credmgr"),
+        "release-app.sh builds the command line the app carries"
+    );
+    let exe = Path::new("/Applications/CredMgr.app/Contents/MacOS/CredMgr");
+    let first = desktop_lib::restore::cli_candidates(exe)
+        .into_iter()
+        .next()
+        .expect("at least one candidate");
+    assert_eq!(
+        first,
+        Path::new("/Applications/CredMgr.app/Contents/MacOS/credmgr")
+    );
+}

@@ -37,7 +37,7 @@ test("About shows the real configured version when nothing is scripted", async (
   const { page } = app;
   await open(app);
   await openFromMenu(app, "About CredMgr");
-  await expect(page.locator('[data-about-version="true"]')).toHaveText("2.0.0-beta.1");
+  await expect(page.locator('[data-about-version="true"]')).toHaveText("2.0.0-rc.2");
 });
 
 test("a shell that cannot report its version is shown as unknown, not as a guess", async ({ app }) => {
@@ -179,8 +179,10 @@ test("Help describes the graph glyphs the way the rail draws them, and mentions 
   const text = (await help.innerText()).toLowerCase();
   // "agents" is no longer a banned word: the searchable topic list below the short sections (help-data.js) is about AI agents by design.
   // What stays banned is each claim of something that is not built ("settings → agents" is the screen that does not exist).
-  for (const bad of ["security level", "settings → agents", "touch id and a fresh 2fa", "deliberate friction", "expiry", "settings → nodes lists everything"]) expect(text, bad).not.toContain(bad);
-  await expect(help).toContainText("needs presence (Touch ID), which this beta cannot attest yet");
+  // "expiry" was banned while entry expiry was unbuilt; entry.set_expiry / credmgr expire / the expiry chip are built now (features.json
+  // "entry-expiry", status built), so the word is no longer a claim of something absent.
+  for (const bad of ["touch id and a fresh 2fa", "deliberate friction", "settings → nodes lists everything"]) expect(text, bad).not.toContain(bad);
+  await expect(help).toContainText("opening one needs Touch ID");
 });
 
 test("the presence notice dialog explains the refusal and offers nothing to press but Close", async ({ app }) => {
@@ -191,7 +193,7 @@ test("the presence notice dialog explains the refusal and offers nothing to pres
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("open a sealed item");
   await expect(dialog).toContainText("Sealed values cannot be opened from this app.");
-  await expect(dialog).toContainText("This needs presence (Touch ID), which this beta cannot attest yet. Nothing was changed.");
+  await expect(dialog).toContainText("This needs Touch ID. Set it up in Settings → Security, then try again. Nothing was changed.");
   await expect(dialog.getByRole("button")).toHaveCount(1);
   await expect(dialog.getByRole("textbox")).toHaveCount(0); // no 2FA code field
   await dialog.getByRole("button", { name: "Close" }).click();
@@ -202,7 +204,9 @@ test("the presence notice dialog explains the refusal and offers nothing to pres
 test("no settings section carries a mock badge or a claim nothing backs", async ({ app }) => {
   const { page } = app;
   await open(app);
-  const BANNED = [/^mock\b/im, /not built yet/i, /last backup: 2h ago/i, /checked 04:00/i, /machine lock/i, /export with --age/i, /search inside saved values/i, /security level/i, /thankscredmgr/i, /on app switch/i];
+  // "machine lock" was banned while the machine lock was unbuilt; ADR-165 built it (keystore.status/bind/unbind, the Security row,
+  // features.json "machine-lock", status built), so the words are no longer a claim of something absent.
+  const BANNED = [/^mock\b/im, /not built yet/i, /last backup: 2h ago/i, /checked 04:00/i, /export with --age/i, /search inside saved values/i, /thankscredmgr/i, /on app switch/i];
   await page.getByRole("button", { name: "settings", exact: true }).click();
   const nav = page.locator(".cm-settings > div:first-child > button");
   const names = (await nav.allTextContents()).map((t) => t.trim());

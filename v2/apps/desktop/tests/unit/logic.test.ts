@@ -15,7 +15,7 @@ import { brokerScript } from "../fixtures/broker/script.mjs";
  * The number of names the template reads.  PINNED: every change to a screen that adds or removes a binding changes this on
  * purpose, in the same commit.  (A loose "more than 300" let a lane drop bindings without a test noticing.)
  */
-const BINDING_COUNT = 630; // measured on the merged tree; tests/unit/compile.test.ts pins the same number from the compiler
+const BINDING_COUNT = 1072; // measured on the merged tree; tests/unit/compile.test.ts pins the same number from the compiler
 
 const BASE = { screen: "app", vaultLocked: false, overlay: null, dialog: null, view: "graph", openEntry: null, ctx: null, vaultMenu: false, searchOpen: false, searchQ: "", railOpen: false, inspOpen: false };
 

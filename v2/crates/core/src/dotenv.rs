@@ -29,6 +29,12 @@
 //!   escapes inside double quotes. (A line that is only base64 padding — a PEM
 //!   body's last line, `Zm8=` — is not mistaken for an assignment.)
 //!
+//! A line on its own that is nothing but base64 ending in padding (`QUJDRA==`, `Zm8=`: base64 characters,
+//! then one or two `=`, a multiple of four long, no other `=`; with one `=` it must look like base64, so
+//! `PLACEHOLDER=` stays an empty value) is the tail of a value wrapped onto its own line, not
+//! `QUJDRA` set to `=`. That **one line** is refused and reported by number ([`Parsed::refused_lines`]); the
+//! rest of the file still imports (ADR-148 addendum). `SEP==` (not a multiple of four) stays `SEP` = `=`.
+//!
 //! An empty value is not an entry: `.env.example` files are full of `KEY=`
 //! placeholders and importing them would fill the vault with empty
 //! credentials. They are reported back by name ([`Parsed::skipped_empty`]) so
@@ -44,6 +50,9 @@ pub struct Parsed {
     pub entries: Vec<EnvEntry>,
     /// Names whose value was empty — not imported, but reported.
     pub skipped_empty: Vec<String>,
+    /// ADR-148 addendum: line numbers refused because the line is only a padded base64 tail (never their
+    /// text) — not imported, but reported.
+    pub refused_lines: Vec<usize>,
 }
 
 /// An entry name: non-empty, `[A-Za-z0-9_.-]`. Tighter than the broker's
@@ -60,12 +69,18 @@ pub fn parse(text: &str) -> Result<Parsed, String> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let lines: Vec<&str> = text.lines().collect();
     let mut items: Vec<(usize, String, String)> = Vec::new(); // (line, name, value)
+    let mut refused_lines: Vec<usize> = Vec::new();
     let mut i = 0;
     while i < lines.len() {
         let line_no = i + 1;
         let mut line = lines[i].trim_start();
         i += 1;
         if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        // ADR-148 addendum: a wrapped base64 tail on its own line — refuse this line, not the file.
+        if is_padded_base64_line(line) {
+            refused_lines.push(line_no);
             continue;
         }
         if let Some(rest) = line.strip_prefix("export") {
@@ -124,7 +139,30 @@ pub fn parse(text: &str) -> Result<Parsed, String> {
     Ok(Parsed {
         entries,
         skipped_empty,
+        refused_lines,
     })
+}
+
+/// ADR-148 addendum: is `line` (already trimmed at the start) only a padded base64 tail — base64 characters,
+/// then one or two `=`, a multiple of four long, and no `=` anywhere else? Such a line has no key separator of
+/// its own: its `=` are padding. With a single `=` the line must also LOOK like base64 (a digit, `+` or `/`, or
+/// both letter cases), because `PLACEHOLDER=` — an empty `.env.example` value — has the same shape; `==` is
+/// never how an empty value is written.
+fn is_padded_base64_line(line: &str) -> bool {
+    let whole = line.trim_end();
+    let body = whole.trim_end_matches('=');
+    let pads = whole.len() - body.len();
+    let bytes = body.as_bytes();
+    let looks_random = bytes
+        .iter()
+        .any(|b| b.is_ascii_digit() || *b == b'+' || *b == b'/')
+        || (bytes.iter().any(u8::is_ascii_lowercase) && bytes.iter().any(u8::is_ascii_uppercase));
+    !body.is_empty()
+        && (pads == 2 || (pads == 1 && looks_random))
+        && whole.len() % 4 == 0
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || *b == b'+' || *b == b'/')
 }
 
 /// Does `line` start like a fresh assignment (`[export ]NAME=…`)? Used only on
@@ -452,5 +490,40 @@ mod tests {
     fn a_file_with_nothing_importable_parses_to_nothing() {
         let p = parse("# only comments\n\n").unwrap();
         assert!(p.entries.is_empty() && p.skipped_empty.is_empty());
+    }
+
+    #[test]
+    fn a_padded_base64_tail_on_its_own_line_is_not_a_pair() {
+        // ADR-148 addendum: only that line is refused (by number); the rest of the file imports.
+        let p = parse("KEY=\"line one\"\nQUJDRA==\nNEXT=2\nAB+/CD==\n").unwrap();
+        let got: Vec<(String, String)> = p.entries.into_iter().map(|e| (e.name, e.value)).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("KEY".into(), "line one".into()),
+                ("NEXT".into(), "2".into())
+            ]
+        );
+        assert_eq!(p.refused_lines, vec![2, 4]);
+        assert!(parse("EMPTY=\n").is_ok(), "an empty value is still a pair");
+    }
+
+    #[test]
+    fn a_value_that_is_only_padding_is_still_a_pair_when_the_line_is_not_base64() {
+        // `SEP==` is five characters: not base64, so it is SEP set to `=`. So is a value ending in padding.
+        let p = parse("SEP==\nTOKEN=abc==\nX = ==\nPLACEHOLDER=\n").unwrap();
+        let got: Vec<(String, String)> = p.entries.into_iter().map(|e| (e.name, e.value)).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("SEP".into(), "=".into()),
+                ("TOKEN".into(), "abc==".into()),
+                ("X".into(), "==".into())
+            ]
+        );
+        assert!(p.refused_lines.is_empty());
+        assert_eq!(p.skipped_empty, vec!["PLACEHOLDER".to_string()]);
+        // A one-`=` line that looks like base64 is a wrapped tail.
+        assert_eq!(parse("Zm8=\nA=1\n").unwrap().refused_lines, vec![1]);
     }
 }

@@ -15,17 +15,25 @@ workspace = true
 
 [dependencies]
 argon2 = "0.5"
+base64 = "0.22"
 # Pinned below latest for the same edition2024/MSRV reason as ADR-035/036/038:
 # argon2 0.5's `password-hash` dependency pulls base64ct >=1.7 by default,
 # which requires Cargo's edition2024 feature, unavailable below Rust 1.85.
 base64ct = "=1.6.0"
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc", "getrandom"] }
-credmgr-core = { path = "../core", version = "2.0.0-beta.1" }
+credmgr-core = { path = "../core", version = "2.0.0-rc.2" }
+hkdf = "0.12"
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 secrecy = "0.10.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 zeroize = "1.7"
+
+[target.'cfg(unix)'.dependencies]
+# ADR-165 (review P2-3): the device key is opened with `O_NOFOLLOW`.
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "=3.15.0"

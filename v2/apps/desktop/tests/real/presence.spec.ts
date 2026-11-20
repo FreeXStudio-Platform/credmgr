@@ -25,7 +25,7 @@ async function vaultWith(app: RealApp, project: string): Promise<void> {
   await expect(railRow(app, project)).toBeVisible();
 }
 
-const presenceAlert = (app: RealApp, op: string) => app.page.getByRole("alert").filter({ hasText: "Needs presence (Touch ID)" }).filter({ hasText: `(${op})` });
+const presenceAlert = (app: RealApp, op: string) => app.page.getByRole("alert").filter({ hasText: "Needs Touch ID" }).filter({ hasText: `(${op})` });
 
 test("grant creation, root-key rotation, the audit record, the TOTP seed and a widening node choice are each sent, each met with presence_required, and none changes the vault", async ({ app }) => {
   const { page } = app;
@@ -46,7 +46,7 @@ test("grant creation, root-key rotation, the audit record, the TOTP seed and a w
     await settings.getByRole("button", { name: "+ New grant" }).click();
     const dialog = app.screen("S11 Grant");
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText("Creating a grant needs presence");
+    await expect(dialog).toContainText("Creating a grant asks for Touch ID");
     const create = dialog.getByRole("button", { name: "Create grant" });
     await expect(create).toBeDisabled(); // no reason yet
     await dialog.getByLabel("grant from node").selectOption("atlas");
@@ -64,7 +64,7 @@ test("grant creation, root-key rotation, the audit record, the TOTP seed and a w
     await openSettings(app, "Advanced");
     await page.getByRole("button", { name: "Rotate…" }).click();
     const prompt = app.screen("Passphrase prompt");
-    await expect(prompt).toContainText("needs presence (Touch ID)");
+    await expect(prompt).toContainText("asks for Touch ID");
     await prompt.getByLabel("vault passphrase").fill(app.passphrase);
     await prompt.getByRole("button", { name: "Rotate", exact: true }).click();
     await expect(presenceAlert(app, "maintenance.rotate_root")).toBeVisible();
@@ -111,7 +111,7 @@ test("grant creation, root-key rotation, the audit record, the TOTP seed and a w
     expect(app.frames("totp.code")).toHaveLength(1);
     expect(app.frames("entry.reveal"), "showing a code never fetches the seed").toEqual([]);
     expect(await app.pageDump()).not.toContain(shown);
-    await page.getByRole("button", { name: "hide", exact: true }).click();
+    await page.getByRole("button", { name: /^hide(, re-masks in \d+ seconds)?$/ }).click();
     await expect(field).toHaveText("••••••••••••");
 
     await page.getByRole("button", { name: "show seed" }).click();
@@ -131,7 +131,7 @@ test("grant creation, root-key rotation, the audit record, the TOTP seed and a w
     await expect(dlg).toBeHidden();
     await expect(notice(app)).toHaveCount(1);
     await expect(notice(app)).toContainText("Node “Payments API” was created, but these choices were not applied");
-    await expect(notice(app)).toContainText("presence (Touch ID)");
+    await expect(notice(app)).toContainText("Touch ID");
     expect(app.frames("node.create").at(-1)!.params).toMatchObject({ id: "payments-api", label: "Payments API", parentId: "global" });
     expect(app.frames("node.policy").map((f) => f.params)).toEqual([{ node: "payments-api", reason: "set at creation", policy: { descendantRead: true } }]);
     expect((await app.oracle.nodeIds()).sort()).toEqual([...before.nodes, "payments-api"].sort());

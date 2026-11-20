@@ -6,10 +6,12 @@
 //! and re-signs every file that was HMAC'd or sealed under the old key — the
 //! registry, every manifest, the external rollback counter, the audit tips,
 //! the gate seed inside the registry, the seal archives, the removed-entry
-//! records and the rotation snapshots. Entry envelopes are **not** touched:
-//! they are sealed to node *public* keys, and a rotation re-wraps node private
-//! keys, it does not replace them (`node.rotate_key` is a different, planned
-//! operation).
+//! records and the rotation snapshots. In a plain rotation entry envelopes are
+//! **not** touched: they are sealed to node *public* keys, and the rotation
+//! re-wraps node private keys, it does not replace them. A passphrase change
+//! and a recovery ([`NodeKeys::Replace`], ADR-165 N5) also give every live node
+//! a new keypair and re-seal its envelopes, as more files in the same stage
+//! under the same commit record (`rotate/rekey_live.rs`).
 //!
 //! **Crash safety** is `credmgr_store::rotation`'s: every replacement file is
 //! staged and fsynced first, one atomic commit record makes the set binding,
@@ -51,6 +53,7 @@
 //! while a rotation is staging waits for it instead of deleting its stage as a
 //! crash leftover. See `vault_lock.rs` for what went wrong without it.
 
+mod rekey_live;
 mod vault_lock;
 
 use std::collections::HashMap;
@@ -64,6 +67,7 @@ use credmgr_core::keys::{rewrap_node_key, WrappedNodeKey};
 use credmgr_core::recovery::{
     format_recovery_code, generate_recovery_code, wrap_root_with_recovery_code,
 };
+use credmgr_core::registry::ORPHAN_ID;
 use credmgr_keystore::software::SoftwareKeystore;
 use credmgr_keystore::PlatformKeystore;
 use credmgr_store::error::StoreError;
@@ -76,6 +80,13 @@ use credmgr_store::{archive, audit, manifest, registry_file, rotation};
 use super::durable::{corrupt, ct_eq_32, NextState};
 use super::{hex_encode, sha256_of, BrokerState};
 pub use vault_lock::{VaultLock, RECOVER_LOCK_WAIT, ROTATE_LOCK_WAIT};
+
+/// The two re-sealed kinds whose signed record a rotation re-signs (ADR-165 N5).
+mod rekey_live_kinds {
+    use super::super::rekey::ItemKind;
+    pub const HISTORY: ItemKind = ItemKind::HistoryEnv;
+    pub const REMOVED: ItemKind = ItemKind::RemovedEnv;
+}
 
 /// Every kind of file that is signed or wrapped under the root key, and so is
 /// replaced by a rotation — `(what, where it lives, how it is bound)`. The
@@ -159,12 +170,67 @@ pub const ROOT_BOUND_ARTEFACTS: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// Appended to the `reason` of an audit month the rotation left unsigned when
-/// that month is also the one the rotation's own audit record was written to.
-const CURRENT_MONTH_CAVEAT: &str = " — NOTE: this is the month the rotation's own audit record \
-was appended to, and appending signs a month's tip over the log as it now stands, so the month \
-verifies again under the new key and the damage is no longer visible to maintenance.verify. \
-Only months nothing is appended to keep failing verification";
+/// Who the rotation's own audit record names, and what it says happened. The record carries counts only,
+/// never a passphrase or a recovery code, whichever path asked for the rotation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RotationAudit {
+    pub actor: &'static str,
+    pub action: &'static str,
+}
+
+impl RotationAudit {
+    /// ADR-076: `maintenance.rotate_root`.
+    pub const ROTATE_ROOT: RotationAudit = RotationAudit {
+        actor: "system:maintenance.rotate_root",
+        action: "maintenance.root_rotated",
+    };
+    /// ADR-156: `vault.set_passphrase`. The same record the rotation always wrote, so nothing that reads the
+    /// trail for a rotation misses a passphrase change.
+    pub const PASSPHRASE_CHANGE: RotationAudit = RotationAudit::ROTATE_ROOT;
+    /// ADR-163: `vault.recover` — the vault was opened with the recovery code and re-keyed under a new
+    /// passphrase and a new recovery code.
+    pub const RECOVERY: RotationAudit = RotationAudit {
+        actor: "system:vault.recover",
+        action: "vault.recovered_with_code",
+    };
+    /// ADR-165 (review P0-1): `keystore.bind` — the vault was locked to this Mac by a root rotation.
+    pub const MACHINE_LOCK_BIND: RotationAudit = RotationAudit {
+        actor: "system:keystore.bind",
+        action: "keystore.bound",
+    };
+}
+
+/// What a rotation does about the machine lock (ADR-165), and what its new passphrase wrap is made from.
+pub(crate) enum MachineLockIntent<'a> {
+    /// Keep the lock as it is (a bound vault stays bound, an unbound one unbound); the new passphrase wrap is
+    /// made from `wrap_passphrase`, and the new root key and recovery code are drawn here.
+    Keep {
+        wrap_passphrase: &'a SecretBox<String>,
+    },
+    /// `keystore.bind`'s commit (review N1): the new root key, its plain passphrase wrap and the new recovery
+    /// code were drawn by the bind's prepare, and the owner has typed that code back; they are used as they
+    /// are. The wrap is sealed, and the orphan node gets a new cold keypair (the bind has checked it holds no
+    /// entries), so nothing a pre-bind copy holds opens what is sealed after the bind.
+    Bind(&'a super::machine_lock::PreparedBind),
+}
+
+impl MachineLockIntent<'_> {
+    fn is_bind(&self) -> bool {
+        matches!(self, MachineLockIntent::Bind(_))
+    }
+}
+
+/// What a rotation does with the node keypairs (ADR-165 N5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NodeKeys {
+    /// Re-wrap each node's private key under the new root key; the keypairs stay (ADR-076:
+    /// `maintenance.rotate_root`, and `keystore.bind`'s rotation, whose bind re-keys afterwards).
+    Rewrap,
+    /// Give every live node a new keypair and re-seal what it holds, in the same stage and under the same
+    /// commit record (`rekey_live.rs`): `vault.set_passphrase` and `vault.recover`, so a copy of the folder
+    /// from before the change plus the old passphrase or the old code opens nothing written after it.
+    Replace,
+}
 
 /// A point in a rotation at which the test suite can make the process "die".
 /// Compiled only with the `test-utils` feature, like the other test seams.
@@ -228,6 +294,17 @@ pub struct RotationOutcome {
     /// Whether the rotation's own audit record was written (it cannot be while
     /// `completion_pending`: the vault is locked and its tips are mid-move).
     pub audited: bool,
+    /// ADR-165: whether the new passphrase wrap is sealed to this Mac's device key.
+    pub machine_lock: super::machine_lock::RotationMachineLock,
+    /// ADR-165 (review P0-1): the bind's rotation gave the orphan node a new cold keypair. ADR-165 N5: so does
+    /// a passphrase change or a recovery, when the orphan holds no sealed copy.
+    pub orphan_key_replaced: bool,
+    /// ADR-165 N5: the live nodes given a new keypair inside this rotation ([`NodeKeys::Replace`]); `None` for
+    /// a rotation that re-wraps only.
+    pub nodes_rekeyed: Option<Vec<String>>,
+    /// ADR-165 N5: envelopes (entries, notes, merge memories, retained history, removed entries and
+    /// locked-write tray files) re-sealed to the new node keys.
+    pub files_resealed: usize,
 }
 
 impl Drop for RotationOutcome {
@@ -250,6 +327,9 @@ impl std::fmt::Debug for RotationOutcome {
             .field("skipped", &self.skipped)
             .field("completion_pending", &self.completion_pending)
             .field("audited", &self.audited)
+            .field("machine_lock", &self.machine_lock)
+            .field("nodes_rekeyed", &self.nodes_rekeyed)
+            .field("files_resealed", &self.files_resealed)
             .finish()
     }
 }
@@ -270,6 +350,9 @@ pub enum RotateRootError {
     /// passphrase wrap. Which factor failed is not a question that has an
     /// answer here: there is only one.
     WrongPassphrase,
+    /// ADR-165: the passphrase wrap is bound to a device key this Mac does not hold (or is damaged), so the
+    /// passphrase could not be proven. Nothing was changed.
+    MachineLock(credmgr_keystore::machine_lock::MachineLockError),
     /// A node's private key did not open under the current root key. Nothing
     /// was changed.
     NodeKey(String),
@@ -288,6 +371,7 @@ impl std::fmt::Display for RotateRootError {
             RotateRootError::NotDurable => write!(f, "this vault is not backed by disk"),
             RotateRootError::Locked => write!(f, "the vault is locked"),
             RotateRootError::WrongPassphrase => write!(f, "wrong passphrase"),
+            RotateRootError::MachineLock(e) => write!(f, "{e}"),
             RotateRootError::NodeKey(id) => write!(
                 f,
                 "node {id}'s key did not open under the current root key — nothing was changed"
@@ -337,6 +421,9 @@ impl BrokerState {
             return Ok(rotation::Recovery::Nothing);
         }
         let _exclusive = VaultLock::acquire(paths, RECOVER_LOCK_WAIT)?;
+        // ADR-165 review P1-2: a temporary file a crash left beside `root.wrap.pass` (an unbind's would hold
+        // the plain wrap) goes before anything reads the vault. Under the vault lock, so no live writer's.
+        let _ = credmgr_store::atomic::remove_stray_temps(&paths.root_wrap_pass());
         rotation::recover(paths, state_dir)
     }
 
@@ -367,6 +454,34 @@ impl BrokerState {
         passphrase: SecretBox<String>,
         now: i64,
     ) -> Result<RotationOutcome, RotateRootError> {
+        self.rotate_root_with(passphrase, None, now)
+    }
+
+    /// Change the vault passphrase (ADR-156): a root rotation whose new `root.wrap.pass` is made from
+    /// `new_passphrase` instead of the current one. Everything [`BrokerState::rotate_root`] promises holds —
+    /// the current passphrase is proven first, nothing changes before the commit point, a crash after it is
+    /// finished by the next unlock (which then takes the NEW passphrase), the Touch ID unlock is re-sealed —
+    /// and the outcome carries a new recovery code, because the rotation replaces the root key. Reusing the
+    /// rotation instead of re-wrapping the same root key under a second passphrase is deliberate: a
+    /// passphrase change is what a person does after suspecting the old one leaked, and an attacker who
+    /// copied `root.wrap.pass` with that passphrase would otherwise still open the root key it wraps.
+    pub fn set_passphrase(
+        &self,
+        passphrase: SecretBox<String>,
+        new_passphrase: SecretBox<String>,
+        now: i64,
+    ) -> Result<RotationOutcome, RotateRootError> {
+        self.rotate_root_with(passphrase, Some(new_passphrase), now)
+    }
+
+    /// The rotation itself: `passphrase` proves factor one; the new passphrase wrap is made from
+    /// `new_passphrase` when given, else from `passphrase`.
+    fn rotate_root_with(
+        &self,
+        passphrase: SecretBox<String>,
+        new_passphrase: Option<SecretBox<String>>,
+        now: i64,
+    ) -> Result<RotationOutcome, RotateRootError> {
         let _auth = self.auth_lock.lock().expect("auth lock poisoned");
         if !self.is_durable() {
             return Err(RotateRootError::NotDurable);
@@ -385,11 +500,53 @@ impl BrokerState {
         // re-wrapped is the one that opens the wrap being replaced.
         let proven = self
             .root_from_passphrase(clone_passphrase(&passphrase), "root rotation")
-            .map_err(|_| RotateRootError::WrongPassphrase)?;
+            .map_err(|e| match e {
+                super::durable::PassRootError::MachineLock(m) => RotateRootError::MachineLock(m),
+                super::durable::PassRootError::Wrong => RotateRootError::WrongPassphrase,
+            })?;
         if !ct_eq_32(proven.expose_secret(), old_root.expose_secret()) {
             return Err(RotateRootError::WrongPassphrase);
         }
         drop(proven);
+
+        let wrap_passphrase = new_passphrase.as_ref().unwrap_or(&passphrase);
+        let audit = if new_passphrase.is_some() {
+            RotationAudit::PASSPHRASE_CHANGE
+        } else {
+            RotationAudit::ROTATE_ROOT
+        };
+        // ADR-165 N5: a passphrase change re-keys every live node; a plain rotation re-wraps (ADR-076).
+        let node_keys = if new_passphrase.is_some() {
+            NodeKeys::Replace
+        } else {
+            NodeKeys::Rewrap
+        };
+        self.rotate_root_locked(
+            &old_root,
+            audit,
+            MachineLockIntent::Keep { wrap_passphrase },
+            node_keys,
+            now,
+        )
+    }
+
+    /// The rotation proper, for a caller that already holds `auth_lock` and has proven, its own way, that
+    /// `old_root` is the vault's current root key: [`BrokerState::rotate_root_with`] by the passphrase,
+    /// ADR-163's `recover_with_code` by the recovery code, `keystore.bind`'s commit by the passphrase and the
+    /// recovery code at its prepare. `intent` says what the new
+    /// `root.wrap.pass` is made from. Everything the module docs promise about staging, the commit point and
+    /// recovery holds identically for both callers: this function is the only place a root key is replaced.
+    pub(super) fn rotate_root_locked(
+        &self,
+        old_root: &SecretBox<[u8; 32]>,
+        audit_as: RotationAudit,
+        intent: MachineLockIntent<'_>,
+        node_keys: NodeKeys,
+        now: i64,
+    ) -> Result<RotationOutcome, RotateRootError> {
+        if !self.is_durable() {
+            return Err(RotateRootError::NotDurable);
+        }
 
         // One writer at a time, for the whole rotation: nothing may persist
         // an old-key file between the plan below and the switch of memory.
@@ -452,11 +609,40 @@ impl BrokerState {
             }
         }
 
-        // 1. The new root key.
-        let mut fresh = [0u8; 32];
-        OsRng.fill_bytes(&mut fresh);
-        let new_root: SecretBox<[u8; 32]> = SecretBox::new(Box::new(fresh));
-        fresh.zeroize();
+        // 0c. ADR-165 N5: a `node.rekey` or `entry.move` stage this session could not clear holds a plan sealed
+        // under the OLD root key; after the rotation nothing could open it, and the next load would refuse the
+        // vault over it. The next unlock settles such a stage; until then, refuse (nothing changed).
+        for (dir, what) in [
+            (self.paths.rekey_stage_root(), "a node re-key"),
+            (self.paths.move_stage_root(), "an entry move"),
+        ] {
+            let left = std::fs::read_dir(&dir)
+                .map(|mut r| r.next().is_some())
+                .unwrap_or(false);
+            if left {
+                return Err(RotateRootError::Store(corrupt(
+                    dir,
+                    &format!(
+                        "{what} from earlier in this session has not been tidied up yet; lock the vault and \
+                         unlock it again (which settles it), then try again — nothing was changed"
+                    ),
+                )));
+            }
+        }
+
+        // 1. The new root key (drawn by the bind's prepare, for a bind).
+        let new_root: SecretBox<[u8; 32]> = match &intent {
+            MachineLockIntent::Bind(prepared) => {
+                SecretBox::new(Box::new(*prepared.new_root.expose_secret()))
+            }
+            MachineLockIntent::Keep { .. } => {
+                let mut fresh = [0u8; 32];
+                OsRng.fill_bytes(&mut fresh);
+                let root = SecretBox::new(Box::new(fresh));
+                fresh.zeroize();
+                root
+            }
+        };
         let old = old_root.expose_secret();
         let new = new_root.expose_secret();
 
@@ -492,19 +678,49 @@ impl BrokerState {
             }
         }
 
-        // 3. The two root wraps that exist. (`root.wrap.se` is never written —
-        // no hardware keystore is built, `04 §2.1` — and if one ever appears,
-        // step 0 above has already refused to rotate past it.)
+        // 2b. ADR-165 N5: new keypairs for every live node, everything they hold re-sealed, in memory only.
+        // Each re-keyed node's entry in `new_wrapped` becomes its NEW private key wrapped under the new root.
+        let live_rekey = match node_keys {
+            NodeKeys::Replace => {
+                Some(self.plan_live_rekey(old, new, &current_wrapped, &mut new_wrapped)?)
+            }
+            NodeKeys::Rewrap => None,
+        };
+
+        // 3. The passphrase and recovery wraps. (`root.wrap.se`, the Touch ID unlock, is re-sealed in
+        // step 5 below, and only when its ADR-148 tag verifies under the old root key.)
         let state_dir = self.state_dir();
-        let pass_wrap = SoftwareKeystore::new(clone_passphrase(&passphrase), state_dir.clone())
-            .wrap_root(&new_root)
-            .map_err(|_| {
-                RotateRootError::Store(corrupt(
-                    self.paths.root_wrap_pass(),
-                    "could not wrap the new root key under the passphrase",
-                ))
-            })?;
-        let mut code = generate_recovery_code();
+        let pass_wrap = match &intent {
+            MachineLockIntent::Bind(prepared) => prepared.pass_wrap.clone(),
+            MachineLockIntent::Keep { wrap_passphrase } => {
+                SoftwareKeystore::new(clone_passphrase(wrap_passphrase), state_dir.clone())
+                    .wrap_root(&new_root)
+                    .map_err(|_| {
+                        RotateRootError::Store(corrupt(
+                            self.paths.root_wrap_pass(),
+                            "could not wrap the new root key under the passphrase",
+                        ))
+                    })?
+            }
+        };
+        // ADR-165: a bound vault stays bound. The new passphrase wrap is sealed under this Mac's device key
+        // (made, durably, before anything is staged, if there is none: a recovery on a new Mac).
+        let (pass_wrap, machine_lock) = self.machine_lock_reseal(pass_wrap, intent.is_bind());
+        if intent.is_bind() && !machine_lock.bound {
+            // A bind whose wrap cannot be sealed is no bind: refuse, nothing changed.
+            return Err(RotateRootError::MachineLock(
+                credmgr_keystore::machine_lock::MachineLockError::Io(
+                    machine_lock
+                        .unsealed_because
+                        .clone()
+                        .unwrap_or_else(|| "the new passphrase wrap could not be sealed".into()),
+                ),
+            ));
+        }
+        let mut code = match &intent {
+            MachineLockIntent::Bind(prepared) => *prepared.code,
+            MachineLockIntent::Keep { .. } => generate_recovery_code(),
+        };
         let recovery_wrap = wrap_root_with_recovery_code(&code, new);
         let recovery_code = format_recovery_code(&code);
         code.zeroize();
@@ -513,17 +729,125 @@ impl BrokerState {
         // external counter is still signed under the old one, so that is the
         // key it is read with.
         let NextState {
-            manifests,
+            mut manifests,
             wrapped_keys,
             mut doc,
             external: _,
         } = self
             .build_next_state(new, old, Some(new_wrapped.clone()), now)
             .map_err(RotateRootError::Store)?;
+        // 4b. ADR-165 N5: each re-keyed node's manifest carries the new digests (and one generation bump, as
+        // `node.rekey` makes), and the registry names its new public key.
+        if let Some(rk) = &live_rekey {
+            for node in &rk.nodes {
+                let (rows, note, merge) = rekey_live::new_digests(node);
+                if let Some(body) = manifests.get_mut(&node.id) {
+                    for row in body.entries.iter_mut() {
+                        if let Some(sha) = rows.get(&row.id) {
+                            row.sha256.clone_from(sha);
+                        }
+                    }
+                    if note.is_some() {
+                        body.notes_sha256 = note;
+                    }
+                    if merge.is_some() {
+                        body.merge_sha256 = merge;
+                    }
+                    body.generation += 1;
+                }
+                if let Some(n) = doc.nodes.get_mut(&node.id) {
+                    n.public_key = hex_encode(node.public.as_bytes());
+                }
+            }
+        }
 
         // 5. Everything else that is signed or wrapped under the root key.
         let mut plan = rotation::plan_resigned_artifacts(&self.paths, old, new)
             .map_err(RotateRootError::Store)?;
+        // ADR-165 (review P0-1): the bind's rotation gives the orphan node a new keypair instead of re-sealing the
+        // old private half. The old one is in every pre-bind copy, sealed under the old root key; a project
+        // sealed after the bind must not be re-encrypted to it. The bind checked the orphan holds no entries,
+        // so nothing has to be re-sealed; the new cold file and the registry's new public key are staged
+        // together and take effect at the same commit point.
+        let mut new_orphan_public = None;
+        // ADR-165 N5: a passphrase change or a recovery replaces it on the same terms, when it holds no sealed
+        // copy; when it holds some, it is re-sealed as before and named.
+        let orphan_rows = manifests
+            .get(ORPHAN_ID)
+            .map(|m| m.entries.len())
+            .unwrap_or(0);
+        let rekey_orphan = live_rekey.is_some() && doc.nodes.contains_key(ORPHAN_ID);
+        if rekey_orphan && orphan_rows > 0 {
+            plan.skipped.push(rotation::Skipped {
+                kind: "rekey-orphan",
+                id: ORPHAN_ID.to_string(),
+                reason: format!(
+                    "the orphan node holds {orphan_rows} sealed {}, so its cold keypair was kept (re-sealed under \
+                     the new root key) rather than replaced",
+                    if orphan_rows == 1 { "copy" } else { "copies" }
+                ),
+            });
+        } else if rekey_orphan && !plan.resigned.iter().any(|r| r.kind == "orphan-cold-key") {
+            plan.skipped.push(rotation::Skipped {
+                kind: "rekey-orphan",
+                id: ORPHAN_ID.to_string(),
+                reason: "the orphan cold key did not open under the current root key, so it was not replaced"
+                    .to_string(),
+            });
+        } else if rekey_orphan {
+            let cold = plan
+                .resigned
+                .iter_mut()
+                .find(|r| r.kind == "orphan-cold-key")
+                .expect("checked above");
+            let (public, file) = credmgr_core::cold::generate_orphan_cold(new);
+            cold.bytes = file;
+            if let Some(node) = doc.nodes.get_mut(ORPHAN_ID) {
+                node.public_key = hex_encode(public.as_bytes());
+            }
+            new_orphan_public = Some(public);
+        }
+        if intent.is_bind() && doc.nodes.contains_key(ORPHAN_ID) {
+            let cold = plan
+                .resigned
+                .iter_mut()
+                .find(|r| r.kind == "orphan-cold-key")
+                .ok_or_else(|| {
+                    RotateRootError::Store(corrupt(
+                        self.paths.orphan_key(),
+                        "the orphan cold key did not open under the current root key, so the bind cannot \
+                         replace it; run `credmgr doctor`",
+                    ))
+                })?;
+            let (public, file) = credmgr_core::cold::generate_orphan_cold(new);
+            cold.bytes = file;
+            if let Some(node) = doc.nodes.get_mut(ORPHAN_ID) {
+                node.public_key = hex_encode(public.as_bytes());
+            }
+            new_orphan_public = Some(public);
+        }
+        // ADR-098: the Touch ID unlock wrap is re-sealed to the same Secure Enclave key, silently. If it
+        // cannot be (no helper here) the rotation refuses, changing nothing: a rotation that left it sealed
+        // to the old root key would make the next Touch ID unlock fail. ADR-148 §P1-1: nor is it re-sealed
+        // to a wrap whose tag does not verify under the old root key (a planted public point would receive
+        // the new root key); that refuses the rotation too.
+        match self.resealed_device_wrap(old, new) {
+            Ok(Some(bytes)) => plan.resigned.push(rotation::Resigned {
+                kind: "device-wrap",
+                id: "se".to_string(),
+                path: self.paths.root_wrap_se(),
+                bytes,
+            }),
+            Ok(None) => {}
+            Err(why) => {
+                return Err(RotateRootError::Store(
+                    credmgr_store::error::StoreError::Io {
+                        path: self.paths.root_wrap_se(),
+                        source: std::io::Error::new(std::io::ErrorKind::InvalidData, why),
+                    },
+                ))
+            }
+        }
         // A key file on disk for a node the registry does not name was not
         // re-wrapped; say so rather than leave it silently undecryptable.
         if let Ok(entries) = std::fs::read_dir(self.paths.keys_dir().join("nodes")) {
@@ -576,6 +900,56 @@ impl BrokerState {
             }
         }
 
+        // 5c. ADR-165 N5: a retained history slot's or removed entry's signed record names its envelope's
+        // digest; the rotation has just re-signed it under the new root (`plan.resigned`), and the envelope is
+        // re-sealed below, so the record takes the new digest in the same staged file. A record the plan
+        // skipped (it did not verify under the old root) stays as it was, still failing `credmgr verify`.
+        if let Some(rk) = &live_rekey {
+            for node in &rk.nodes {
+                for f in &node.files {
+                    let (Some(entry), kind) = (f.entry.as_deref(), f.kind) else {
+                        continue;
+                    };
+                    let (meta_path, plan_kind) = match (kind, f.generation) {
+                        (rekey_live_kinds::HISTORY, Some(g)) => (
+                            self.paths.entry_history_meta(&node.id, entry, g),
+                            "entry-history",
+                        ),
+                        (rekey_live_kinds::REMOVED, _) => (
+                            self.paths.removed_entry_meta(&node.id, entry),
+                            "removed-entry",
+                        ),
+                        _ => continue,
+                    };
+                    let Some(record) = plan
+                        .resigned
+                        .iter_mut()
+                        .find(|r| r.kind == plan_kind && r.path == meta_path)
+                    else {
+                        continue;
+                    };
+                    let resigned = if plan_kind == "entry-history" {
+                        credmgr_store::rotation_history::resign_bytes_with_sha256(
+                            new,
+                            &meta_path,
+                            &node.id,
+                            &record.bytes,
+                            &f.sha256,
+                        )
+                    } else {
+                        credmgr_store::entry_archive::resign_bytes_with_sha256(
+                            new,
+                            &meta_path,
+                            &record.bytes,
+                            &f.sha256,
+                        )
+                    }
+                    .map_err(RotateRootError::Store)?;
+                    record.bytes = resigned;
+                }
+            }
+        }
+
         // 6. Stage. Nothing live is touched until the commit record exists.
         let stage_err = RotateRootError::Store;
         let mut stage =
@@ -592,6 +966,21 @@ impl BrokerState {
             stage
                 .stage_vault_file(&resigned.path, &resigned.bytes)
                 .map_err(RotateRootError::Store)?;
+        }
+        // ADR-165 N5: every re-sealed envelope is one more staged file under the same commit record.
+        if let Some(rk) = &live_rekey {
+            for node in &rk.nodes {
+                for f in &node.files {
+                    stage
+                        .stage_vault_file(&f.path, &f.bytes)
+                        .map_err(RotateRootError::Store)?;
+                }
+                for (_, path, bytes, _) in &node.tray {
+                    stage
+                        .stage_vault_file(path, bytes)
+                        .map_err(RotateRootError::Store)?;
+                }
+            }
         }
         for (id, wrapped) in &wrapped_keys {
             stage
@@ -710,11 +1099,60 @@ impl BrokerState {
                 }
             }
         }
+        let rekeyed_ids: Vec<String> = live_rekey
+            .as_ref()
+            .map(rekey_live::LiveRekey::node_ids)
+            .unwrap_or_default();
         {
             let mut live = self.manifests.write().expect("manifests poisoned");
             for (id, body) in manifests {
-                live.entry(id).or_insert(body);
+                if rekeyed_ids.contains(&id) {
+                    // ADR-165 N5: new digests and a new generation.
+                    live.insert(id, body);
+                } else {
+                    live.entry(id).or_insert(body);
+                }
             }
+        }
+        // ADR-165 N5: the new public keys; the new private keys into the hot set where the old one was live (a
+        // node locked on its own keeps its zeroised slot, and `unlock_node` derives the new key from the new
+        // wrapped one); the tray's digests follow its re-sealed envelopes.
+        let mut files_resealed = 0usize;
+        if let Some(rk) = live_rekey {
+            files_resealed = rk.files_resealed();
+            // Read before the hot set is taken: `lock_node` takes the two the other way round.
+            let locked_nodes = self
+                .locked_nodes
+                .read()
+                .expect("locked_nodes poisoned")
+                .clone();
+            let mut hot = self.hot_keys.write().expect("hot keys poisoned");
+            let mut publics = self
+                .node_public_keys
+                .write()
+                .expect("node public keys poisoned");
+            let mut pending = self.pending.write().expect("pending poisoned");
+            for node in rk.nodes {
+                publics.insert(node.id.clone(), node.public);
+                if hot.contains_key(&node.id) && !locked_nodes.contains(&node.id) {
+                    hot.insert(
+                        node.id.clone(),
+                        crate::locked_key::LockedKey::from_secret(&node.private),
+                    );
+                }
+                if let Some(list) = pending.get_mut(&node.id) {
+                    for (entry, _, _, sha) in &node.tray {
+                        if let Some(p) = list.iter_mut().find(|p| &p.id == entry) {
+                            p.sha256.clone_from(sha);
+                        }
+                    }
+                }
+            }
+            plan.skipped.extend(rk.skipped);
+        }
+        let orphan_key_replaced = new_orphan_public.is_some();
+        if let Some(public) = new_orphan_public {
+            self.seed_public_key_only(ORPHAN_ID, public);
         }
         let vault_generation = doc.vault_generation;
         *self.registry_meta.write().expect("registry meta poisoned") = doc;
@@ -757,38 +1195,35 @@ impl BrokerState {
             // must not turn a completed, irreversible rotation into an error
             // that hides its recovery code.
             let event = audit::NewEvent {
-                actor: "system:maintenance.rotate_root".to_string(),
-                action: "maintenance.root_rotated".to_string(),
+                actor: audit_as.actor.to_string(),
+                action: audit_as.action.to_string(),
                 node_id: Some(credmgr_core::registry::GLOBAL_ID.to_string()),
                 entry_id: None,
                 decision: Some("allow".to_string()),
-                detail: Some(format!(
-                    "root key replaced: {} node keys re-wrapped, {} artefacts re-signed, {} left unsigned",
-                    wrapped_keys.len(),
-                    plan.resigned.len(),
-                    plan.skipped.len()
-                )),
+                detail: Some(if rekeyed_ids.is_empty() {
+                    format!(
+                        "root key replaced: {} node keys re-wrapped, {} artefacts re-signed, {} left unsigned",
+                        wrapped_keys.len(),
+                        plan.resigned.len(),
+                        plan.skipped.len()
+                    )
+                } else {
+                    format!(
+                        "root key replaced: {} node keys replaced, {} files re-sealed, {} artefacts re-signed, \
+                         {} left unsigned",
+                        rekeyed_ids.len(),
+                        files_resealed,
+                        plan.resigned.len(),
+                        plan.skipped.len()
+                    )
+                }),
                 generation: Some(vault_generation),
             };
             let month = audit::year_month_for(now);
-            let appended = audit::append(&self.paths, new, &month, event, now).is_ok();
-            if appended {
-                // The rotation left a month's tip unsigned because the month did
-                // not verify (a truncated or edited log). Appending to a month
-                // signs its tip over the log *as it now stands* — that is how
-                // `audit::append` has always worked, for every request — so the
-                // month the rotation's own record lands in verifies again under
-                // the new key, damage and all. Say so: "keeps failing
-                // verification" holds only for months nothing is appended to.
-                for skipped in plan
-                    .skipped
-                    .iter_mut()
-                    .filter(|s| s.kind == "audit-tip" && s.id == month)
-                {
-                    skipped.reason.push_str(CURRENT_MONTH_CAVEAT);
-                }
-            }
-            appended
+            // A month the rotation left unsigned (it did not verify) stays
+            // unsigned even when this record lands in it: since ADR-156 (K-9)
+            // `audit::append` signs a new tip only over a log its tip vouches for.
+            audit::append(&self.paths, new, &month, event, now).is_ok()
         };
 
         Ok(RotationOutcome {
@@ -800,6 +1235,10 @@ impl BrokerState {
             skipped: plan.skipped,
             completion_pending,
             audited,
+            machine_lock,
+            orphan_key_replaced,
+            nodes_rekeyed: (node_keys == NodeKeys::Replace).then_some(rekeyed_ids),
+            files_resealed,
         })
     }
 

@@ -438,6 +438,7 @@ and declares, for V2:
 | `v2-deny` | `cargo deny check` (licences, bans, advisories, sources) |
 | `v2-audit` | `cargo audit` |
 | `v2-isolation` | `cargo test -p credmgr-brokerd --test isolation --locked` |
+| `v2-airlock` | `bash scripts/airlock-check.sh` on the built `credmgrd`: A-1 binary scan and A-2 no-internet-socket check (`17_AIRLOCK_AND_LLM.md §1`, ADR-156). Not on push, like the endpoint matrix |
 | `v2-desktop-bridge` | `cargo test --locked` inside `apps/desktop/src-tauri` — the bridge's token-custody tests and drift guards, since 2026-09-24 (`ADR-062`). Tests only: it is not a dependency audit of that workspace (§7.3) |
 | `secrets` | both guard scripts in `--all` mode |
 | `semgrep` | `p/security-audit` and `p/secrets`, `--error` |

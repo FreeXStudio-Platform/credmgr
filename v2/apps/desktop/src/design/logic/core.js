@@ -1,11 +1,12 @@
 import React from "react";
 import { DCLogic } from "../../dc/runtime";
-import { createModel, session as sessionActions } from "../../vault/index";
+import { admin, createModel, session as sessionActions } from "../../vault/index";
 import { noticeMethods } from "./notice.js";
 import { sessionMethods, freshFirstRun, LOCK_PHRASE } from "./session.js";
 import { mainMethods } from "./main.js";
 import { inspectorMethods } from "./inspector.js";
 import { fieldsMethods } from "./fields.js";
+import { namesMethods } from "./names.js";
 import { searchMethods } from "./search.js";
 import { writeMethods } from "./write.js";
 import { settingsMethods } from "./settings.js";
@@ -14,6 +15,17 @@ import { graphMethods } from "./graph.js";
 import { extrasMethods } from "./extras.js";
 import { gatesMethods } from "./gates.js";
 import { helpMethods } from "./help.js";
+import { agentsMethods } from "./agents.js";
+import { confirmMethods } from "./confirm.js";
+import { switchboardMethods } from "./switchboard.js";
+import { historyMethods } from "./history.js";
+import { lifecycleMethods } from "./lifecycle.js";
+import { restoreMethods } from "./restore.js";
+import { finderMethods } from "./finder.js";
+import { auditReportMethods } from "./auditreport.js";
+import { moveMethods } from "./move.js";
+import { tidyMethods } from "./tidy.js";
+import { tagsMethods } from "./tags.js";
 
 /* The design's logic class, split into mixins (one file per screen area) so the wiring lanes edit disjoint files.
    This file keeps the constructor, the initial state, the lifecycle and renderVals().  See design-upstream/PROVENANCE.md. */
@@ -39,12 +51,12 @@ class Component extends DCLogic {
     hover:null, ctx:null, dialog:null, overlay:null, setSection:'security',
     reveals:{}, copied:{}, tick:0,
     addNode:'global', addName:'', addMode:'single', singleFields:[{label:'',value:''}], bulkText:'', splitSegs:false, typeOverrides:{}, entryTypeOverride:null, preview:null,
-    fieldMenu:null, fieldForm:null,
+    fieldMenu:null, fieldForm:null, aliasForm:null, importForm:null, addSimilar:null, expiryForm:null, moveForm:null, rotateForm:null, removeForm:null, removedUndo:null, restoreClash:null, restoreForm:null, nodeFilter:'', nodeFind:null, auditReport:null, tidy:null, entryTab:null, historyView:null,
     undo:null, undoDone:null, tf:null, tfUntil:0, tfNow:0, aprOpen:false, aprReq:'', aprPass:'', aprCode:'', aprResult:'', aprErr:'', aprBusy:false, aprWaiting:[],
     sealTarget:null, sealTyped:'',
     grant:{from:'global',to:'',caps:{list:true,read:true,reveal:false,notes:false},expiry:'30',reason:'',code:''},
     newNodeName:'', newNodeParent:'global',
-    touch:null, touchCode:'',
+    touch:null, touchCode:'', confirm:null, rc:null, loginAgent:null, loginAgentBusy:false, loginAgentOffAsk:false, machineLock:null, machineLockBusy:false, machineLockAsk:null,
     renamingNode:null, renameVal:'', recentNodes:[],
     fr:freshFirstRun(), gateFlow:null,
     newNodeFolders:[''],
@@ -98,16 +110,25 @@ class Component extends DCLogic {
     this.initGraph();
     this.buildEntryNodes(this.state.selected);
     this.startLoop();
-    // Hidden window: wipe every revealed value, and lock when auto-lock is on.  (The clipboard is NOT cleared here: clearing on an app
-    // switch would make pasting into the app you copied for impossible; the shell clears it after 30 s and on lock.)  Back in view:
-    // ask the broker whether the login survived.
+    // Hidden window: wipe every revealed value, and lock when auto-lock is on and the window was put away (minimised, or hidden with
+    // the app).  A page is also "hidden" when its window is only covered or sits on another display that is asleep or off; that wipes
+    // the values but does not lock (the idle auto-lock still runs).  (The clipboard is NOT cleared here: clearing on an app switch would
+    // make pasting into the app you copied for impossible; the shell clears it after 30 s and on lock.)  Back in view: ask the broker
+    // whether the login survived.
     this._visH=()=>{
       if(document.hidden){
         this.model.wipeSecrets(); if(Object.keys(this.state.reveals).length)this.setState({reveals:{}});
-        if(this.state.autoLockMins>0&&this.state.screen==='app')this.lockVault('Locked because the window was hidden.');
+        if(this.state.autoLockMins>0&&this.state.screen==='app')this.lockIfPutAway();
       } else { this.startLoop(); this.checkLiveness(); this.forceUpdate(); } // (the render also asks again for the open entry's unmasked values the hiding wiped)
     };
     document.addEventListener('visibilitychange',this._visH);
+    this.lockIfPutAway=async()=>{
+      await new Promise(r=>setTimeout(r,250)); // let a minimise or app-hide finish before the shell is asked
+      if(!document.hidden||this.state.screen!=='app'||!(this.state.autoLockMins>0))return;
+      const away=await admin.windowPutAway();
+      if(away===false)return; // covered, or on a display that went dark: values are wiped, the vault stays open
+      if(document.hidden&&this.state.screen==='app')this.lockVault('Locked because the window was hidden.');
+    };
     this._focusH=()=>this.checkLiveness();
     window.addEventListener('focus',this._focusH);
     this.startLiveness();
@@ -175,12 +196,14 @@ class Component extends DCLogic {
         return {reveals:rv,copied:cp,tick:st.tick+1};
       }); }
     },250);
+    this.initConfirm(); // ADR-150: the bridge asks this class's dialog when a secret needs a confirmation
     this.bootModel();
   }
   componentWillUnmount(){
     this._mounted=false;
     if(this._unsubModel)this._unsubModel();
     if(this._unsubAdmin)this._unsubAdmin();
+    this.stopConfirm();
     window.removeEventListener('keydown',this.keyH);
     document.removeEventListener('pointerdown',this._outsideH);document.removeEventListener('focusin',this._focusYieldH);
     document.removeEventListener('visibilitychange',this._visH);
@@ -188,7 +211,7 @@ class Component extends DCLogic {
     this.stopSessionWatchers();
     window.removeEventListener('load',this._fitH);
     ['mousemove','keydown','mousedown','touchstart'].forEach(ev=>window.removeEventListener(ev,this._activityH));
-    this.cpStopListeners();this.ghStop();clearInterval(this.timer);clearTimeout(this._donateTimer);clearTimeout(this._optT);clearTimeout(this._okT);clearTimeout(this._flT);clearTimeout(this._cpvT);clearTimeout(this._autoLockT);clearTimeout(this._clipT);clearInterval(this._aprT);clearInterval(this._tfI);clearTimeout(this._pnT);
+    this.cpStopListeners();this.ghStop();clearInterval(this.timer);clearTimeout(this._donateTimer);clearTimeout(this._optT);clearTimeout(this._okT);clearTimeout(this._flT);clearTimeout(this._cpvT);clearTimeout(this._autoLockT);clearTimeout(this._clipT);clearInterval(this._aprT);clearInterval(this._tfI);clearTimeout(this._pnT);clearTimeout(this._sbT);
     if(this._raf)cancelAnimationFrame(this._raf);if(this.ro)this.ro.disconnect();
   }
   componentDidUpdate(prevProps,prevState){
@@ -201,7 +224,7 @@ class Component extends DCLogic {
     if(!wasOpen&&isOpen){ this._preFocusEl=document.activeElement; setTimeout(()=>this.focusModalFirst(),30); }
     else if(wasOpen&&!isOpen){ const el=this._preFocusEl; this._preFocusEl=null; if(el&&document.contains(el)&&el.focus)el.focus(); }
   }
-  focusModalFirst(){ const panel=document.querySelector('.cm-modal-panel'); if(!panel)return; const f=panel.querySelector('input,button,select,textarea,[tabindex]'); if(f)f.focus(); }
+  focusModalFirst(){ const panel=document.querySelector('.cm-modal-panel'); if(!panel)return; const f=panel.querySelector('input,button,select,textarea,[tabindex]'); if(f){ f.focus(); f.setAttribute('data-focus-settled','true'); } }
   trapTab(e){
     const panel=document.querySelector('.cm-modal-panel'); if(!panel)return;
     const f=[...panel.querySelectorAll('input,button,select,textarea,a[href],[tabindex]')].filter(el=>!el.disabled&&el.offsetParent!==null);
@@ -257,6 +280,15 @@ class Component extends DCLogic {
       ...this.rvMain(c),
       ...this.rvInspector(c),
       ...this.rvFields(c),
+      ...this.rvNames(c),
+      ...this.rvHistory(c),
+      ...this.rvMove(c),
+      ...this.rvLifecycle(c),
+      ...this.rvRestore(c),
+      ...this.rvFinder(c),
+      ...this.rvAuditReport(c),
+      ...this.rvTidy(c),
+      ...this.rvTags(c),
       ...this.rvSearch(c),
       ...this.rvWrite(c),
       ...this.rvSettings(c),
@@ -264,10 +296,13 @@ class Component extends DCLogic {
       ...this.rvExtras(c),
       ...this.rvGates(c),
       ...this.rvHelp(c),
+      ...this.rvAgents(c),
+      ...this.rvConfirm(c),
+      ...this.rvSwitchboard(c),
     };
   }
 }
 
-Object.assign(Component.prototype, noticeMethods, sessionMethods, mainMethods, inspectorMethods, fieldsMethods, searchMethods, writeMethods, settingsMethods, gamesMethods, graphMethods, extrasMethods, gatesMethods, helpMethods);
+Object.assign(Component.prototype, noticeMethods, sessionMethods, mainMethods, inspectorMethods, fieldsMethods, searchMethods, writeMethods, settingsMethods, gamesMethods, graphMethods, extrasMethods, gatesMethods, helpMethods, agentsMethods, namesMethods, confirmMethods, switchboardMethods, historyMethods, moveMethods, tidyMethods, lifecycleMethods, restoreMethods, finderMethods, auditReportMethods, tagsMethods);
 
 export default Component;

@@ -31,7 +31,7 @@ test("rename sends the new label, the broker keeps it, and the node's id (what e
   await vaultWith(app, "Atlas");
   const menu = await ctxMenu(app, "Atlas");
   await menu.getByRole("button", { name: "Rename" }).click();
-  const input = page.locator(".cm-rail input");
+  const input = page.locator(".cm-rail li input");
   await expect(input).toHaveValue("Atlas");
   await input.fill("  Atlas Prod  ");
   await input.press("Enter");
@@ -44,8 +44,8 @@ test("rename sends the new label, the broker keeps it, and the node's id (what e
   // refused before any call: empty, and too long
   const again = await ctxMenu(app, "Atlas Prod");
   await again.getByRole("button", { name: "Rename" }).click();
-  await page.locator(".cm-rail input").fill("x".repeat(121));
-  await page.locator(".cm-rail input").press("Enter");
+  await page.locator(".cm-rail li input").fill("x".repeat(121));
+  await page.locator(".cm-rail li input").press("Enter");
   await expect(notice(app, "1 to 120 characters")).toBeVisible();
   expect(app.frames("node.update")).toHaveLength(1);
 });
@@ -157,7 +157,9 @@ test("Back up: the broker answers the NAMES of the archives it pruned and the li
   const { settings, answer } = await backUpNow(app);
   expect(Array.isArray(answer.pruned), `maintenance.backup answered pruned as ${JSON.stringify(answer.pruned)}`).toBe(true);
   expect(answer.pruned).toEqual([]); // a first backup removes none
-  expect(Object.keys(answer).sort()).toEqual(["path", "pruned", "retain"]);
+  expect(Object.keys(answer).sort()).toEqual(["complete", "outsideVaultFolder", "passphraseFileUnsealed", "path", "pruned", "retain"]) // `complete` since the backup lane (#45); the two ADR-165 flags since the machine lock (both false on an unbound vault);
+  expect(answer.outsideVaultFolder).toBe(false);
+  expect(answer.passphraseFileUnsealed).toBe(false);
   const line = (await settings.innerText()).match(/last backup this session:[^\n]*/)?.[0] ?? "";
   expect(line, "the line the person reads").toMatch(/· 0 older archives removed$/);
 });

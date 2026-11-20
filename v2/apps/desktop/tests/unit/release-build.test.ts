@@ -13,6 +13,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { bannedModule, RELEASE_BANNED_MODULES, RELEASE_BANNED_TEXT, RELEASE_BANS, REQUIRED_WIRE } from "../../scripts/dc/release-bans.mjs";
 
+// These tests spawn node/cargo subprocesses; 5 s is too short on a loaded machine (rc.2 gate runs at load 30-60).
+vi.setConfig({ testTimeout: 60_000 });
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const FONTS = [
   "inter-latin-400", "inter-latin-500", "inter-latin-600", "inter-latin-700", "inter-tight-latin-600", "inter-tight-latin-700",

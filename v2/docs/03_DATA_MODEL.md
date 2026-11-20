@@ -10,7 +10,7 @@ surface: repo
 last_reviewed: 2026-08-18
 ---
 
-<!-- artifact-hardened: NEEDS RE-HARDENING — rewritten to ultimate-destination state on
+<!-- artifact-hardened: NEEDS RE-HARDENING — edited 2026-11-06 for ADR-098 (Touch ID honesty pass). Earlier note: rewritten to ultimate-destination state on
      2026-08-18 (Session 21). The previous stamp (Approved With Known Risks @ d15a5c7,
      2026-08-04) attests a body this rewrite replaces, and had already drifted before it.
      Every type, field, file path and default below was re-read from v2/crates/** this pass.
@@ -103,12 +103,12 @@ does not have to renegotiate the layout.
 
 | § | Entity | Status | Evidence |
 |---|---|---|---|
-| 1 | Node | `partial` | type + invariants in `crates/core/src/registry.rs`; policy writable by `node.policy` and the label by `node.update` (ADR-071), a widening patch refused for want of presence; `privateNames` is stored and read by nothing; per-node 2FA policy is display-only |
+| 1 | Node | `partial` | type + invariants in `crates/core/src/registry.rs`; policy writable by `node.policy` and the label by `node.update` (ADR-071), a widening patch needs a presence proof (ADR-098; refused as `presence_required` with none); `privateNames` is stored and read by nothing; per-node 2FA policy is display-only |
 | 2 | Node registry | `built` | `crates/store/src/registry_file.rs`; rollback refused by I-20 |
 | 3 | Entry | `built` | `entry.create/create_batch/get/update/reveal/rotate/remove/restore/undo` and `field.add/update/remove/reorder` dispatch; a field document sealed as envelope version 2, legacy version-1 values read in place (ADR-078); `crates/core/src/fields.rs`, `field_doc.rs` (P-13…P-18), `field_model.rs` |
 | 4 | Note | `built` | `notes.read`/`notes.write` (ADR-072): sealed at `nodes/<id>/notes.env`, bound to `notesSha256`, gated on `notes`; `durable_vault.rs::a_note_is_sealed_capability_gated_digest_bound_and_survives_a_restart` |
 | 5 | Types | `built` | `crates/core/src/inference.rs`; P-11 proves inference never mutates a value; the user's overrides are stored in the document (ADR-078) |
-| 6 | Grant | `partial` | type, validation, `grant.list`/`grant.revoke` built; `grant.create` refuses for want of presence |
+| 6 | Grant | `built` (macOS) | type, validation, `grant.list`/`grant.revoke` built; `grant.create` runs after a presence proof (ADR-098) and refuses with `presence_required` without one |
 | 7 | On-disk envelope | `built` | `crates/core/src/envelope.rs`; P-1…P-5, P-16 (versions 1 and 2) |
 | 8 | Manifest | `built` | HMAC + cross-binding (I-19), the per-entry envelope digest (ADR-067) and `hasTotp` (ADR-078); `alpha6_golden.rs` pins the byte shape |
 | 9 | Audit log | `partial` | hash chain + tip sidecar + redaction built; retention and purge unbuilt |
@@ -134,7 +134,7 @@ the sealed envelope since ADR-067); and the
 display-only, and one is inert — the table at the end of this section says which is which.
 Since 2026-09-24 all six are writable by `node.policy`, a partial patch with a mandatory reason
 (ADR-071, `06_ACCESS_GRAPH.md §10.1`), except that a patch widening `siblingVisibility` or
-`descendantRead` answers `presence_required` and applies nothing; `node.update` renames a node
+`descendantRead` needs a presence proof (ADR-098) and otherwise answers `presence_required` and applies nothing; `node.update` renames a node
 (its `label`) and never touches its id.
 
 A node is the **boundary**. Everything else in this corpus follows from that: keys are
@@ -341,8 +341,9 @@ fallback (§4.3 is Windows Hello/DPAPI, not this), generalised to every platform
 A hardware-backed counter is still the target: `crates/keystore` already declares
 `read_counter`/`write_counter` on the
 `PlatformKeystore` trait so a Secure Enclave or TPM implementation can satisfy it without a
-format change — but `crates/keystore/src/` contains exactly one backend today
-(`software.rs`, Argon2id), so the hardware tier is **`planned`**, not degraded.
+format change — but the counter is still the software one: ADR-098's macOS Secure Enclave layer
+(`04 §5.3`) wraps the root key and signs presence, and does not hold the counter, so a hardware-backed counter
+(and any Windows or Linux tier) stays **`planned`**, not degraded.
 A registry whose generation is below the last seen value is refused at broker start with a
 named remedy (`04_CRYPTO_AND_KEYS.md §6`, `02_ARCHITECTURE.md §7`).
 
@@ -598,11 +599,11 @@ ADR-011 deleted outright.
 
 ## 6. Grant
 
-**`partial`.** The type, every validation rule below, `grant.list` and `grant.revoke` are
+**`built`** on macOS. The type, every validation rule below, `grant.list` and `grant.revoke` are
 built and covered by `crates/brokerd/tests/grant_ops.rs` and isolation tests I-5, I-6 and I-7.
-**`grant.create` validates in full and then refuses**, because creating a grant requires a
-presence attestation and no transport in this build can produce one — the same honest gap
-`node.reparent` and `audit.get` carry.
+**`grant.create` validates in full and then needs a presence proof** (ADR-098, `04 §5.3`): with a Touch ID proof
+from an enrolled Secure Enclave key it writes the grant; with none — no key enrolled, an agent or fixture token,
+any platform but macOS — it answers `presence_required` and writes nothing, as `node.reparent` and `audit.get` do.
 
 ```ts
 type Grant = {
@@ -636,14 +637,12 @@ type Grant = {
   with the endpoints swapped — the reading consistent with grants being human-drawn, symmetric
   edges on the graph (`06_ACCESS_GRAPH.md §1c`).
 
-**What `grant.create` will do when presence exists.** Every check above already runs, in
-order, against the live registry; the operation then returns `presence_required` rather than
-writing. When the native shell can attest presence (`16_CROSS_PLATFORM.md §3`), the same arm
-will mint the id, stamp `createdAt`, set `createdBy: 'human'`, append the grant to the
-registry and write it under the same signature as everything else — no new validation, no new
-gate. `lastUsedAt` will be stamped by `resolve()` on each allow that a grant was the deciding
-rule for, which is what makes the stale-grant sweep in `06_ACCESS_GRAPH.md §6` possible;
-nothing writes it today.
+**What `grant.create` does with a proof.** Every check above runs, in order, against the live registry; the
+operation then requires the presence proof (`16_CROSS_PLATFORM.md §3`). With it, the same arm mints the id,
+stamps `createdAt`, sets `createdBy: 'human'`, appends the grant to the registry and writes it under the same
+signature as everything else; without it, it returns `presence_required` rather than writing. `lastUsedAt` will be
+stamped by `resolve()` on each allow that a grant was the deciding rule for, which is what makes the stale-grant
+sweep in `06_ACCESS_GRAPH.md §6` possible; nothing writes it today.
 
 ---
 
@@ -853,8 +852,8 @@ everything in the log" are different statements; only the second is scoped.
 **Redaction is by origin, not by request.** An agent-origin caller receives
 `{id, timestamp, actor, action}` and nothing else — no node, no decision, no detail, no entry.
 A human-origin caller receives the full record. `audit.get`, the single-record unredacted
-read, requires presence and is therefore refused on every transport this build has, exactly
-like `grant.create` (§6).
+read, requires a presence proof (ADR-098): it runs for the owner after Touch ID and is refused with
+`presence_required` when no presence key is enrolled, exactly like `grant.create` (§6).
 
 **Retention — `planned`, and this document is the authority for the number.** Logs will be
 rotated monthly (the file name already is the rotation) and **kept 12 months**, after which a

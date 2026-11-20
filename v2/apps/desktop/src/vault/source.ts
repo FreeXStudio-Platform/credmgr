@@ -23,6 +23,21 @@ export interface AuthLite {
   initialized: boolean;
   /** ADR-090: agent requests waiting for a person, from `vault.status` (absent = none, or a source that cannot say). */
   pendingApprovals?: number;
+  /** ADR-098: unlocking with Touch ID is set up (absent = no, or a source that cannot say). */
+  touchIdUnlock?: boolean;
+  /** ADR-156: cross-node anomaly alarms the owner has not acknowledged, from `vault.status` (owner's login only; absent = none). */
+  anomaliesUnseen?: number;
+  /** ADR-163: this vault can be opened with its recovery code when the passphrase is forgotten (absent = no, or a source that cannot say). */
+  recoveryUnlock?: boolean;
+}
+
+/** ADR-163: what a recovery-code unlock gives back to the screen.  The new recovery code is shown once and never kept. */
+export interface RecoverOutcome {
+  recoveryCode: string;
+  /** The rotation committed but its last file moves wait for the next unlock: the vault stays locked, and the NEW passphrase opens it. */
+  completionPending: boolean;
+  /** ADR-165 review P1-4: the recovery could not seal the new passphrase file, so the machine lock is now OFF; why, in plain words. */
+  machineLockRemoved?: string;
 }
 
 /** What a lock could confirm.  This process holds no login afterwards whatever it says. */
@@ -60,7 +75,14 @@ export interface ModelSource {
   status(): Promise<AuthLite>;
   /** Rejects with `two_factor_required` when a gate is enrolled; then call {@link gateVerify}. */
   unlock(passphrase: string): Promise<AuthLite>;
+  /** ADR-098: unlock with Touch ID instead of the passphrase. The system asks for the fingerprint. */
+  unlockWithTouchId?(): Promise<AuthLite>;
   gateVerify(code: string): Promise<AuthLite>;
+  /**
+   * ADR-163: open a locked vault with the recovery code, set the new passphrase and get a new recovery code.  Rejects with
+   * `two_factor_required` when a second factor is enrolled and `secondFactor` is absent.  Optional: only the bridge has it.
+   */
+  recoverWithCode?(recoveryCode: string, newPassphrase: string, secondFactor?: string): Promise<RecoverOutcome>;
   /**
    * Always ends with this process holding no login, even if the broker could not be told, and never rejects: a failure is
    * reported as `{ confirmed: false, code }` so the model can say so.  (A source that returns nothing is read as confirmed.)

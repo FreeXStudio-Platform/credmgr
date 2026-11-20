@@ -40,17 +40,20 @@ test("the shim's command table agrees with commands.rs, ops.rs and bridge.ts", (
   assert.deepEqual(findings, [], `the shim has drifted from the Tauri shell:\n  - ${findings.join("\n  - ")}`);
 });
 
-test("the table is the size the shell says it is: 55 broker commands + 5 shell commands, 55 dispatched ops", () => {
+test("the table is the size the shell says it is: 111 broker commands + 18 shell commands, 111 dispatched ops", () => {
   // Pinned so that a lost row cannot hide behind a parser that quietly reads fewer rows on both sides.
-  // 55 = 8 hand-written + 47 generated (commands.rs asserts the same in its own unit test); the shell commands are
-  // entry_copy, copy_text, fields_preview, app_icon_set and capture_protection_set; entry_copy wraps entry.reveal, which entry_reveal already carries, so the shell
-  // adds no op; the typed client invokes every command once: 55 + 5.
-  assert.equal(BROKER_COMMANDS.length, 55);
-  assert.equal(SHELL_COMMANDS.length, 5);
-  assert.equal(rustSide().broker.length, 55);
-  assert.equal(rustSide().shell.length, 5);
-  assert.equal(brokerOps().length, 55);
-  assert.equal(invokes().length, 60);
+  // 111 = 11 hand-written + 100 generated (commands.rs asserts the same in its own unit test; 76 before ADR-155's eight settings
+  // commands, 84 before ADR-156's seven, then ADR-158's entry_move, ADR-161's vault_doctor_scan, ADR-163's hand-written
+  // vault_recover, ADR-164's four agent_token_* (issue and rotate hand-written, for the clipboard hand-over), ADR-165's three
+  // keystore_*, ADR-167's entry_tag_set, ADR-168's eight merge_* and ADR-169's vault_doctor_apply). The shell commands add no op:
+  // entry_copy wraps entry.reveal, which entry_reveal already carries, and the rest are local (window_state, ADR-156's three
+  // login_agent_* among them); the typed client invokes every command once: 111 + 18 (ADR-166 added backup_restore, local).
+  assert.equal(BROKER_COMMANDS.length, 111);
+  assert.equal(SHELL_COMMANDS.length, 18);
+  assert.equal(rustSide().broker.length, 111);
+  assert.equal(rustSide().shell.length, 18);
+  assert.equal(brokerOps().length, 111);
+  assert.equal(invokes().length, 129);
 });
 
 test("the shim's six app icons are the shell's six (src-tauri/src/icon.rs MARK_IDS)", async () => {

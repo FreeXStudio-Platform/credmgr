@@ -21,15 +21,15 @@
     </div>
     <div>
       <div class="t-mono-label" style="margin-bottom:8px">sealing</div>
-      <div class="t-body-sm">Removing a node never deletes it. "Seal" moves its entries to Orphaned, where names stay visible but the values cannot be opened from this app: that needs presence (Touch ID), which this beta cannot attest yet. A sealed node can be brought back within 7 days; Settings → Nodes offers Restore for nodes sealed since the app started.</div>
+      <div class="t-body-sm">Removing a node never deletes it. "Seal" moves its entries to Orphaned, where names stay visible but the values stay locked: opening one needs Touch ID (and a fresh second factor when one is on), every time. A sealed node can be brought back within 7 days; Settings → Nodes offers Restore for nodes sealed since the app started.</div>
     </div>
     <div>
       <div class="t-mono-label" style="margin-bottom:8px">grants</div>
-      <div class="t-body-sm">Isolation between nodes is the default — nothing can see into anything else until you say so. A grant names a from-node (the one that receives access), a to-node, which capabilities (read, reveal values, notes) and a reason. It shows as a dashed edge on the graph and can be revoked from Settings → Grants at any time, in either mode. Creating a grant needs presence (Touch ID), which this beta cannot attest yet, so the broker refuses it; grants made elsewhere are listed and can be revoked here.</div>
+      <div class="t-body-sm">Isolation between nodes is the default — nothing can see into anything else until you say so. A grant names a from-node (the one that receives access), a to-node, which capabilities (read, reveal values, notes) and a reason. It shows as a dashed edge on the graph and can be revoked from Settings → Grants at any time, in either mode. Creating a grant asks for Touch ID (set it up in Settings → Security); without it the broker refuses. Grants made elsewhere are listed and can be revoked here.</div>
     </div>
     <div>
       <div class="t-mono-label" style="margin-bottom:8px">notes</div>
-      <div class="t-body-sm">+ New note in the inspector adds an entry whose single value is free text — for anything that is not a credential. It is stored, masked until you reveal it, and audited like any other entry.</div>
+      <div class="t-body-sm">+ New note in the inspector adds an entry whose single value is free text — for anything that is not a credential. It is stored sealed and audited like any other entry. Its text is not masked: opening the note reads it in one audited read and shows it. To keep it hidden until you ask, use Edit and set the field to always hidden.</div>
     </div>
     <div>
       <div class="t-mono-label" style="margin-bottom:8px">writing while locked</div>

@@ -234,6 +234,23 @@ Base `2026-10-25/extracted/`, theirs `2026-10-26/extracted/`, ours `src/design/`
 
 Not taken: the helmet CSS line `input,textarea,select{... border:1px solid var(--faint)}` to `var(--mute)` (a contrast change; the owner's decision, left as it was); the design's Security-level row (our Settings has no such row); the design's `entryWarn` banner (ours already says the broker's `warnings` in the save notice); the design's dev-only `audit-suite.js` (not committed, as before).
 
+**Follow-up drop 2026-11-08** (`design-upstream/2026-11-08/`, received as two files: the app file and the design side's reply, which is not committed; `audit-probe.js` and `assets/` were not in the drop and are carried over byte for byte from `2026-10-26/`; same importer, `--no-name-map`, run into a scratch root and copied, so the generated table above is not overwritten): the design side's answer to `DESIGN_RELAY_2026-11-08.md`. Raw `CredMgr App.dc.html` 368956 bytes, sha256 `f8d8eb0382c5279211b9fac367ac5700aad6fd582da7df3ead46b65e93b1fcee` (no injected blocks); committed 368959 bytes, sha256 `1dd46c8336cefa3768c82e9e8fce571399f19564277c2b6312e44fa7e12efc49`. The sanitiser replaced 1 contactable address (a mock SMTP user on a non-reserved domain, now on `example.com`) and 1 mock server host (an RFC 1918 address, now `203.0.113.4`); no armour line, licence sentence, unlock code or project name. `audit-probe.js` 11381 bytes, sha256 `83c5548cbcd85ad638e335e2934cbaf0419483d3bf0f47459d1fe7245234c69b`, unchanged. Against 2026-10-26 the extracted template differs by 282 lines, the logic by 279, the helmet CSS by one line (`flex-direction:column` on the open narrow inspector), `props` unchanged.
+
+Checked by hand after the import: no real project name, private-key header, personal e-mail (the only non-reserved address is the public contact `Admin@freexstudio.com`, kept by the importer on purpose) or home path (only `~/...` mock paths and the agent clients' standard config paths).
+
+## Merged 2026-11-08 (ADR-151; what the three-way merge kept, took and changed)
+
+Base `2026-10-26/extracted/`, theirs `2026-11-08/extracted/`, ours `src/design/`. Almost all of the delta is the design side drawing the 36 relay items the window already ships (lock-screen fingerprint icon, Touch ID row, Confirm before showing secrets, screen-capture dialog, agents, import, aliases, seed hint and "show seed", boot error, Help search, licence copy), with mock logic behind it. None of that logic was taken; the window's own versions stay.
+
+| Item | What the design drew | What the window does now |
+|---|---|---|
+| Settings › Security (their Q1) | rows grouped under "unlock and confirmation", "on this screen", "who can read" | taken: the same three labels and order over the window's own rows; "who can read" holds only the Two-factor gate (the design's "Search inside saved values" row is a mock and is not added) |
+| "show seed" (their Q4) | proposed, not drawn: while the seed shows the button reads "hide seed" and hides only the seed | taken: `showTotpSeed` toggles, the label follows the seed (no `aria-pressed`: a toggle whose name changes must not also report a pressed state); the reveal's "hide" still takes both |
+| Operations, Rotate root key | "A new root key and a new recovery code. Asks for Touch ID." | taken (it said "Needs presence.") |
+| Settings nav, licence tab, inspector column flex, Help width, games hint | Agents second, no "Agents · LLM"; the Admin@freexstudio.com paragraph | already the window's; nothing to change |
+
+Not taken: the 17 sample Help topics (`help-data.js` stays generated, 163 topics); the "Restore from backup" Operations row and its passphrase dialog (restore is the offline `credmgr restore`, ADR-112, with no broker op); the placeholder op `maintenance.restore` and the snippet's bare `credmgr` command; the design's mock vault and mock flows. Open: their Q2 (rename the agent level "Sealed") is the operator's decision; their Q6 (a disabled Touch ID row without a Secure Enclave) is not built.
+
 ## The audit probe
 
 `audit-probe.js` is the design team's in-page audit (dead controls, controls with no accessible name, clipped text, squashed

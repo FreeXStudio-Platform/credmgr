@@ -108,6 +108,14 @@ pub enum OpError {
     PresenceRequired {
         operation: String,
     },
+    /// ADR-098: a presence proof was needed and was missing, expired, reused, or did not verify; or no
+    /// presence key is enrolled on this vault; or the Touch ID prompt was dismissed. `reason` is one
+    /// of `not_enrolled`, `expired`, `invalid`, `cancelled`, `locked_out`, `unavailable`. The caller
+    /// fixes it by enrolling, or by asking for a fresh challenge and touching the sensor again.
+    PresenceFailed {
+        operation: String,
+        reason: &'static str,
+    },
     /// A `node.restore` attempt after the 7-day recovery window
     /// (`04_CRYPTO_AND_KEYS.md §6`, F-4) — the archive and the node key are
     /// already destroyed; the only remaining path is presence + a fresh
@@ -176,6 +184,29 @@ pub enum OpError {
     /// never existed. Refused rather than resolved from the caller's cwd, so
     /// a dead login is an error its holder can see, never a silent demotion.
     SessionExpired,
+    /// ADR-150: the vault asks the owner's login to confirm a person is at the keyboard (Touch ID or the
+    /// vault passphrase, through `session.confirm`) before this value is shown — or before this change makes
+    /// that rule weaker. `mode` is `window` (one confirmation opens a trust window of `window_seconds`) or
+    /// `everyTime` (each request needs its own); `window_seconds` is 0 for a request that needs a fresh one.
+    ConfirmationRequired {
+        operation: String,
+        mode: &'static str,
+        window_seconds: u32,
+    },
+    /// ADR-165: the vault's passphrase wrap is bound to a device key (the machine lock) and this Mac cannot
+    /// open it — the key is missing (a new Mac, a reinstall, a wiped state directory), is a different key, is
+    /// unreadable, or the sealed file is damaged. The passphrase was **not** tried, so this is never
+    /// `wrong_passphrase` and never feeds the guessing back-off. `reason` is one of `device_key_missing`,
+    /// `device_key_mismatch`, `device_key_unreadable`, `sealed_wrap_damaged`, `device_key_unwritable`, or
+    /// `plain_wrap_while_bound` (review P0-1: this Mac recorded the vault as bound, the passphrase opened a plain
+    /// wrap, and the root key it gave does not open the vault — an older pre-bind wrap was put back; the passphrase
+    /// was right, so this does not feed the back-off either), or `backup_needs_device_key` (review N6:
+    /// `maintenance.backup` on an open bound vault whose device key went away since it was opened; the remedy
+    /// is to put the key back, or to open the vault with the recovery code, which makes a new key). Otherwise
+    /// the remedy is the recovery code, which does not depend on the device key.
+    MachineLockRefused {
+        reason: &'static str,
+    },
 }
 
 pub type OpResult = Result<Value, OpError>;
@@ -250,7 +281,18 @@ pub fn to_wire(id: &str, result: &OpResult) -> Value {
         }),
         Err(OpError::PresenceRequired { operation }) => json!({
             "id": id, "ok": false, "error": "presence_required", "operation": operation,
-            "message": "this operation requires native presence attestation, not available on this transport",
+            "message": "this operation needs a Touch ID check: ask for a challenge with presence.challenge, have the Secure Enclave sign it, and repeat the request with params.presence",
+        }),
+        Err(OpError::PresenceFailed { operation, reason }) => json!({
+            "id": id, "ok": false, "error": "presence_failed", "operation": operation, "reason": reason,
+            "message": match *reason {
+                "not_enrolled" => "no presence key is enrolled on this vault; enrol this Mac first (credmgr presence enrol)",
+                "expired" => "the presence challenge expired or was already used; ask for a new one",
+                "invalid" => "the presence signature did not verify",
+                "cancelled" => "the Touch ID prompt was dismissed or timed out",
+                "locked_out" => "Touch ID is locked out; unlock the Mac with its password first",
+                _ => "presence could not be checked on this Mac",
+            },
         }),
         Err(OpError::ArchiveExpired { node }) => json!({
             "id": id, "ok": false, "error": "archive_expired", "node": node,
@@ -301,6 +343,31 @@ pub fn to_wire(id: &str, result: &OpResult) -> Value {
             "id": id, "ok": false, "error": "recovery_code_mismatch",
             "message": "the retyped recovery code did not match",
         }),
+        Err(OpError::ConfirmationRequired {
+            operation,
+            mode,
+            window_seconds,
+        }) => json!({
+            "id": id, "ok": false, "error": "confirmation_required", "operation": operation,
+            "mode": mode, "windowSeconds": window_seconds,
+            "message": "this vault asks you to confirm it is you before a secret is shown (or before this setting is weakened)",
+            "remedy": "confirm with session.confirm - Touch ID, or the vault passphrase - then repeat the request",
+        }),
+        Err(OpError::MachineLockRefused { reason }) => json!({
+            "id": id, "ok": false, "error": "machine_lock_refused", "reason": reason,
+            "message": match *reason {
+                "device_key_missing" => "this vault is locked to a Mac, and this Mac does not have its device key (a new Mac, a reinstall, or a removed state folder); the passphrase alone cannot open it here",
+                "device_key_mismatch" => "this vault is locked to another Mac's device key; the passphrase alone cannot open it here",
+                "device_key_unreadable" => "this Mac's device key file cannot be read, so the passphrase cannot open this machine-locked vault",
+                "sealed_wrap_damaged" => "the machine-locked passphrase file (keys/root.wrap.pass) is damaged",
+                "backup_needs_device_key" => "this vault is locked to this Mac, and this Mac's device key went away (or changed) after the vault was opened, so a backup cannot include a passphrase file that opens it; nothing was written",
+                _ => "the machine lock could not be used on this Mac",
+            },
+            "remedy": match *reason {
+                "backup_needs_device_key" => "put the device key file back where it was (machine/lock.key in CredMgr's state folder) and back up again; or lock the vault, open it with your recovery code (credmgr recover, or \"Forgot passphrase? Use recovery code\" on the Lock screen), which makes a new device key and a new recovery code, then back up",
+                _ => "open the vault with your recovery code (credmgr recover, or \"Forgot passphrase? Use recovery code\" on the Lock screen); it does not need the device key, and it sets a new passphrase that works on this Mac",
+            },
+        }),
         Err(OpError::SessionExpired) => json!({
             "id": id, "ok": false, "error": "session_expired",
             "message": "this login is no longer valid (it idled out, the vault locked, or it never existed) — unlock again",
@@ -315,4 +382,37 @@ pub enum WireOrigin {
     Cli,
     Agent,
     Native,
+}
+
+/// K-23 (b), ADR-156: overwrite every string inside `value` (passphrases,
+/// values, tokens a request carried) before it is dropped. Object keys are
+/// names, not secrets, and are left as they are.
+pub fn wipe_strings(value: &mut Value) {
+    use zeroize::Zeroize;
+    match value {
+        Value::String(s) => s.zeroize(),
+        Value::Array(items) => items.iter_mut().for_each(wipe_strings),
+        Value::Object(map) => map.values_mut().for_each(wipe_strings),
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod wipe_tests {
+    use super::*;
+
+    #[test]
+    fn every_string_in_a_request_is_wiped_and_the_shape_is_kept() {
+        let mut params = json!({
+            "node": "acme",
+            "passphrase": "correct horse battery staple",
+            "entries": [{ "value": "s3cret" }, 7, null, true],
+        });
+        wipe_strings(&mut params);
+        assert!(!params.to_string().contains("s3cret"));
+        assert!(!params.to_string().contains("horse"));
+        assert_eq!(params["passphrase"], "");
+        assert_eq!(params["entries"][1], 7);
+        assert!(params.get("node").is_some());
+    }
 }

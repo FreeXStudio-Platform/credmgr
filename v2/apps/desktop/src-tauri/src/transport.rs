@@ -71,6 +71,20 @@ pub fn call_audited(
     token: Option<&str>,
     params: Value,
 ) -> Result<(Value, Option<String>), BridgeError> {
+    // ADR-159: the diagnostic log sees the op's bridge label, the outcome's static code and the time.
+    let started = std::time::Instant::now();
+    let result = call_audited_inner(socket, op, token, params);
+    crate::diag_log::call(op, result.as_ref().map(|_| ()), started.elapsed());
+    result
+}
+
+#[cfg(unix)]
+fn call_audited_inner(
+    socket: &std::path::Path,
+    op: &str,
+    token: Option<&str>,
+    params: Value,
+) -> Result<(Value, Option<String>), BridgeError> {
     use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixStream;
 

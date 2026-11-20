@@ -140,10 +140,19 @@ fn random_graph(rng: &mut Xorshift64) -> Registry {
             1 => Some(NOW - 1_000), // already expired
             _ => Some(NOW + 1_000), // future
         };
+        // ADR-172: one grant in three names a single entry (the queried one or another), so the
+        // entry-level rules — the implied `list` of that entry only, no mirror — are fuzzed too.
+        let to = match rng.range(3) {
+            0 => GrantTarget::Entry {
+                node_id: to_id,
+                entry_id: if rng.bool() { "e_fuzz" } else { "e_other" }.to_string(),
+            },
+            _ => GrantTarget::Node { node_id: to_id },
+        };
         registry.grants.push(Grant {
             id: format!("g{i}"),
             from,
-            to: GrantTarget::Node { node_id: to_id },
+            to,
             direction,
             scope,
             expires_at,
@@ -201,7 +210,13 @@ fn independent_matching_grant(
                 return false;
             }
         }
-        if !grant.scope.contains(&capability) {
+        let is_entry_grant = matches!(grant.to, GrantTarget::Entry { .. });
+        // ADR-172, re-derived: an entry grant carrying read or reveal also lists that entry.
+        let lists_its_entry = is_entry_grant
+            && capability == Capability::List
+            && (grant.scope.contains(&Capability::Read)
+                || grant.scope.contains(&Capability::Reveal));
+        if !grant.scope.contains(&capability) && !lists_its_entry {
             return false;
         }
         let target_matches = match &grant.to {
@@ -216,7 +231,8 @@ fn independent_matching_grant(
         if subject_on_from_side && target_matches {
             return true;
         }
-        if grant.direction == Direction::Mutual {
+        // ADR-172, re-derived: an entry grant is one-way; its mirror opens nothing.
+        if grant.direction == Direction::Mutual && !is_entry_grant {
             let to_id = grant.to.node_id();
             let subject_on_to_side =
                 to_id == subject || is_ancestor_independent(registry, to_id, subject);

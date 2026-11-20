@@ -7,9 +7,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { isPublicTree, loadCommittedProbe, recordedProbeSha, resolveProbe, snapshotDirs } from "../../scripts/verify-design-audit.mjs";
+
+// These tests spawn node/cargo subprocesses; 5 s is too short on a loaded machine (rc.2 gate runs at load 30-60).
+vi.setConfig({ testTimeout: 60_000 });
 
 const ROOT = resolve(__dirname, "../..");
 const SCRIPT = join(ROOT, "scripts/verify-design-audit.mjs");

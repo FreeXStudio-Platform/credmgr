@@ -15,6 +15,11 @@ import { errorCode, session as sessionActions } from "../../vault/index";
 export const LOCK_CODE = 2;
 export const LOCK_PHRASE = 3;
 export const LOCK_RECOVER = 4;
+/** ADR-163, "Forgot passphrase?": the recovery code alone opens the vault and sets a new passphrase (5), then the NEW recovery code is shown once (6). */
+export const LOCK_FORGOT = 5;
+export const LOCK_FORGOT_DONE = 6;
+/** What the platform calls its quick unlock.  macOS is the only shell today; Windows Hello, Android biometrics and Face ID join here. */
+function biometricName(){ return typeof navigator!=='undefined'&&/Mac/i.test(navigator.platform||navigator.userAgent||'')?'Touch ID':'device unlock'; }
 
 const FR_STEPS = 4;
 /** The GUI asks for more than the CLI does (which takes any non-empty passphrase): a vault passphrase of one letter is a mistake. Four is the floor; eight or more is recommended, never required. */
@@ -31,6 +36,13 @@ export const freshFirstRun = () => ({
   names: ['', '', ''],
 });
 
+/** The "Forgot passphrase?" steps' state (ADR-163).  Every value in it is a secret: the old recovery code, the new passphrase twice, the second
+ *  factor, and the NEW recovery code, which is on screen once and gone with the next step, the next lock or the app opening. */
+export const freshForgot = () => ({
+  forgotCode: '', forgotPass: '', forgotRepeat: '', forgotFactor: '', forgotNeedFactor: false,
+  forgotNewCode: '', forgotSaved: false, forgotPending: false, forgotLockRemoved: '',
+});
+
 /** What a lock must forget: open dialogs and menus, everything half-typed in them, the selection, the search, revealed values. */
 export const freshEphemeral = () => ({
   reveals: {}, copied: {}, ctx: null, dialog: null, overlay: null, hover: null, openEntry: null,
@@ -38,6 +50,8 @@ export const freshEphemeral = () => ({
   touch: null, touchCode: '', vaultLocked: false, notice: null,
   selected: 'global', recentNodes: [], renamingNode: null, renameVal: '',
   addNode: 'global', addName: '', addMode: 'single', singleFields: [{ label: '', value: '' }], bulkText: '', splitSegs: false, typeOverrides: {}, entryTypeOverride: null, preview: null, previewBusy: false,
+  aliasForm: null, importForm: null, addSimilar: null, // the alias dialog's list, the .env import (a pasted text and its values are secrets), the name hint
+  rotateForm: null, removeForm: null, removedUndo: null, restoreClash: null, restoreForm: null, nodeFilter: '', nodeFind: null, auditReport: null, // Rotate's typed value and the backup passphrase are secrets; the removed-entry Undo, the node filter, Find in this node and the audit report are this login's
   fieldMenu: null, fieldForm: null, // the field menu, and the add / edit / remove dialog's form (a half-typed value is a secret)
   undo: null, undoDone: null, tf: null, tfUntil: 0, tfNow: 0, // the Undo offer (an audit id of this login), and the second-factor dialog
   aprOpen: false, aprReq: '', aprPass: '', aprCode: '', aprResult: '', aprErr: '', aprBusy: false, aprWaiting: [], // the locked-approval panel: a typed passphrase and code die with the screen
@@ -45,6 +59,9 @@ export const freshEphemeral = () => ({
   gateFlow: null, // the Settings second-factor dialog: its authenticator secret, QR and recovery codes die with the session
   donateToastOpen: false, donateView: 'main', donateCode: '', donateCodeErr: false, donateCodeOk: false, donateNoCrypto: false, donateMs: null, flourishOn: false, // the reminder and the unlock flourish never outlive a session
   gameScreen: 'library', gameId: 'credpong', gameLast: null,
+  sbRequests: [], sbBusy: null, // agents' waiting setting requests (ADR-155): read again after the next unlock
+  ...freshForgot(), // ADR-163: the recovery-code unlock's typed secrets and the new code it showed
+  atForm: null, atIssued: null, atList: null, atError: null, atRevoking: null, // agent tokens (ADR-164): the dialog and the list die with the session
 });
 
 export const sessionMethods = {
@@ -98,6 +115,7 @@ export const sessionMethods = {
     this.dropLocalSecrets();
     this.setState(st=>({ ...freshEphemeral(), grant:{...st.grant,from:'global',to:'',reason:'',code:''}, fr:freshFirstRun(),
       screen:'brokerdown', passInput:'', twofa:'', recoverPass:'', recoverCode:'', fieldErrors:{}, lockNote:'', lockRetryAt:0, lockBusy:false }));
+    this.loadLoginAgent(); // ADR-156: a broker that is not running can be set to start at login from here (local to the shell, no broker call)
   },
 
   /**
@@ -136,6 +154,7 @@ export const sessionMethods = {
     try{ await this.model.checkSession(); }
     catch(e){ this.routeError(e,{op:'vault.status'}); }
     finally{ this._probing=false; }
+    this.pollSettingRequests(); // agents' setting requests (ADR-155) ride the same cadence; it asks only while the vault is still open
   },
 
   /** The shell locked the vault itself (sleep, screen lock) and told us.  It already dropped the login, so there is nothing to lock again. */
@@ -145,8 +164,8 @@ export const sessionMethods = {
     this.model.clear();
   },
   /** The shell's other signal: the window is no longer the one the user is looking at.  Hide what was revealed; the vault stays open. */
-  onShellWindowInactive(){
-    this.model.wipeSecrets();
+  onShellWindowInactive(reason){
+    if(!this.model.windowInactive(reason))return; // `blurred` while a Touch ID prompt of this page is up or just answered: the user is at the sensor (ADR-149)
     if(Object.keys(this.state.reveals).length)this.setState({reveals:{}});
   },
   async startShellListener(){
@@ -154,7 +173,7 @@ export const sessionMethods = {
     const stops=[], failed=[];
     const subscribe=async(name,sub)=>{ try{ stops.push(await sub()); }catch(e){ failed.push(name); } };
     await subscribe('locked',()=>sessionActions.onShellLocked((reason)=>this.onShellLocked(reason)));
-    await subscribe('inactive',()=>sessionActions.onShellWindowInactive(()=>this.onShellWindowInactive()));
+    await subscribe('inactive',()=>sessionActions.onShellWindowInactive((reason)=>this.onShellWindowInactive(reason)));
     const stopAll=()=>stops.forEach((stop)=>stop());
     if(this._mounted)this._unlistenShell=stopAll; else stopAll();
     if(failed.includes('locked'))this.notify('warn','Could not subscribe to system lock events. The vault still locks when the Mac sleeps; this window notices within 30 seconds.');
@@ -173,8 +192,9 @@ export const sessionMethods = {
     clearTimeout(this._retryT);
     this._frPass='';
     const flourishOn=opts&&opts.unlocked?this.onUnlocked():false;
-    this.setState({flourishOn,donateToastOpen:false,donateMs:null,donateView:'main',screen:'app',lockStep:LOCK_PHRASE,passInput:'',twofa:'',recoverPass:'',recoverCode:'',fieldErrors:{},lockNote:'',lockRetryAt:0,lockBusy:false,fr:freshFirstRun(),pendingBanner:(this.vault.pending||[]).length>0});
+    this.setState({...freshForgot(),flourishOn,donateToastOpen:false,donateMs:null,donateView:'main',screen:'app',lockStep:LOCK_PHRASE,passInput:'',twofa:'',recoverPass:'',recoverCode:'',fieldErrors:{},lockNote:'',lockRetryAt:0,lockBusy:false,fr:freshFirstRun(),pendingBanner:(this.vault.pending||[]).length>0});
     this.armAutoLock();
+    this.syncSwitchboard(true); // ADR-155: the broker's app settings win over this Mac's cache, and agents' waiting requests are shown
   },
   retryActive(){ return (this.state.lockRetryAt||0)>Date.now(); },
   /** After a refusal the field is empty and the user is about to retype: put the caret back in the first field of the Lock screen. */
@@ -188,6 +208,18 @@ export const sessionMethods = {
     this.setState({passInput:'',fieldErrors:{},lockNote:'',aprResult:'',lockBusy:true});
     try{ await this.model.unlock(pass); this.unlockApp({unlocked:true}); }
     catch(e){ this.routeError(e,{op:'vault.unlock',field:'passphrase',inlineRendered:true}); this.refocusLock(); }
+    finally{ this._unlocking=false; this.setState({lockBusy:false}); }
+  },
+  /** ADR-098: unlock with Touch ID.  The system shows the fingerprint prompt; a dismissed prompt is not an error worth a message. */
+  async doUnlockTouch(){
+    if(this._unlocking||this._locking||this.retryActive())return;
+    this._unlocking=true;
+    this.setState({fieldErrors:{},lockNote:'',aprResult:'',lockBusy:true});
+    try{ await this.model.unlockWithTouchId(); this.unlockApp({unlocked:true}); }
+    catch(e){
+      if(e&&e.code==='presence_cancelled'){ this.refocusLock(); }
+      else{ this.routeError(e,{op:'vault.unlock',field:'passphrase',inlineRendered:true}); this.refocusLock(); }
+    }
     finally{ this._unlocking=false; this.setState({lockBusy:false}); }
   },
   /** Second-factor step: the 6-digit code (or one of the gate's recovery codes) after `two_factor_required`. */
@@ -217,6 +249,51 @@ export const sessionMethods = {
     }
     catch(e){ this.routeError(e,{op:'vault.gate_recover',field:'recovery',inlineRendered:true}); this.refocusLock(); }
     finally{ this._unlocking=false; this.setState({lockBusy:false}); }
+  },
+  /**
+   * ADR-163, "Forgot passphrase?": the recovery code alone opens the vault, the new passphrase replaces the forgotten one, and a NEW
+   * recovery code comes back, shown once on the next step.  The broker still asks for an enrolled second factor (`two_factor_required`):
+   * the code and the new passphrase stay typed and the factor's field appears, so the factor is the only thing left to give.
+   */
+  async doForgot(){
+    const s=this.state, code=(s.forgotCode||'').trim(), pass=s.forgotPass||'', factor=(s.forgotFactor||'').trim();
+    if(!code||pass.length<PASSPHRASE_MIN||pass!==s.forgotRepeat||(s.forgotNeedFactor&&!factor))return;
+    if(this._unlocking||this._locking||this.retryActive())return;
+    this._unlocking=true;
+    this.setState({forgotFactor:'',fieldErrors:{},lockNote:'',lockBusy:true});
+    try{
+      const r=await this.model.recoverWithCode(code,pass,s.forgotNeedFactor?factor:undefined);
+      // The old code, the new passphrase and the factor are spent: they leave state here.  Only the new code stays, for one step.
+      this.setState({...freshForgot(),lockStep:LOCK_FORGOT_DONE,forgotNewCode:r.recoveryCode,forgotPending:!!r.completionPending,forgotLockRemoved:r.machineLockRemoved||''});
+    }catch(e){
+      const c=errorCode(e);
+      if(c==='two_factor_required'){ this.setState({forgotNeedFactor:true}); this.refocusLock(); return; }
+      if(c==='recovery_code_mismatch')this.setState({forgotCode:''}); // a wrong code is retyped; the new passphrase need not be
+      this.routeError(e,{op:'vault.recover',field:'forgot',inlineRendered:true});
+      this.refocusLock();
+    }
+    finally{ this._unlocking=false; this.setState({lockBusy:false}); }
+  },
+  /** The new recovery code was shown (and, by the tick, saved): open the app, or, when the rotation's last moves wait, go to the passphrase step. */
+  finishForgot(){
+    const s=this.state;
+    if(s.lockStep!==LOCK_FORGOT_DONE||!s.forgotSaved)return;
+    if(s.forgotPending||this.model.status!=='unlocked'){
+      this.setState({...freshForgot(),lockStep:LOCK_PHRASE,fieldErrors:{},lockNote:'The passphrase was changed. Unlock with the new passphrase to finish.'+(s.forgotLockRemoved?' The machine lock is off: turn it on again in Settings, Security.':'')});
+      return;
+    }
+    const lockRemoved=s.forgotLockRemoved;
+    this.unlockApp({unlocked:true});
+    this.notify('success','Passphrase replaced. The old recovery code and the old passphrase no longer open the vault.');
+    if(lockRemoved)this.notify('warn','The machine lock is off: the recovery could not seal the new passphrase file to this Mac. Turn it on again in Settings, Security.');
+  },
+  /** "Forgot passphrase?" on the passphrase step: the recovery-code form, or, on a vault with no recovery wrap yet, why there is none. */
+  gotoForgot(){
+    if(!(this.model&&this.model.recoveryUnlock)){
+      this.setState({lockNote:'This vault cannot be opened with its recovery code yet. That is set up the next time the passphrase is changed (Settings, Security, Change passphrase, or credmgr passphrase).'});
+      return;
+    }
+    this.setState({...freshForgot(),lockStep:LOCK_FORGOT,passInput:'',twofa:'',recoverPass:'',recoverCode:'',fieldErrors:{},lockNote:''});
   },
   /** A `rate_limited` answer: keep the buttons off until the broker's wait is over, then clear the message. */
   holdUnlock(seconds){
@@ -327,7 +404,9 @@ export const sessionMethods = {
     const frNextDisabled=fr.busy||(step===1&&!passOk)||(step===3&&(enrol==='loading'||enrol==='idle'||(enrol==='qr'&&!/^\d{6}$/.test(fr.totp||''))));
     const frErrField=step===1?fe.frPass:step===2?fe.frRecovery:step===3?fe.frTotp:fe.frNames;
     const enter=(fn)=>(ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); fn(); } };
-    const onCodeStep=s.lockStep===LOCK_CODE, onRecoverStep=s.lockStep===LOCK_RECOVER;
+    const onCodeStep=s.lockStep===LOCK_CODE, onRecoverStep=s.lockStep===LOCK_RECOVER, onForgotStep=s.lockStep===LOCK_FORGOT, onForgotDone=s.lockStep===LOCK_FORGOT_DONE;
+    const forgotPass=s.forgotPass||'', forgotRepeat=s.forgotRepeat||'';
+    const forgotMismatch=!!forgotRepeat&&forgotPass!==forgotRepeat;
     return {
       pendingChipShow:pendN>0&&s.screen==='app',
       pendingChipLabel:pendN+' held',
@@ -347,7 +426,7 @@ export const sessionMethods = {
       isLockScreen:s.screen==='lock',
       lockNoteShow:!!s.lockNote,
       lockNote:s.lockNote||'',
-      lockStepPass:!onCodeStep&&!onRecoverStep,
+      lockStepPass:!onCodeStep&&!onRecoverStep&&!onForgotStep&&!onForgotDone,
       lockStepCode:onCodeStep,
       lockStepRecover:onRecoverStep,
       passInput:s.passInput||'',
@@ -356,6 +435,14 @@ export const sessionMethods = {
       passDisabled:!(s.passInput||'').trim()||!!s.lockBusy||!!s.lockWait||retryOn,
       lockBusyLabel:s.lockBusy?'Unlocking…':s.lockWait?'Locking…':'Unlock',
       submitPass:()=>this.doUnlock(),
+      // The identity icon sits beside the passphrase field whether or not it is set up, so the way in is always visible.  Not set up:
+      // it looks dimmed and a press says how to turn it on.  The glyph is a fingerprint today; Face ID and the Windows and Android
+      // equivalents change `biometricLabel` and the glyph here, nothing else.
+      biometricReady:!!(this.model&&this.model.touchIdUnlock)?'true':'false',
+      biometricLabel:(this.model&&this.model.touchIdUnlock)?'Unlock with '+biometricName():biometricName()+' is not set up yet',
+      biometricStyle:(this.model&&this.model.touchIdUnlock)?'':'opacity:.45;',
+      submitTouch:()=>{ if(this.model&&this.model.touchIdUnlock)this.doUnlockTouch(); else this.setState({lockNote:biometricName()+' is not set up yet. Unlock with your passphrase, then open Settings, Security, Set up '+biometricName()+'.'}); },
+      touchDisabled:!!s.lockBusy||!!s.lockWait||retryOn,
       lockErrPass:fe.passphrase||fe._||'',
       twofaInput:s.twofa||'',
       onTwofa:(ev)=>{
@@ -368,7 +455,7 @@ export const sessionMethods = {
       submitTwofa:()=>this.doGateVerify((this.state.twofa||'').trim()),
       twofaDisabled:(s.twofa||'').trim().length<6||!!s.lockBusy||!!s.lockWait||retryOn,
       lockErrCode:fe.code||fe._||'',
-      gotoPassphrase:()=>this.setState({lockStep:LOCK_PHRASE,passInput:'',twofa:'',recoverPass:'',recoverCode:'',fieldErrors:{}}),
+      gotoPassphrase:()=>this.setState({...freshForgot(),lockStep:LOCK_PHRASE,passInput:'',twofa:'',recoverPass:'',recoverCode:'',fieldErrors:{}}),
       gotoRecover:()=>this.setState({lockStep:LOCK_RECOVER,twofa:'',recoverPass:'',recoverCode:'',fieldErrors:{}}),
       recoverPass:s.recoverPass||'',
       onRecoverPass:(ev)=>this.setState({recoverPass:ev.target.value}),
@@ -378,6 +465,38 @@ export const sessionMethods = {
       submitRecover:()=>this.doRecover(),
       recoverDisabled:!(s.recoverPass||'')||!(s.recoverCode||'').trim()||!!s.lockBusy||!!s.lockWait||retryOn,
       lockErrRecover:fe.recovery||fe.passphrase||fe._||'',
+      // ── ADR-163: "Forgot passphrase?" — the recovery code alone, a new passphrase, then the new code shown once
+      gotoForgot:()=>this.gotoForgot(),
+      lockStepForgot:onForgotStep,
+      lockStepForgotDone:onForgotDone,
+      forgotCode:s.forgotCode||'',
+      onForgotCode:(ev)=>this.setState({forgotCode:ev.target.value}),
+      forgotPass,
+      onForgotPass:(ev)=>this.setState({forgotPass:ev.target.value}),
+      forgotRepeat,
+      onForgotRepeat:(ev)=>this.setState({forgotRepeat:ev.target.value}),
+      onForgotKey:enter(()=>this.doForgot()),
+      forgotShort:forgotPass.length>0&&forgotPass.length<PASSPHRASE_MIN,
+      forgotMismatch,
+      forgotNeedFactor:!!s.forgotNeedFactor,
+      forgotFactor:s.forgotFactor||'',
+      onForgotFactor:(ev)=>this.setState({forgotFactor:ev.target.value.replace(/[^0-9A-Za-z-]/g,'').slice(0,48)}),
+      submitForgot:()=>this.doForgot(),
+      forgotDisabled:!(s.forgotCode||'').trim()||forgotPass.length<PASSPHRASE_MIN||forgotPass!==forgotRepeat||(!!s.forgotNeedFactor&&(s.forgotFactor||'').trim().length<6)||!!s.lockBusy||!!s.lockWait||retryOn,
+      forgotLabel:s.lockBusy?'Opening…':'Set the new passphrase and unlock',
+      lockErrForgot:fe.forgot||fe._||'',
+      forgotNewCode:s.forgotNewCode||'',
+      forgotDoneText:s.forgotPending
+        ?'The new passphrase is set, but the vault could not finish opening; unlock it with the new passphrase. This is your new recovery code. It is shown once: write it down and keep it apart from the passphrase. The old one no longer works.'
+        :'The new passphrase is set. This is your new recovery code. It is shown once: write it down and keep it apart from the passphrase. The old one no longer works.',
+      // ADR-165 review P1-4: a recovery that could not seal the new passphrase file turned the machine lock OFF; said here, before the app opens.
+      forgotLockRemovedShow:!!s.forgotLockRemoved,
+      forgotLockRemovedText:s.forgotLockRemoved?'The machine lock is OFF now: '+String(s.forgotLockRemoved)+'. A copy of the vault folder opens with the passphrase alone again. Turn it on again in Settings, Security, once the cause is fixed.':'',
+      forgotSaved:!!s.forgotSaved,
+      onForgotSaved:(ev)=>this.setState({forgotSaved:ev.target.checked}),
+      finishForgot:()=>this.finishForgot(),
+      forgotFinishDisabled:!s.forgotSaved,
+      forgotFinishLabel:s.forgotPending?'Go to unlock':'Open the vault',
       // ── First run
       isFirstRun:s.screen==='firstrun',
       isApp:s.screen==='app',
@@ -443,7 +562,7 @@ export const sessionMethods = {
         {label:'Help',kbd:'',go:()=>this.setState({dialog:'help',vaultMenu:false})},
         {label:'About CredMgr',kbd:'',go:()=>this.setState({dialog:'about',vaultMenu:false})}
       ],
-      openSettings:()=>{ this.setState({overlay:'settings',vaultMenu:false}); if(this.state.setSection==='audit')this.loadAudit(); }, // Settings reopens on the last section; the audit list is dropped on lock, so read it again
+      openSettings:()=>{ this.setState({overlay:'settings',vaultMenu:false}); if(this.state.setSection==='audit')this.loadAudit(); if(this.state.setSection==='agents')this.loadAgents(); }, // Settings reopens on the last section; the audit list is dropped on lock, so read it again
       openHelp:()=>this.setState({dialog:'help',vaultMenu:false}),
       scrimShow:(s.railOpen||s.inspOpen)?'show':'',
       toggleRailOpen:()=>this.setState(st=>({railOpen:!st.railOpen})),

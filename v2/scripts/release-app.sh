@@ -8,13 +8,31 @@
 #   scripts/release-app.sh --no-launch-check      do not start the built app (headless machines)
 #   scripts/release-app.sh --skip-npm-ci          reuse node_modules (a dev loop; a release runs `npm ci`)
 #   scripts/release-app.sh --verify [DIR]    re-check an existing dist/, app included; builds nothing
+#   scripts/release-app.sh --mas [--strict]  the MAC APP STORE edition (ADR-162) into dist-mas/: see "--mas" below
+#   scripts/release-app.sh --mas --verify [DIR] [--strict]   inspect an existing dist-mas/ (any host with python3)
+#
+# --mas (ADR-162). Builds the sandboxed edition beside the Developer ID one, from the same tree:
+#   * renders packaging/mas/ (entitlements for the app, credmgrd, the CLI and credmgr-presence; the embedded
+#     Info.plist of credmgrd and the CLI; the Tauri overlay tauri.mas.conf.json) from packaging/mas/identity.conf,
+#     the one file that holds the bundle id and app-group id, into target/mas/config/;
+#   * builds credmgrd and credmgr with the `mas` feature into target/mas (group-container paths; the CLI's
+#     sandbox refusals), each with its Info.plist linked in, and the shell with `--features mas`;
+#   * bundles the .app only (the store takes a signed .pkg, made at signing time; no .dmg), with the agent plist
+#     in Contents/Library/LaunchAgents and the privacy manifest in Contents/Resources;
+#   * writes the export-compliance and category keys into Info.plist, copies the app, the rendered entitlements
+#     and the identity used into dist-mas/, and inspects it (rl_mas_inspect). It does NOT sign, seal, launch or
+#     upload anything: MAS signing needs the operator's certificates and provisioning profile
+#     (scripts/sign-notarise.sh --mas, docs/27_APP_STORE.md). --strict is the submission gate: placeholder ids
+#     and a missing provisioning profile fail it.
 #
 # What it does, in order:
 #   1. refuses a dirty tree, and refuses to build when the four manifests that carry a version
 #      (workspace Cargo.toml, tauri.conf.json, package.json, src-tauri/Cargo.toml) disagree;
 #   2. `npm ci` (exact lockfile versions), then the frontend build and its release gate;
-#   3. compiles the shell with `cargo build --locked`, then bundles with `tauri bundle` - NOT with
-#      `npm run tauri build`. See "Why not `tauri build`" below;
+#   3. builds the Touch ID helper and the broker (`credmgrd`, stamped with the commit like release.sh's) that the
+#      bundle carries in Contents/MacOS (tauri.conf.json bundle.macOS.files; ADR-157), compiles the shell with
+#      `cargo build --locked`, then bundles with `tauri bundle` - NOT with `npm run tauri build`. See "Why not
+#      `tauri build`" below;
 #   4. seals the bundle ad-hoc (identity "-": it binds Info.plist and resources so the bundle is
 #      internally consistent; it is NOT a Developer ID signature and Gatekeeper still refuses it);
 #   5. copies CredMgr.app into dist/ and writes credmgr-desktop-<version>-<target>.dmg and
@@ -48,10 +66,12 @@ DIST="$V2/dist"
 
 usage() { sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed -e '$d' -e 's/^# \{0,1\}//'; }
 
-DEV=0; SKEW=0; LAUNCH=1; NPM_CI=1; MODE=build; VERIFY_DIR=""
+DEV=0; SKEW=0; LAUNCH=1; NPM_CI=1; MODE=build; VERIFY_DIR=""; MAS=0; STRICT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dev) DEV=1 ;;
+    --mas) MAS=1 ;;
+    --strict) STRICT=1 ;;
     --allow-version-skew) SKEW=1 ;;
     --no-launch-check) LAUNCH=0 ;;
     --skip-npm-ci) NPM_CI=0 ;;
@@ -62,6 +82,15 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+[[ $STRICT -eq 1 && $MAS -eq 0 ]] && rl_die "--strict belongs to --mas"
+DIST_MAS="$V2/dist-mas"
+if [[ "$MODE" == verify && $MAS -eq 1 ]]; then
+  rl_need python3
+  M=(); [[ $STRICT -eq 1 ]] && M+=(--strict); [[ $DEV -eq 1 ]] && M+=(--allow-dev-build)
+  rl_mas_inspect "${VERIFY_DIR:-$DIST_MAS}" ${M[@]+"${M[@]}"}
+  exit $?
+fi
 
 if [[ "$MODE" == verify ]]; then
   rl_need python3 shasum
@@ -138,6 +167,65 @@ fi
 BEFORE_BUILD=$(rl_json_field "$SHELL_DIR/tauri.conf.json" build.beforeBuildCommand)
 rl_info "frontend: $BEFORE_BUILD"
 ( cd "$DESK" && sh -c "$BEFORE_BUILD" )
+
+# ADR-098: the Secure Enclave / Touch ID helper goes into the app (Contents/MacOS/credmgr-presence, by
+# tauri.conf.json bundle.macOS.files). Built here from source, never the test variant.
+rl_info "building the Touch ID helper (native/macos/presence)"
+"$V2/native/macos/presence/build.sh" "$V2/target/native" >/dev/null || rl_die "the Touch ID helper did not build (needs Xcode's swiftc)"
+[[ -x "$V2/target/native/credmgr-presence" ]] || rl_die "the Touch ID helper is missing after its build"
+
+if [[ $MAS -eq 1 ]]; then
+  # ---- ADR-162: the Mac App Store edition ---------------------------------------------------------------
+  MAS_CFG="$V2/target/mas/config"
+  rm -rf "$MAS_CFG"
+  rl_info "rendering packaging/mas/ from identity.conf into target/mas/config"
+  rl_mas_render_all "$V2" "$MAS_CFG" "$APP_V" || rl_die "packaging/mas/ did not render"
+  if [[ "$(rl_mas_identity "$MAS_CFG/identity.conf" MAS_IDS_FINAL)" != yes ]]; then
+    rl_warn "packaging/mas/identity.conf still holds PLACEHOLDER ids: this bundle is for inspection only"
+  fi
+  # Each standalone sandboxed tool gets its Info.plist linked in (`cargo rustc` passes the flag to the final
+  # link only, not to build scripts). `mas` = group-container paths; the CLI also refuses what the sandbox cannot do.
+  for spec in "credmgr-brokerd:credmgrd" "credmgr-cli:credmgr"; do
+    pkg=${spec%%:*}; bin=${spec##*:}
+    rl_info "building $bin, MAS flavour (cargo rustc --release --locked --features mas)"
+    rm -f "$V2/target/mas/release/$bin"
+    ( cd "$V2" && CREDMGR_BUILD_COMMIT="$COMMIT" CREDMGR_BUILD_DIRTY="$DIRTY" MACOSX_DEPLOYMENT_TARGET=13.1 \
+        cargo rustc --release --locked --target-dir "$V2/target/mas" -p "$pkg" --bin "$bin" --features mas -- \
+        -C "link-arg=-Wl,-sectcreate,__TEXT,__info_plist,$MAS_CFG/embedded/$bin-Info.plist" )
+    [[ -x "$V2/target/mas/release/$bin" ]] || rl_die "$bin is missing after its build (target/mas/release/$bin)"
+  done
+  rl_info "compiling the shell, MAS flavour (cargo build --locked --features mas)"
+  ( cd "$SHELL_DIR" && cargo build --locked --bins --features tauri/custom-protocol,mas --release )
+  rl_info "bundling the app with tauri.mas.conf.json (no .dmg, unsigned)"
+  rm -rf "$SHELL_DIR/target/release/bundle"
+  ( cd "$DESK" && CI=true npm run tauri bundle -- --bundles app --config "$MAS_CFG/tauri.mas.conf.json" )
+  APP_SRC="$SHELL_DIR/target/release/bundle/macos/CredMgr.app"
+  [[ -d "$APP_SRC" ]] || rl_die "the bundler did not produce $APP_SRC"
+  rm -rf "$DIST_MAS"; mkdir -p "$DIST_MAS"
+  ditto "$APP_SRC" "$DIST_MAS/CredMgr.app"
+  cp -R "$MAS_CFG/entitlements" "$DIST_MAS/entitlements"
+  cp "$MAS_CFG/identity.conf" "$DIST_MAS/identity.conf"
+  rl_mas_assemble "$DIST_MAS/CredMgr.app" || rl_die "could not write the MAS Info.plist keys"
+  rl_info "inspecting dist-mas/"
+  M=( --expect-version "$APP_V" ); [[ $STRICT -eq 1 ]] && M+=(--strict); [[ $DEV -eq 1 ]] && M+=(--allow-dev-build)
+  rl_mas_inspect "$DIST_MAS" "${M[@]}" || rl_die "the MAS bundle failed its inspection"
+  echo
+  rl_info "done - MAS edition, UNSIGNED and unsealed (signing: scripts/sign-notarise.sh --mas, docs/27_APP_STORE.md)"
+  exit 0
+fi
+
+# ADR-157: the broker goes into the app as well (Contents/MacOS/credmgrd, by tauri.conf.json bundle.macOS.files),
+# so Start at login (login_agent.rs) finds one beside the app without a separate install. Built in the v2
+# workspace exactly as release.sh builds it: stamped with this commit, the 13.1 deployment target (the
+# workspace's crates link fine with it; only the shell's are affected, see the header), the same path remapping.
+# ADR-166: and the command line (Contents/MacOS/credmgr), which Settings > Backup > Restore runs as
+# `credmgr restore --json`, so the app and the terminal share one restore and its refusals.
+rl_info "building the broker and the command line the app carries (credmgrd, credmgr; cargo build --release --locked)"
+rm -f "$V2/target/release/credmgrd" "$V2/target/release/credmgr"
+( cd "$V2" && CREDMGR_BUILD_COMMIT="$COMMIT" CREDMGR_BUILD_DIRTY="$DIRTY" MACOSX_DEPLOYMENT_TARGET=13.1 \
+    cargo build --release --locked -p credmgr-brokerd --bin credmgrd -p credmgr-cli --bin credmgr )
+[[ -x "$V2/target/release/credmgrd" ]] || rl_die "credmgrd is missing after its build (target/release/credmgrd)"
+[[ -x "$V2/target/release/credmgr" ]] || rl_die "credmgr is missing after its build (target/release/credmgr)"
 
 rl_info "compiling the shell (cargo build --locked, toolchain pinned by src-tauri/rust-toolchain.toml)"
 ( cd "$SHELL_DIR" && cargo build --locked --bins --features tauri/custom-protocol --release )
@@ -269,5 +357,7 @@ against the published SHA256SUMS you can allow it:
     xattr -dr com.apple.quarantine /Applications/CredMgr.app
 
 or try to open it once, then System Settings > Privacy & Security > "Open Anyway". The app is only a
-front end: it needs credmgrd running (RELEASE.md, "Start the broker"), otherwise it says 'broker unreachable'.
+front end: it needs credmgrd running, otherwise it says 'broker unreachable'. It carries its own credmgrd
+(Contents/MacOS): Settings > Start at login, or the 'Start at login' button on that screen, starts it now and
+at every login (RELEASE.md, "Start the broker").
 NOTE

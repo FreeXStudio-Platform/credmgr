@@ -334,6 +334,8 @@ fn seeded() -> Seeded {
             expires_at: None,
             rotated_at: None,
             has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
         },
     );
     state.persist(NOW).expect("write the seeded vault through");

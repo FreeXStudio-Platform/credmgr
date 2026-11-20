@@ -48,7 +48,7 @@ use crate::token::TokenStore;
 
 /// ADR-061. Same manual-hex-digit style `ops.rs::sha256_hex`/`new_entry_id`
 /// already use — no new dependency for something this small.
-fn hex_encode(bytes: &[u8]) -> String {
+pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
         s.push_str(&format!("{b:02x}"));
@@ -112,6 +112,14 @@ pub struct PendingEntry {
 /// it; there is no separate "expired" state stored — expiry is `now >=
 /// expires_at`, checked wherever a request is next read, which is enough
 /// because nothing observes one between creation and its next read.
+/// ADR-164 review P1-2: the agent token that made a request the owner decides (an approval, a setting request),
+/// named for the owner by its public id and label. Neither is a secret.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentRequester {
+    pub id: String,
+    pub label: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct PendingApproval {
     pub id: String,
@@ -135,6 +143,8 @@ pub struct PendingApproval {
     /// (`decision` is `Some(false)`). The requester is told `locked`, not
     /// `denied` — nobody refused it; the human walked away.
     pub voided_by_lock: bool,
+    /// ADR-164 review P1-2: the agent token that asked, if one did — shown to the owner.
+    pub agent_token: Option<AgentRequester>,
 }
 
 /// An approval-on-demand request and — from the moment a human approves it
@@ -174,6 +184,8 @@ pub enum ApprovalFactorError {
     /// ADR-092: an interrupted root-key rotation could not be finished (or
     /// dropped) before the root wrap was read. Nothing was decided.
     RotationRecovery,
+    /// ADR-165: the passphrase wrap is bound to a device key this Mac does not hold (or is damaged).
+    MachineLock(&'static str),
 }
 
 /// Why `BrokerState::decide_approval` refused to record a decision.
@@ -333,8 +345,9 @@ pub struct BrokerState {
     /// zeroises these bytes **in place** and leaves them inspectable for
     /// exactly one purpose — proving zeroisation happened, per the Phase 3
     /// exit gate ("asserted by inspecting the buffers", not by a subsequent
-    /// request). A `StaticSecret` gives no way to observe that.
-    hot_keys: RwLock<HashMap<String, [u8; 32]>>,
+    /// request). A `StaticSecret` gives no way to observe that. Each key sits
+    /// on its own `mlock`ed page (ADR-156, `locked_key`).
+    hot_keys: RwLock<HashMap<String, crate::locked_key::LockedKey>>,
     node_wrapped_keys: RwLock<HashMap<String, WrappedNodeKey>>,
     /// A node's public key is registry cleartext (`04 §2`) and, unlike the
     /// hot private-key set, is never zeroised on lock — `entry.create` seals
@@ -369,6 +382,8 @@ pub struct BrokerState {
     /// it releases (ADR-079, 4a) — which `lock()`, expiry and consumption all
     /// zeroise.
     approvals: RwLock<HashMap<String, ApprovalSlot>>,
+    /// ADR-155: weakening setting changes an agent asked for, waiting for the owner (`state/switchboard.rs`).
+    setting_requests: switchboard::SettingRequests,
     /// Counts every `lock()` (ADR-079, 4a), bumped after the `locked` flag is
     /// set and before staged values are voided (see `lock_inner` for why that
     /// order matters). An approving decision reads it before it checks the lock
@@ -457,6 +472,17 @@ pub struct BrokerState {
     /// touches `keystore` for a disk-backed vault — which is what stops a
     /// passphrase-less `vault.unlock` from ever succeeding on the daemon.
     session_root: RwLock<Option<SecretBox<[u8; 32]>>>,
+    /// ADR-098: the enrolled presence public keys, loaded and verified when the vault is (HMAC under the
+    /// root key). Public and non-secret, so they stay across a lock; only the challenges below do not.
+    presence_keys: RwLock<Vec<credmgr_store::presence_file::PresenceKeyRecord>>,
+    /// ADR-148 addendum: the Touch ID unlock wraps the signed registry names (public points, hex). `None`
+    /// until a disk-backed vault has loaded; a wrap on disk that the registry does not name never unlocks.
+    device_wraps: RwLock<Option<Vec<String>>>,
+    /// ADR-098: broker-issued, single-use, short-lived nonces awaiting a signed answer.
+    presence_challenges: Mutex<HashMap<[u8; 32], presence::PresenceChallenge>>,
+    /// ADR-098: the Secure Enclave helper to use instead of searching for one — a test seam, never set by
+    /// the daemon.
+    presence_helper: RwLock<Option<credmgr_keystore::secure_enclave::Helper>>,
     /// One authentication transition at a time: unlock (either path),
     /// `gate_verify`, `gate_recover` and `lock()` take this, so a lock can
     /// never interleave with an unlock that is half-installed.
@@ -507,6 +533,27 @@ pub struct BrokerState {
     /// daemon over the same vault at the worst moment.
     #[cfg(feature = "test-utils")]
     rotation_pause: Mutex<Option<RotationPause>>,
+    /// ADR-163 review P2-a: make the next recovery fail to open its node keys after its rotation committed.
+    #[cfg(feature = "test-utils")]
+    recover_open_fault: std::sync::atomic::AtomicBool,
+    /// ADR-165's crash seam: where the next machine-lock bind or unbind should "die".
+    #[cfg(feature = "test-utils")]
+    machine_lock_fault: Mutex<Option<MachineLockFault>>,
+    /// ADR-165 review P2-8: how many `keystore.*` calls reached the state.
+    #[cfg(feature = "test-utils")]
+    machine_lock_touches: std::sync::atomic::AtomicUsize,
+    /// ADR-165 (review N1): a machine-lock bind prepared and waiting for its new recovery code to be typed
+    /// back. Memory only; emptied by `lock()`.
+    machine_lock_pending: Mutex<Option<machine_lock::PendingBind>>,
+    /// ADR-130…134: state of the 2.0.0 broker features (content-search rate window, crash seams).
+    pub stable: crate::stable::StableState,
+    /// ADR-150: per login session (by its public id), when the person last confirmed it was them (Touch ID
+    /// or the passphrase) and whether a request that needed a fresh confirmation has used it. Memory only;
+    /// emptied by `lock()`.
+    reveal_confirmations: RwLock<HashMap<String, credmgr_core::reveal_confirm::Confirmation>>,
+    /// ADR-163: recovery attempts made while the vault was locked, waiting for a root key to be audited.
+    /// Memory only; no secret in it.
+    unaudited_recoveries: Mutex<recover::UnauditedRecoveries>,
 }
 
 /// `(files staged before the pause, hook to run there)` — see
@@ -514,18 +561,45 @@ pub struct BrokerState {
 #[cfg(feature = "test-utils")]
 type RotationPause = (usize, Arc<dyn Fn() + Send + Sync>);
 
+mod destroy;
 mod durable;
+mod machine_lock;
+mod move_entry;
+mod node_gate;
+pub mod presence;
+mod recover;
+mod rekey;
+mod reveal_confirm;
 mod rotate;
 mod seal;
+pub mod switchboard;
 mod tray;
+#[cfg(feature = "test-utils")]
+pub use destroy::DestroyFault;
+pub use destroy::DestroyOutcome;
 #[cfg(feature = "test-utils")]
 pub use durable::PersistFault;
 pub use durable::{GateRecoverError, UnlockError};
 #[cfg(feature = "test-utils")]
+pub use machine_lock::MachineLockFault;
+pub use machine_lock::{
+    DetachedBindRecord, MachineLockBound, MachineLockChange, MachineLockOpError,
+    MachineLockPrepared, MachineLockStatus, RotationMachineLock, BIND_PREPARE_SECONDS,
+    WARN_BIND_RECORD_DETACHED,
+};
+#[cfg(feature = "test-utils")]
+pub use move_entry::MoveFault;
+pub use move_entry::MoveOutcome;
+pub use recover::{RecoverError, RecoverOutcome, UnauditedRecovery, REFUSED_RECOVERY_QUEUE};
+#[cfg(feature = "test-utils")]
+pub use rekey::RekeyFault;
+pub use rekey::RekeyOutcome;
+pub use reveal_confirm::ConfirmPassphraseError;
+#[cfg(feature = "test-utils")]
 pub use rotate::RotationFault;
 pub use rotate::{
-    RotateRootError, RotationOutcome, VaultLock, RECOVER_LOCK_WAIT, ROOT_BOUND_ARTEFACTS,
-    ROTATE_LOCK_WAIT,
+    RotateRootError, RotationAudit, RotationOutcome, VaultLock, RECOVER_LOCK_WAIT,
+    ROOT_BOUND_ARTEFACTS, ROTATE_LOCK_WAIT,
 };
 pub use seal::{PurgedSeal, RestoreOutcome, SealOutcome};
 #[cfg(feature = "test-utils")]
@@ -547,6 +621,39 @@ pub enum RequestGuard<'a> {
 }
 
 impl BrokerState {
+    /// ADR-161: the most entries one `vault.doctor_scan` looks at (smaller under a test's override).
+    pub(crate) fn doctor_scan_entry_cap(&self) -> usize {
+        #[cfg(feature = "test-utils")]
+        if let Some(n) = *self
+            .stable
+            .doctor_scan_cap
+            .lock()
+            .expect("doctor scan cap poisoned")
+        {
+            return n;
+        }
+        crate::ops::DOCTOR_SCAN_ENTRY_CAP
+    }
+
+    /// Hold the doctor scan's one-at-a-time lock, as a running scan does (test seam, ADR-161).
+    #[cfg(feature = "test-utils")]
+    pub fn hold_doctor_scan_for_test(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.stable
+            .doctor_scan_running
+            .lock()
+            .expect("doctor scan lock poisoned")
+    }
+
+    /// Lower the doctor scan's entry cap for this broker (test seam, ADR-161).
+    #[cfg(feature = "test-utils")]
+    pub fn set_doctor_scan_cap_for_test(&self, cap: Option<usize>) {
+        *self
+            .stable
+            .doctor_scan_cap
+            .lock()
+            .expect("doctor scan cap poisoned") = cap;
+    }
+
     pub fn new(keystore: Box<dyn PlatformKeystore>, paths: VaultPaths) -> Self {
         BrokerState {
             registry: RwLock::new(Registry::new()),
@@ -562,6 +669,7 @@ impl BrokerState {
             next_ref: AtomicU32::new(1000),
             sealed_nodes: RwLock::new(HashMap::new()),
             approvals: RwLock::new(HashMap::new()),
+            setting_requests: switchboard::new_requests(),
             lock_epoch: std::sync::atomic::AtomicU64::new(0),
             vault_idle_seconds: RwLock::new(DEFAULT_VAULT_IDLE_SECONDS),
             last_activity: RwLock::new(0),
@@ -581,6 +689,10 @@ impl BrokerState {
             durable: std::sync::atomic::AtomicBool::new(false),
             registry_meta: RwLock::new(RegistryDocument::new()),
             session_root: RwLock::new(None),
+            presence_keys: RwLock::new(Vec::new()),
+            device_wraps: RwLock::new(None),
+            presence_challenges: Mutex::new(HashMap::new()),
+            presence_helper: RwLock::new(None),
             auth_lock: Mutex::new(()),
             gate_replay_floor: RwLock::new(HashMap::new()),
             session_last_used: RwLock::new(HashMap::new()),
@@ -599,6 +711,16 @@ impl BrokerState {
             rotation_fault: Mutex::new(None),
             #[cfg(feature = "test-utils")]
             rotation_pause: Mutex::new(None),
+            #[cfg(feature = "test-utils")]
+            recover_open_fault: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(feature = "test-utils")]
+            machine_lock_fault: Mutex::new(None),
+            #[cfg(feature = "test-utils")]
+            machine_lock_touches: std::sync::atomic::AtomicUsize::new(0),
+            machine_lock_pending: Mutex::new(None),
+            stable: crate::stable::StableState::default(),
+            reveal_confirmations: RwLock::new(HashMap::new()),
+            unaudited_recoveries: Mutex::new(recover::UnauditedRecoveries::default()),
         }
     }
 
@@ -622,6 +744,25 @@ impl BrokerState {
                     .unwrap_or_else(|e| e.into_inner()),
             )
         }
+    }
+
+    /// ADR-148 §P1-5: the broker's own word for "this caller is an agent". An agent token always is; a
+    /// token-less caller is when its working directory is inside a registered project folder — the definition
+    /// `scope::resolve_scope` already uses to give it a project's agent scope. The answer depends on the
+    /// registry in memory, which is empty on a broker that has not loaded the vault yet: a caller that must
+    /// never be an agent is asked again once the vault is loaded (ADR-163 review P1-1).
+    pub(crate) fn is_identified_agent(&self, scope: &crate::scope::BrokerScope) -> bool {
+        if scope.origin != credmgr_core::access::Origin::Agent {
+            return false;
+        }
+        if scope.token_id.is_some() {
+            return true;
+        }
+        let Some(cwd) = scope.bound_workdir.as_deref() else {
+            return false;
+        };
+        let registry = self.registry.read().expect("registry poisoned");
+        crate::scope::match_workdir(&registry, cwd).is_some()
     }
 
     /// ADR-065: whether `scope` is a real login session — a token minted by
@@ -779,10 +920,10 @@ impl BrokerState {
             .expect("node public keys poisoned")
             .insert(node_id.to_string(), pair.public);
         if !self.is_locked() {
-            self.hot_keys
-                .write()
-                .expect("hot keys poisoned")
-                .insert(node_id.to_string(), pair.private.to_bytes());
+            self.hot_keys.write().expect("hot keys poisoned").insert(
+                node_id.to_string(),
+                crate::locked_key::LockedKey::from_secret(&pair.private),
+            );
         }
         pair.public
     }
@@ -1096,10 +1237,10 @@ impl BrokerState {
         // lock, which is the right answer.
         if let Ok(root_key) = self.reauth_root_key("node unlock") {
             if let Some(key) = self.unwrap_node_key_with_root(node_id, root_key.expose_secret()) {
-                self.hot_keys
-                    .write()
-                    .expect("hot keys poisoned")
-                    .insert(node_id.to_string(), key.to_bytes());
+                self.hot_keys.write().expect("hot keys poisoned").insert(
+                    node_id.to_string(),
+                    crate::locked_key::LockedKey::from_secret(&key),
+                );
             }
         }
         self.locked_nodes
@@ -1184,7 +1325,10 @@ impl BrokerState {
             }
             let priv_key: StaticSecret = unwrap_node_key(root_key, node_id, wrapped)
                 .map_err(|_| KeystoreError::AuthenticationFailed)?;
-            new_hot.insert(node_id.clone(), priv_key.to_bytes());
+            new_hot.insert(
+                node_id.clone(),
+                crate::locked_key::LockedKey::from_secret(&priv_key),
+            );
         }
 
         *self.hot_keys.write().expect("hot keys poisoned") = new_hot;
@@ -1200,6 +1344,17 @@ impl BrokerState {
             .expect("gate poisoned")
             .get(scope)
             .is_some_and(|g| g.confirmed)
+    }
+
+    /// An enrolment was begun for `scope` and not yet confirmed
+    /// (`gate_enroll_begin` ran, `gate_enroll_confirm` has not). Nothing is asked
+    /// at unlock for it; `graph.snapshot` reports it as `enrolled` (issue #37).
+    pub fn is_gate_enrolling(&self, scope: &str) -> bool {
+        self.gate
+            .read()
+            .expect("gate poisoned")
+            .get(scope)
+            .is_some_and(|g| !g.confirmed)
     }
 
     /// `07 §4` steps 1-2: generate a fresh secret and return its
@@ -1390,7 +1545,12 @@ impl BrokerState {
             .map_err(|_| ApprovalFactorError::RotationRecovery)?;
         let root = self
             .root_from_passphrase(passphrase, "approval decision")
-            .map_err(|_| ApprovalFactorError::WrongPassphrase)?;
+            .map_err(|e| match e {
+                durable::PassRootError::MachineLock(m) => {
+                    ApprovalFactorError::MachineLock(m.reason())
+                }
+                durable::PassRootError::Wrong => ApprovalFactorError::WrongPassphrase,
+            })?;
         if self.is_gate_confirmed(GATE_SCOPE_VAULT) {
             let Some(code) = code else {
                 return Err(ApprovalFactorError::SecondFactorRequired);
@@ -1558,6 +1718,12 @@ impl BrokerState {
             .write()
             .expect("session root poisoned")
             .take();
+        // ADR-098: a challenge issued to a session that no longer exists answers nothing.
+        self.clear_presence_challenges();
+        // ADR-155: a waiting setting request does not outlive the unlock it was made under.
+        self.clear_setting_requests();
+        // ADR-165 (review N1): neither does a prepared machine-lock bind.
+        self.set_pending_bind(None);
         // ADR-064 (review L5): a staged re-enrolment does not outlive the unlock.
         self.gate_pending
             .write()
@@ -1601,6 +1767,8 @@ impl BrokerState {
             .write()
             .expect("session last used poisoned")
             .clear();
+        // ADR-150: a confirmation belongs to a login, and no login outlives a lock.
+        self.clear_reveal_confirmations();
         // ADR-079 (4a): last, once `locked` is already true. A value decrypted
         // for an approval is plaintext a locked vault must not hold — the human
         // who approved it has walked away (idle, sleep, explicit lock).
@@ -1639,7 +1807,7 @@ impl BrokerState {
             .read()
             .expect("hot keys poisoned")
             .get(node_id)
-            .map(|bytes| StaticSecret::from(*bytes))
+            .map(|bytes| StaticSecret::from(**bytes))
     }
 
     pub fn is_node_locked(&self, node_id: &str) -> bool {
@@ -1756,6 +1924,21 @@ impl BrokerState {
         fields: Option<Vec<String>>,
         now: i64,
     ) -> PendingApproval {
+        self.approval_for_reveal_by(node_id, entry_id, cwd, None, request_key, fields, now)
+    }
+
+    /// [`Self::approval_for_reveal`], naming the agent token that asked (ADR-164 review P1-2).
+    #[allow(clippy::too_many_arguments)]
+    pub fn approval_for_reveal_by(
+        &self,
+        node_id: &str,
+        entry_id: &str,
+        cwd: Option<String>,
+        agent_token: Option<AgentRequester>,
+        request_key: &str,
+        fields: Option<Vec<String>>,
+        now: i64,
+    ) -> PendingApproval {
         let mut approvals = self.approvals.write().expect("approvals poisoned");
         Self::drop_expired_staged(&mut approvals, now);
         if let Some(existing) = approvals.values().find(|a| {
@@ -1787,6 +1970,7 @@ impl BrokerState {
             expires_at: now + APPROVAL_TTL_SECONDS,
             decision: None,
             voided_by_lock: false,
+            agent_token,
         };
         approvals.insert(
             id,
@@ -2030,7 +2214,7 @@ impl BrokerState {
             .read()
             .expect("hot keys poisoned")
             .get(node_id)
-            .copied()
+            .map(|key| **key)
     }
 
     #[cfg(feature = "test-utils")]
@@ -2132,6 +2316,27 @@ impl BrokerState {
         body.notes_sha256 = digest;
         body.generation += 1;
         body.generation
+    }
+
+    /// ADR-168: record the digest of the node's sealed merge decision memory (`None` = none) and bump the
+    /// manifest generation — a memory write is a node write (F-9), exactly as a note's is.
+    pub fn set_manifest_merge(&self, node_id: &str, digest: Option<String>) -> u64 {
+        let mut manifests = self.manifests.write().expect("manifests poisoned");
+        let body = manifests
+            .entry(node_id.to_string())
+            .or_insert_with(|| ManifestBody::new(node_id));
+        body.merge_sha256 = digest;
+        body.generation += 1;
+        body.generation
+    }
+
+    /// ADR-168: the merge-memory digest the (HMAC-verified) manifest records for `node_id`.
+    pub fn manifest_merge_digest(&self, node_id: &str) -> Option<String> {
+        self.manifests
+            .read()
+            .expect("manifests poisoned")
+            .get(node_id)
+            .and_then(|m| m.merge_sha256.clone())
     }
 
     /// The note digest the (HMAC-verified) manifest records for `node_id`.
@@ -2321,10 +2526,10 @@ impl BrokerState {
                 let unwrapped: Result<StaticSecret, _> =
                     unwrap_node_key(root_key.expose_secret(), node_id, &wrapped);
                 if let Ok(priv_key) = unwrapped {
-                    self.hot_keys
-                        .write()
-                        .expect("hot keys poisoned")
-                        .insert(node_id.to_string(), priv_key.to_bytes());
+                    self.hot_keys.write().expect("hot keys poisoned").insert(
+                        node_id.to_string(),
+                        crate::locked_key::LockedKey::from_secret(&priv_key),
+                    );
                 }
             }
         }

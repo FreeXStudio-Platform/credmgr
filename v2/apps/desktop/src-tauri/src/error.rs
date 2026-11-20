@@ -52,6 +52,8 @@ pub const BROKER_ERROR_CODES: &[&str] = &[
     "entry_exists",
     "internal",
     "presence_required",
+    // ADR-098: a presence proof was missing, expired, reused or invalid, or nothing is enrolled.
+    "presence_failed",
     "archive_expired",
     "approval_denied",
     "rate_limited",
@@ -69,6 +71,11 @@ pub const BROKER_ERROR_CODES: &[&str] = &[
     "recovery_code_mismatch",
     // ADR-068: a token the broker no longer holds is refused, not demoted.
     "session_expired",
+    // ADR-150: the owner must confirm (Touch ID or the passphrase) before a secret is shown again.
+    "confirmation_required",
+    // ADR-165: the vault is machine-locked and this Mac cannot open the passphrase wrap (no device key, another
+    // one, or a damaged file). The passphrase was not tried; the recovery code opens the vault.
+    "machine_lock_refused",
 ];
 
 /// Every `code` this crate raises on its own account (`source` `transport`,
@@ -93,10 +100,34 @@ pub const BRIDGE_LOCAL_CODES: &[&str] = &[
     // `text` and `fields`, neither, or a field the broker would refuse). The
     // message names an index or a count, never a label or a value.
     "invalid_fields",
+    // ADR-122: `env_preview` could not read the text as a `.env` file. The message names a line number or a count, never a line.
+    "invalid_env",
     // ADR-082 (X9): `app_icon_set` was given an id outside `icon::MARK_IDS`; nothing changed.
     "unknown_icon",
     // `app_icon_set`: the OS or the window refused the icon (a decode or an AppKit failure).
     "icon_failed",
+    // ADR-098, Touch ID. The user dismissed the prompt; the Mac locked Touch ID out; the helper or a
+    // Secure Enclave is missing; this Mac has no presence key yet; anything else the helper said no to.
+    "presence_cancelled",
+    "presence_locked_out",
+    "presence_unavailable",
+    "presence_not_enrolled",
+    "presence_error",
+    // ADR-143, Settings -> Agents: the client or the file cannot be edited (the reason is in the message);
+    // the file moved since the diff was shown; the write or its read-back failed (the original is kept).
+    "agent_refused",
+    "agent_changed",
+    "agent_write_failed",
+    // ADR-156, start at login: the launch agent could not be written, removed or loaded (no
+    // `credmgrd` found, a file write failed, or launchctl said no). What was on disk is kept.
+    "login_agent_failed",
+    // ADR-166, Settings > Backup > Restore (the bundled `credmgr restore --json`, whose codes these are):
+    // a broker answers on the vault's socket; the folder is not empty; a wrong passphrase, a damaged
+    // archive or any other refusal of the restore; no `credmgr` program was found to run. Nothing written.
+    "broker_running",
+    "restore_target_not_empty",
+    "restore_failed",
+    "restore_unavailable",
 ];
 
 /// Broker denials that mean "the token you presented is no longer a login

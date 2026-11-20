@@ -15,11 +15,20 @@
 //! structurally.
 #![forbid(unsafe_code)]
 
-mod dotenv;
+mod agent;
+mod agent_tokens;
+mod clip;
+mod edit_cmd;
 mod fields;
+mod import_json;
+mod merge_cmds;
+mod names_cmds;
+mod quick_cmds;
+mod settings_cmd;
+mod stable;
 mod transport;
 
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -64,18 +73,32 @@ fn main() -> ExitCode {
 fn version_line(bin: &str) -> String {
     let version = env!("CARGO_PKG_VERSION");
     let platform = format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS);
-    match option_env!("CREDMGR_BUILD_COMMIT") {
-        Some(commit) if !commit.is_empty() => {
+    // `black_box`: the optimiser must keep the stamp whole in the binary (the
+    // release verifier greps for it), not fold it into the pieces parsed below.
+    match parse_build_stamp(std::hint::black_box(BUILD_STAMP)) {
+        Some((commit, dirty)) => {
             let short = &commit[..commit.len().min(12)];
-            let dirty = if option_env!("CREDMGR_BUILD_DIRTY") == Some("1") {
-                ", dirty"
-            } else {
-                ""
-            };
+            let dirty = if dirty { ", dirty" } else { "" };
             format!("{bin} {version} (commit {short}{dirty}, {platform})")
         }
-        _ => format!("{bin} {version} (development build, no commit stamp, {platform})"),
+        None => format!("{bin} {version} (development build, no commit stamp, {platform})"),
     }
+}
+
+/// The build stamp `build.rs` writes from the release script's environment
+/// (`credmgr-build-stamp:v1:commit=<hex>:dirty=<0|1>`). It is a constant of the
+/// binary on purpose: `scripts/release.sh --verify` finds it in the bytes (issue
+/// #38) without running the program, and `--version` is read from the same string.
+const BUILD_STAMP: &str = env!("CREDMGR_BUILD_STAMP");
+
+/// `(commit, dirty)` out of a stamp; `None` for a build with no commit.
+fn parse_build_stamp(stamp: &str) -> Option<(&str, bool)> {
+    let rest = stamp.strip_prefix("credmgr-build-stamp:v1:commit=")?;
+    let (commit, dirty) = rest.split_once(":dirty=")?;
+    if commit == "none" || commit.is_empty() {
+        return None;
+    }
+    Some((commit, dirty == "1"))
 }
 
 fn run(mut args: Vec<String>) -> Result<(), String> {
@@ -84,15 +107,39 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         return Ok(());
     }
     let cmd = args.remove(0);
+    // ADR-162: the App Store edition's CLI runs in its own sandbox and cannot open a path outside its
+    // container. Say so, with the way round, before anything is asked or sent.
+    if credmgr_store::paths::FLAVOUR == credmgr_store::paths::Flavour::Mas {
+        if let Some(refusal) = mas_limit(&cmd, &args) {
+            return Err(refusal);
+        }
+    }
     match cmd.as_str() {
         "init" => cmd_init(),
-        "status" => cmd_status(),
-        "unlock" => cmd_unlock(),
+        "status" => cmd_status(args),
+        "unlock" => cmd_unlock(args),
+        "presence" => cmd_presence(args),
+        "touch-id" => cmd_touch_id(args),
+        // ADR-165: the machine lock.
+        "keystore" => cmd_keystore(args),
         "lock" => cmd_lock(),
+        // ADR-156: the post-launch quick wins.
+        "passphrase" => quick_cmds::cmd_passphrase(args),
+        // ADR-163: the passphrase is forgotten; the recovery code opens the vault and a new passphrase is set.
+        "recover" => quick_cmds::cmd_recover(args),
+        "expire" => quick_cmds::cmd_expire(args),
+        "edit" => edit_cmd::cmd_edit(args),
+        // ADR-158: an entry to another node, re-encrypted to its key.
+        "move" => quick_cmds::cmd_move(args),
+        "expiring" => quick_cmds::cmd_expiring(args),
+        "history" => quick_cmds::cmd_history(args),
+        "ref" => quick_cmds::cmd_ref(args),
+        "confirm" => cmd_confirm(args),
         "gate" => cmd_gate(args),
         "whoami" => cmd_whoami(args),
         "list" => cmd_list(args),
         "get" => cmd_get(args),
+        "totp" => cmd_totp(args),
         "field" => fields::cmd_field(args),
         "search" => cmd_search(args),
         "set" => cmd_set(args),
@@ -104,14 +151,30 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "pending" => cmd_pending(args),
         "doctor" => cmd_doctor(args),
         "generate" => cmd_generate(args),
+        // Hidden: the detached clearer `--copy` starts (see `clip.rs`). Not in the help text.
+        clip::CLEAR_COMMAND => clip::run_clear(&args),
         "approve" => cmd_approve(args),
         "approvals" => cmd_approvals(args),
         "backup" => cmd_backup(args),
+        "restore" => cmd_restore(args),
         "node" => cmd_node(args),
         "grant" => cmd_grant(args),
         "import" => cmd_import(args),
+        "import-env" => names_cmds::cmd_import_env(args),
+        "alias" => names_cmds::cmd_alias(args),
+        // ADR-167: an entry's tags. ADR-168: merge suggestions and merges inside one node.
+        "tag" => names_cmds::cmd_tag(args),
+        "merge" => merge_cmds::cmd_merge(args),
+        "similar" => names_cmds::cmd_similar(args),
         "notes" => cmd_notes(args),
-        "mcp" => cmd_mcp(),
+        "orphan" => stable::cmd_orphan(args),
+        "export" => stable::cmd_export(args),
+        "mcp" => cmd_mcp(args),
+        "agent" => agent::cmd_agent(args),
+        "prompt" => agent::cmd_prompt(args),
+        // ADR-155: the switchboard and the LLM knowledge base.
+        "settings" => settings_cmd::cmd_settings(args),
+        "kb" => settings_cmd::cmd_kb(args),
         "help" | "--help" | "-h" => {
             print_usage();
             Ok(())
@@ -126,6 +189,69 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
     }
 }
 
+/// ADR-162: the commands the Mac App Store edition's bundled CLI cannot do, and what to use instead.
+/// A sandboxed command-line tool sees only its own container and the app-group container: a file named
+/// on the command line (other than `-`, stdin) and other apps' configuration files are out of reach, and
+/// the sandbox would refuse the open with a bare "Operation not permitted". `None` = allowed. Pure and
+/// always compiled, so its table is tested in the default build; `run` consults it only in the `mas` flavour.
+fn mas_limit(cmd: &str, args: &[String]) -> Option<String> {
+    const WAY_ROUND: &str =
+        "The CredMgr app can do this, and so can the full CLI (the free separate \
+                             download, which reaches the same vault).";
+    let positional: Vec<String> = {
+        // Drop each flag and the value it takes, so `--node <id>` is not mistaken for a file.
+        let mut out = Vec::new();
+        let mut it = args.iter();
+        while let Some(a) = it.next() {
+            if a.starts_with("--") {
+                if matches!(
+                    a.as_str(),
+                    "--node"
+                        | "--on-conflict"
+                        | "--out"
+                        | "--age-recipient"
+                        | "--to"
+                        | "--state-dir"
+                        | "--file"
+                        | "--dir"
+                        | "--binary"
+                ) {
+                    it.next();
+                }
+                continue;
+            }
+            out.push(a.clone());
+        }
+        out
+    };
+    match cmd {
+        "import" | "import-env" => match positional.first().map(String::as_str) {
+            Some(f) if f != "-" => Some(format!(
+                "the App Store edition's CLI cannot open '{f}': it runs in the macOS sandbox. Pipe it \
+                 instead: credmgr {cmd} - --node <id> < {f}\n{WAY_ROUND}"
+            )),
+            _ => None,
+        },
+        "export" => Some(format!(
+            "the App Store edition's CLI cannot write an export file: it runs in the macOS sandbox.\n{WAY_ROUND}"
+        )),
+        "restore" => Some(format!(
+            "the App Store edition's CLI cannot read a backup archive from a path you name: it runs in the \
+             macOS sandbox.\n{WAY_ROUND}"
+        )),
+        "agent" => Some(format!(
+            "the App Store edition's CLI cannot read or write other apps' configuration files: it runs in \
+             the macOS sandbox. Print the configuration and paste it yourself: credmgr mcp --print-config \
+             <client>\n{WAY_ROUND}"
+        )),
+        "notes" if args.iter().any(|a| a == "--file") => Some(format!(
+            "the App Store edition's CLI cannot open a --file: it runs in the macOS sandbox. Pipe the note \
+             on stdin instead.\n{WAY_ROUND}"
+        )),
+        _ => None,
+    }
+}
+
 fn print_usage() {
     println!(
         "credmgr — local credential vault CLI\n\
@@ -135,26 +261,80 @@ fn print_usage() {
          \x20                                      stdin, then confirm the printed recovery\n\
          \x20                                      code by retyping it — needs credmgrd\n\
          \x20                                      running against an empty vault directory)\n\
-         \x20 credmgr status\n\
+         \x20 credmgr status [--ack | --log]       (--ack: you have seen the security alarm; --log: where the diagnostic log is)\n\
          \x20 credmgr unlock                        (passphrase from stdin; a real login —\n\
          \x20                                      prints `export CREDMGR_TOKEN=...` on\n\
          \x20                                      success. Capture it with:\n\
          \x20                                      eval \"$(credmgr unlock <<< \"$pw\")\")\n\
-         \x20 credmgr gate verify <code>             (completes unlock when 2FA is enrolled;\n\
-         \x20                                      prints the token the same way. With a login\n\
+         \x20 credmgr gate verify [--code-on-argv <n>]\n\
+         \x20                                      (completes unlock when 2FA is enrolled; the code is\n\
+         \x20                                      typed at a prompt or read from stdin, never put in\n\
+         \x20                                      the command line, where `ps` shows it for as long\n\
+         \x20                                      as the command runs - --code-on-argv does that on\n\
+         \x20                                      purpose. Prints the token the same way. With a login\n\
          \x20                                      already in CREDMGR_TOKEN it is a step-up: it\n\
          \x20                                      proves the second factor for five minutes, for\n\
          \x20                                      nodes whose policy asks for it)\n\
          \x20 credmgr gate enroll                   (turns on two-factor; needs an unlocked login)\n\
+         \x20 credmgr gate enroll|verify|remove [--last-door] --node <id>\n\
+         \x20                                      (verify asks for the code or reads stdin; --code-on-argv <n>)\n\
+         \x20                                      (a project's OWN second factor: its code is asked even of you, opens\n\
+         \x20                                      that project only, and the vault's code never opens it. remove needs\n\
+         \x20                                      its fresh code and Touch ID; --last-door instead takes the vault\n\
+         \x20                                      passphrase and the root recovery code from stdin)\n\
          \x20 credmgr gate recover                  (lost authenticator: passphrase + root recovery\n\
          \x20                                      code from stdin reset the gate)\n\
+         \x20 credmgr presence status|enrol|unenrol   (Touch ID presence key for this Mac)\n\
+         \x20 credmgr touch-id enable|disable        (unlock this vault with Touch ID)\n\
+         \x20 credmgr keystore status|bind|unbind [--json]\n\
+         \x20                                      (the machine lock: bind seals the passphrase unlock to a\n\
+         \x20                                      device key on this Mac, so a copy of the vault folder does\n\
+         \x20                                      not open with the passphrase elsewhere; the recovery code\n\
+         \x20                                      still does, on any Mac. unbind needs Touch ID and the\n\
+         \x20                                      second factor where they are set up)\n\
+         \x20 credmgr unlock --touch-id\n\
          \x20 credmgr lock\n\
+         \x20 credmgr passphrase [--json]           (change the vault passphrase: the current one, then the\n\
+         \x20                                      new one, from stdin - asked twice at a terminal. Prints\n\
+         \x20                                      a NEW recovery code once; the old code stops working)\n\
+         \x20 credmgr recover [--json]              (forgot the passphrase: the recovery code, then a new\n\
+         \x20                                      passphrase, from stdin - asked twice at a terminal; a\n\
+         \x20                                      second-factor code too if one is enrolled. Sets the new\n\
+         \x20                                      passphrase, prints a NEW recovery code once and retires\n\
+         \x20                                      the used one)\n\
+         \x20 credmgr confirm [--touch-id]          (confirm it is you before secrets are shown, when the\n\
+         \x20                                      vault asks for it: Touch ID, or the passphrase from\n\
+         \x20                                      stdin. `get` asks by itself at a terminal)\n\
          \x20 credmgr whoami [--json]\n\
-         \x20 credmgr list [--node <id>] [--json]\n\
+         \x20 credmgr list [--node <id> [--tag <tag>]] [--json]\n\
          \x20 credmgr get <name> [--node <id>] [--field <label> | --field-id <id> | --all] [--json]\n\
          \x20                                      (a one-field entry prints its value; with several\n\
-         \x20                                      fields name one, or use --all / --json for every one)\n\
-         \x20 credmgr search <term> [--json]\n\
+         \x20                                      fields name one, or use --all / --json for every one;\n\
+         \x20                                      `get ... --copy` puts one value on the macOS clipboard\n\
+         \x20                                      instead of stdout, cleared after 30 s if unchanged)\n\
+         \x20 credmgr totp <name> [--node <id>] [--field <label> | --field-id <id>] [--copy | --json]\n\
+         \x20                                      (the current one-time code from a stored seed, and how\n\
+         \x20                                      long it stays valid; the seed itself is never shown.\n\
+         \x20                                      --copy: macOS clipboard, cleared after 30 s if unchanged)\n\
+         \x20 credmgr search <term> [--node <id>] [--json]\n\
+         \x20                                      (names and aliases; --node asks one node only)\n\
+         \x20 credmgr ref <number> [--json]         (which entry a short reference names)\n\
+         \x20 credmgr expire <name> [--node <id>] (--at <YYYY-MM-DD|unix seconds> | --in <days> | --clear)\n\
+         \x20 credmgr edit <name> --node <id> [--dry-run]\n\
+         \x20                                      (an entry's metadata in $VISUAL / $EDITOR / vi: aliases, expiry,\n\
+         \x20                                      sensitivity, type, tags, field labels/types/masking; never a\n\
+         \x20                                      value; only the changed keys are applied)\n\
+         \x20 credmgr move <name> [--node <id>] --to <id> [--reason <text>] [--json]\n\
+         \x20                                      (moves an entry to another project, re-encrypted to its key;\n\
+         \x20                                      grants that named it are revoked; needs a fresh authenticator\n\
+         \x20                                      code and Touch ID, every time)\n\
+         \x20 credmgr expiring [--days N] [--node <id>] [--json]\n\
+         \x20                                      (entries expiring within N days, 30 by default; expired too)\n\
+         \x20 credmgr history <name> [--node <id>] [--limit N] [--json]\n\
+         \x20                                      (what happened to an entry: actions and times, never a value)\n\
+         \x20 credmgr search <term> --deep [--node <id>] [--json]\n\
+         \x20                                      (looks inside field VALUES; prints node and name only, never a\n\
+         \x20                                      value; needs reveal; at most 12 searches a minute)\n\
          \x20 credmgr set <name> --node <id> [--label <l>]   (value from stdin)\n\
          \x20 credmgr set <name> --node <id> --bulk          (`label: value` lines from stdin become the\n\
          \x20                                      entry's fields; a `///` line separates blocks)\n\
@@ -180,23 +360,70 @@ fn print_usage() {
          \x20                                      --purge-expired-seals it also destroys the retained\n\
          \x20                                      originals of nodes sealed more than seven days ago;\n\
          \x20                                      --dry-run only lists them)\n\
-         \x20 credmgr generate [--length <n>] [--no-symbols] [--pronounceable] [--json]\n\
+         \x20 credmgr doctor --scan [--stale-days N] [--expiring-days N] [--json]\n\
+         \x20                                      (the tidy-up scan: shared values, near-identical names,\n\
+         \x20                                      misfiled, weak, mistyped, expired and stale entries,\n\
+         \x20                                      each with what to do; changes nothing, shows no value)\n\
+         \x20 credmgr doctor --scan --apply [--yes] [--json]\n\
+         \x20                                      (the scan, then every move it proposes in one step:\n\
+         \x20                                      lists each move and asks first (--yes: do not ask);\n\
+         \x20                                      one code and one Touch ID for the whole plan; stops\n\
+         \x20                                      at the first move that fails and says what moved)\n\
+         \x20 credmgr generate [--length <n>] [--no-symbols] [--pronounceable | --hex] [--copy | --json]\n\
          \x20                                      (a password made by the broker, 8-128 characters,\n\
-         \x20                                      printed to stdout; its strength goes to stderr)\n\
-         \x20 credmgr approve <request> [--deny] [--code <n>]\n\
+         \x20                                      printed to stdout; its strength goes to stderr.\n\
+         \x20                                      --hex: lower-case hex only. --copy: macOS clipboard\n\
+         \x20                                      instead of stdout, cleared after 30 s if unchanged)\n\
+         \x20 credmgr approve <request> [--deny] [--code-on-argv <n>]\n\
          \x20                                      (decide an agent's waiting request while the vault\n\
-         \x20                                      stays locked: passphrase from stdin, plus your\n\
-         \x20                                      authenticator code when two-factor is on)\n\
+         \x20                                      stays locked: the passphrase is the first stdin line;\n\
+         \x20                                      with two-factor on, the authenticator code is the\n\
+         \x20                                      second line or, at a terminal, asked for when needed.\n\
+         \x20                                      --code-on-argv puts it in the command line, visible\n\
+         \x20                                      to `ps`: use it only where a prompt is impossible)\n\
          \x20 credmgr approvals [<request>] [--json]\n\
+         \x20 credmgr settings list|get|set|toggle|revert|requests|approve|deny   (the switchboard)\n\
+         \x20 credmgr kb                             (the knowledge base for language models)\n\
          \x20                                      (what the waiting agent requests ask for, so you can\n\
          \x20                                      decide them with `credmgr approve`; works while locked)\n\
          \x20 credmgr doctor --rebuild-registry --confirm --known-revoked <id>[,<id>...]\n\
          \x20                                      (needs presence — native shell only, Phase 5; passphrase from stdin)\n\
-         \x20 credmgr backup [--retain N]            (encrypted snapshot; passphrase from stdin)\n\
-         \x20 credmgr import <file|-> --node <id> [--json]\n\
+         \x20 credmgr backup [--retain N]            (a complete encrypted archive of the vault -\n\
+         \x20                                      entries, notes, sealed nodes, removed and rotated\n\
+         \x20                                      history, the audit log and the generation counter;\n\
+         \x20                                      backup passphrase from stdin)\n\
+         \x20 credmgr restore <archive> [--to <empty dir>] [--state-dir <dir>]\n\
+         \x20                                      (rebuilds a vault from a backup archive, backup\n\
+         \x20                                      passphrase from stdin; --to defaults to the vault\n\
+         \x20                                      directory and must be empty or absent; refuses to\n\
+         \x20                                      overwrite or merge; then `credmgr unlock` with the\n\
+         \x20                                      vault passphrase)\n\
+         \x20 credmgr import <file|-> --node <id> [--format json|env] [--json]\n\
          \x20                                      (a .env-style file — NAME=value, # comments, export,\n\
          \x20                                      quotes — becomes entries in ONE all-or-nothing call;\n\
-         \x20                                      `-` reads stdin; values are never printed)\n\
+         \x20                                      `-` reads stdin; values are never printed. A .json file\n\
+         \x20                                      (or --format json) is an array of\n\
+         \x20                                      name+value entries or name+fields (label, value, type))\n\
+         \x20 credmgr import-env <file|-> --node <id> [--dry-run] [--on-conflict refuse|skip] [--json]\n\
+         \x20                                      (like `import`, but it previews every name first: new,\n\
+         \x20                                      already there, repeated, empty, resembling another. Each\n\
+         \x20                                      entry is written on its own with its own audit record;\n\
+         \x20                                      a conflict writes nothing unless you say `skip`)\n\
+         \x20 credmgr alias <name> [--node <id>] [--add <alias>]... [--remove <alias>]... [--clear] [--json]\n\
+         \x20                                      (other names an entry answers to; lists them when no\n\
+         \x20                                      change is asked; needs a login, `credmgr unlock`)\n\
+         \x20 credmgr tag <name> [--node <id>] [--add <tag>]... [--remove <tag>]... [--clear] [--json]\n\
+         \x20                                      (an entry's tags: lower-cased labels, at most 16; lists\n\
+         \x20                                      them when no change is asked; needs a login)\n\
+         \x20 credmgr merge suggest|dismissed|restore-all --node <id> [--json]\n\
+         \x20 credmgr merge apply --node <id> --keep <name> --drop <name>... [--json]\n\
+         \x20 credmgr merge dismiss|undismiss|auto --node <id> --group <key> [--json]\n\
+         \x20 credmgr merge auto-all --node <id> [--apply] [--json]\n\
+         \x20                                      (duplicates inside one node: the kept entry takes the\n\
+         \x20                                      other names as aliases, the rest are removed and can be\n\
+         \x20                                      undone for 7 days; auto-all is a dry run unless --apply)\n\
+         \x20 credmgr similar <name> --node <id> [--json]\n\
+         \x20                                      (which names on the node look like <name>; writes nothing)\n\
          \x20 credmgr notes show <id> [--json]       (the node's markdown note)\n\
          \x20 credmgr notes set <id> [--file <path>] (note text from the file or stdin; empty input is\n\
          \x20                                      refused — `set` never deletes)\n\
@@ -211,9 +438,23 @@ fn print_usage() {
          \x20                                      [--private-names|--no-private-names]\n\
          \x20                                      [--sibling-visibility shared|isolated]\n\
          \x20                                      [--descendant-read|--no-descendant-read]\n\
+         \x20                                      [--security-level open|guarded|strict]\n\
          \x20                                      (a partial patch, all-or-nothing; widening who can\n\
-         \x20                                      read — descendant-read on, siblings shared — needs\n\
-         \x20                                      presence, so it is refused here)\n\
+         \x20                                      read — descendant-read on, siblings shared, or a LOWER\n\
+         \x20                                      security level — needs presence: Touch ID, proved\n\
+         \x20                                      automatically when enrolled)\n\
+         \x20 credmgr node rekey <id>               (a new key for the node, every file re-sealed to it; needs a\n\
+         \x20                                      fresh authenticator code and Touch ID, every time)\n\
+         \x20 credmgr orphan ls [--json]            (sealed entries: names only)\n\
+         \x20 credmgr orphan destroy (--all | <entry-id>...) --count <n> --confirm destroy-sealed-entries\n\
+         \x20                                      (deletes sealed entries and their archives for good; needs a fresh\n\
+         \x20                                      authenticator code and Touch ID; cannot be undone)\n\
+         \x20 credmgr export --node <id> --out <file> --age [--age-recipient <age1...>]... [--force]\n\
+         \x20                                      (an age-encrypted archive of a node, written to a file only; the\n\
+         \x20                                      passphrase comes from stdin twice, or use --age-recipient; 2FA seeds\n\
+         \x20                                      are left out; needs a fresh authenticator code and Touch ID)\n\
+         \x20 credmgr audit report (--days <n> | --from YYYY-MM-DD --to YYYY-MM-DD) [--node <id>] [--json]\n\
+         \x20                                      (counts by action, actor and node, denials, presence uses; no values)\n\
          \x20 credmgr node seal <name>\n\
          \x20 credmgr node restore <name>\n\
          \x20 credmgr grant <from> --to <node> --scope read --reason \"...\"\n\
@@ -221,6 +462,20 @@ fn print_usage() {
          \x20 credmgr grant ls [--json]\n\
          \x20 credmgr grant revoke <id>\n\
          \x20 credmgr mcp                          (MCP stdio server; for agent config, not humans)\n\
+         \x20 credmgr mcp --print-config [<client>]  (the exact MCP config for claude-code, claude-desktop,\n\
+         \x20                                      cursor, vscode or windsurf; no client = generic JSON)\n\
+         \x20 credmgr agent detect [--json]          (which clients are on this Mac and whether they are wired)\n\
+         \x20 credmgr agent connect|disconnect <client> [--yes]\n\
+         \x20                                      (shows the diff, backs the file up, then writes only the\n\
+         \x20                                      credmgr entry; never Claude Code's state file)\n\
+         \x20 credmgr agent init [--node <id>] [--dir <path>] [--yes]\n\
+         \x20                                      (writes CREDMGR.md - node names and rules, no secret)\n\
+         \x20 credmgr agent token issue <node> --label <text> --cap <list,read,...> [--expires 8h]\n\
+         \x20                                      (a node-scoped agent token, printed once; owner login,\n\
+         \x20                                      second factor and Touch ID; one day by default, 7 at most)\n\
+         \x20 credmgr agent token ls|rotate <id>|revoke <id>\n\
+         \x20 credmgr prompt [--node <id>] [--json]  (the Vault Protocol prompt for an agent, from the live\n\
+         \x20                                      vault: names and structure, never a value)\n\
          \x20 credmgr --version"
     );
 }
@@ -310,6 +565,33 @@ fn read_stdin_line() -> Result<String, String> {
     Ok(buf)
 }
 
+/// The first line of `text` (without its `\r\n` / `\n`) and everything after it.
+fn split_first_line(text: &str) -> (&str, &str) {
+    match text.split_once('\n') {
+        Some((first, rest)) => (first.strip_suffix('\r').unwrap_or(first), rest),
+        None => (text, ""),
+    }
+}
+
+/// An authenticator code, never from argv (issue #39): at a terminal it is
+/// asked for on stderr (stdout stays the machine-readable answer); piped, it is
+/// the next line of stdin. Surrounding spaces are dropped; empty input is an
+/// error, not a request to the broker.
+pub(crate) fn read_authenticator_code() -> Result<String, String> {
+    if std::io::stdin().is_terminal() {
+        eprint!("Authenticator code: ");
+        std::io::Write::flush(&mut std::io::stderr()).ok();
+    }
+    let code = read_stdin_line()?.trim().to_string();
+    if code.is_empty() {
+        return Err(
+            "no authenticator code was given (type it at the prompt, or pipe it in as one line)"
+                .to_string(),
+        );
+    }
+    Ok(code)
+}
+
 // ---- talking to the broker ----------------------------------------------
 
 /// ADR-084: the broker accepts a name that mixes Latin with Greek or Cyrillic
@@ -325,6 +607,80 @@ fn print_name_warnings(value: &Value) {
              like another name. Check it is the one you meant"
         );
     }
+}
+
+/// Issue #40 / ADR-111: the broker lists, in `possibleSeedFields`, the fields of the
+/// entry it just wrote that could be a TOTP seed but are not typed as one. As text they
+/// stay readable to anything that may reveal the entry, and `totp.code` refuses them.
+/// Says so once on stderr, names the command that types them, and - when a person is at
+/// a terminal (never in a pipe or a script) - offers to do it now. The offer reads the
+/// terminal itself because the value came in on stdin.
+fn offer_seed_typing(node: &str, name: &str, value: &Value) {
+    let ids: Vec<String> = value["possibleSeedFields"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    if ids.is_empty() {
+        return;
+    }
+    let entry = value["entry"].as_str().unwrap_or_default();
+    let held = value["pending"].as_bool() == Some(true);
+    for id in &ids {
+        eprintln!(
+            "warning: field {id} of '{name}' looks as though it could be a 2FA seed, but it is not typed as one. \
+             Stored as text, anything that may reveal this entry can read it, and `credmgr totp` cannot make codes from it."
+        );
+        eprintln!("  type it as a seed:  credmgr field set {name} --field-id {id} --type totp-seed --node {node}");
+        if held || entry.is_empty() || !ask_at_terminal("Type it as a 2FA seed now? [y/N] ") {
+            continue;
+        }
+        let typed = fields::entry_meta(node, entry).and_then(|meta| {
+            call(
+                "field.update",
+                json!({
+                    "node": node, "entry": entry,
+                    "generation": meta["generation"].as_u64().unwrap_or(0),
+                    "field": id, "patch": { "type": "totp-seed" },
+                }),
+            )
+        });
+        match typed {
+            Ok(_) => eprintln!("field {id} is now typed totp-seed"),
+            Err(e) => eprintln!("could not type field {id}: {e}"),
+        }
+    }
+}
+
+/// A yes/no question put to the person at the keyboard: only when stderr is a terminal and
+/// `/dev/tty` opens (stdin may already be the pipe the value came in on), and never when
+/// `CREDMGR_NO_PROMPT` is set. Anything but `y`/`yes` is no.
+fn ask_at_terminal(question: &str) -> bool {
+    if !std::io::stderr().is_terminal() || std::env::var_os("CREDMGR_NO_PROMPT").is_some() {
+        return false;
+    }
+    let Ok(tty) = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")
+    else {
+        return false;
+    };
+    let mut out = match tty.try_clone() {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    if std::io::Write::write_all(&mut out, question.as_bytes()).is_err() {
+        return false;
+    }
+    let mut line = String::new();
+    if std::io::BufRead::read_line(&mut std::io::BufReader::new(tty), &mut line).is_err() {
+        return false;
+    }
+    matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
 /// Every response is `{ok: true, value: ...}` or `{ok: false, error: ...}`
@@ -390,10 +746,149 @@ fn call(op: &str, params: Value) -> Result<Value, String> {
 /// `None` when the broker sent none - best effort on its side.
 fn call_audited(op: &str, params: Value) -> Result<(Value, Option<String>), String> {
     let token = std::env::var("CREDMGR_TOKEN").ok();
-    let response =
-        transport::call(op, token.as_deref(), params).map_err(|e: TransportError| e.to_string())?;
-    let audit = response["audit"].as_str().map(str::to_string);
-    unwrap_ok(response).map(|value| (value, audit))
+    let send = |op: &str, params: Value| -> Result<(Value, Option<String>), String> {
+        let response = transport::call(op, token.as_deref(), params)
+            .map_err(|e: TransportError| e.to_string())?;
+        let audit = response["audit"].as_str().map(str::to_string);
+        unwrap_ok(response).map(|value| (value, audit))
+    };
+    let first = send(op, params.clone());
+    // ADR-150: the vault asks the owner's login to confirm it is still them before a secret is shown (or before
+    // that rule is weakened). Confirm — Touch ID when this Mac has a presence key, else the passphrase typed at
+    // the terminal — and send the request once more. Never from a pipe: a script runs `credmgr confirm` first.
+    let first = match first {
+        Err(e) if e.starts_with("confirmation_required") && op != "session.confirm" => {
+            confirm_interactively(&e)?;
+            send(op, params.clone())
+        }
+        other => other,
+    };
+    match first {
+        // ADR-098: an op that needs the user's finger. When this Mac has a presence key, ask the broker
+        // for a challenge, let the Secure Enclave sign it (Touch ID or the device password), and send the
+        // request again with the proof. Without one, say how to get one.
+        Err(e) if e.starts_with("presence_required") && op != "presence.challenge" => {
+            let Some(helper) = credmgr_keystore::secure_enclave::Helper::locate() else {
+                return Err(format!(
+                    "{e}\n(this build has no Secure Enclave helper; presence needs the macOS app or the macOS tarball)"
+                ));
+            };
+            let state_dir = credmgr_store::paths::default_state_dir();
+            if credmgr_keystore::presence_client::load_key(&state_dir)
+                .ok()
+                .flatten()
+                .is_none()
+            {
+                return Err(format!(
+                    "{e}\nthis Mac has no presence key yet - run `credmgr presence enrol` (unlocked, as the owner)"
+                ));
+            }
+            let challenge = send("presence.challenge", json!({ "op": op, "params": params }))?.0;
+            let challenge = credmgr_keystore::presence_client::Challenge::from_value(&challenge)
+                .ok_or("the broker's presence challenge was malformed")?;
+            eprintln!(
+                "{}: touch the sensor (or use your Mac password)...",
+                challenge.reason
+            );
+            let proved = credmgr_keystore::presence_client::attach_proof(
+                &helper, &state_dir, &challenge, &params,
+            )
+            .map_err(|e| presence_error(&e))?;
+            send(op, proved)
+        }
+        other => other,
+    }
+}
+
+/// Whether this Mac can answer a Touch ID check for this vault: the Secure Enclave helper is here and a
+/// presence key was created on this Mac.
+fn touch_id_ready() -> bool {
+    credmgr_keystore::secure_enclave::Helper::locate().is_some()
+        && credmgr_keystore::presence_client::load_key(&credmgr_store::paths::default_state_dir())
+            .ok()
+            .flatten()
+            .is_some()
+}
+
+/// ADR-150: answer `confirmation_required` for the person at the terminal. Touch ID first when it is set up on
+/// this Mac (a dismissed prompt falls back to the passphrase); else the passphrase, typed at a prompt on stderr.
+/// The passphrase is never read from argv, and never from a pipe here (stdin may be the command's own input).
+fn confirm_interactively(refusal: &str) -> Result<(), String> {
+    let no_prompt = std::env::var_os("CREDMGR_NO_PROMPT").is_some();
+    if !no_prompt && touch_id_ready() {
+        eprintln!("This vault asks you to confirm it is you before showing secrets.");
+        match call("session.confirm", json!({})) {
+            Ok(_) => return Ok(()),
+            Err(e) => eprintln!("Touch ID did not confirm ({e}); using the passphrase instead."),
+        }
+    }
+    if no_prompt || !std::io::stdin().is_terminal() {
+        return Err(format!(
+            "{refusal}\nrun `credmgr confirm` first (Touch ID, or the passphrase on stdin), then repeat this command"
+        ));
+    }
+    // The typed line echoes, as `credmgr unlock`'s does: this binary forbids unsafe code and carries no no-echo
+    // prompt helper. The buffer is zeroised when it drops.
+    eprint!("This vault asks you to confirm it is you. Vault passphrase: ");
+    std::io::Write::flush(&mut std::io::stderr()).ok();
+    let passphrase = secrecy::zeroize::Zeroizing::new(read_stdin_line()?);
+    call(
+        "session.confirm",
+        json!({ "passphrase": passphrase.as_str() }),
+    )
+    .map(|_| ())
+}
+
+/// `credmgr confirm [--touch-id]` (ADR-150): confirm it is you, so the vault's "confirm before showing secrets"
+/// policy lets this login see secrets for its trust window (or for the next one, in "every time" mode). The
+/// passphrase is the first line of stdin, never argv.
+fn cmd_confirm(mut args: Vec<String>) -> Result<(), String> {
+    const USAGE: &str =
+        "usage: credmgr confirm [--touch-id]   (passphrase from stdin without --touch-id)";
+    let touch = take_bool_flag(&mut args, "--touch-id");
+    reject_flags(&args, USAGE)?;
+    if !args.is_empty() {
+        return Err(USAGE.to_string());
+    }
+    let value = if touch {
+        call("session.confirm", json!({}))?
+    } else {
+        if std::io::stdin().is_terminal() {
+            eprint!("Vault passphrase: ");
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
+        // Zeroised when it drops; echoes like `credmgr unlock` (no no-echo helper in this binary).
+        let passphrase = secrecy::zeroize::Zeroizing::new(read_stdin_line()?);
+        if passphrase.is_empty() {
+            return Err(
+                "no passphrase was given (type it at the prompt, or pipe it in as one line)".into(),
+            );
+        }
+        call(
+            "session.confirm",
+            json!({ "passphrase": passphrase.as_str() }),
+        )?
+    };
+    println!(
+        "confirmed - secrets can be shown for {} seconds",
+        value["expiresIn"].as_u64().unwrap_or(0)
+    );
+    Ok(())
+}
+
+/// A keystore failure in the words a person needs.
+fn presence_error(e: &credmgr_keystore::KeystoreError) -> String {
+    use credmgr_keystore::KeystoreError as K;
+    match e {
+        K::Helper { code, .. } if code == "cancelled" => {
+            "cancelled - the Touch ID prompt was dismissed".to_string()
+        }
+        K::Helper { code, detail } if code == "locked_out" => {
+            format!("Touch ID is locked out ({detail}); unlock the Mac with its password first")
+        }
+        K::HelperMissing(why) => format!("the Secure Enclave helper is not available: {why}"),
+        other => other.to_string(),
+    }
 }
 
 // ---- commands ------------------------------------------------------------
@@ -459,14 +954,74 @@ fn cmd_init() -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_status() -> Result<(), String> {
+/// ADR-159: where `credmgrd`'s diagnostic log is, and whether one has been written. Read from the
+/// filesystem, not the broker, so it works when the broker will not start — the case the log exists for.
+/// The directory is this process's `default_log_dir()`; a broker started with a different
+/// `CREDMGR_LOG_DIR` writes elsewhere.
+fn diag_log_line() -> String {
+    let file = credmgr_store::paths::default_log_dir().join("credmgrd.log");
+    match std::fs::metadata(&file) {
+        Ok(m) => format!(
+            "diagnostic log: {} ({} KiB; no names or values in it)",
+            file.display(),
+            m.len().div_ceil(1024)
+        ),
+        Err(_) => format!(
+            "diagnostic log: {} (none written; off by default, start credmgrd with CREDMGR_DIAG_LOG=1 to turn it on)",
+            file.display()
+        ),
+    }
+}
+
+fn cmd_status(mut args: Vec<String>) -> Result<(), String> {
+    const USAGE: &str = "usage: credmgr status [--ack | --log]";
+    // ADR-156: `--ack` says the owner has seen the cross-node alarm.
+    let ack = take_bool_flag(&mut args, "--ack");
+    // ADR-159: `--log` prints only the diagnostic log's place, without asking the broker.
+    let log_only = take_bool_flag(&mut args, "--log");
+    reject_flags(&args, USAGE)?;
+    if !args.is_empty() || (ack && log_only) {
+        return Err(USAGE.to_string());
+    }
+    if log_only {
+        println!("{}", diag_log_line());
+        return Ok(());
+    }
+    if ack {
+        let value = call("vault.anomalies_ack", json!({}))?;
+        println!(
+            "alarm acknowledged ({} trip(s))",
+            value["acknowledged"].as_u64().unwrap_or(0)
+        );
+        return Ok(());
+    }
     let value = call("vault.status", json!({}))?;
     println!("locked: {}", value["locked"].as_bool().unwrap_or(true));
+    // ADR-156: only the owner's login is told (the key is absent otherwise).
+    let alarms = value["anomaliesUnseen"].as_u64().unwrap_or(0);
+    if alarms > 0 {
+        println!(
+            "security alarm: {alarms} burst(s) of five refused cross-project requests in ten minutes \
+             (see `credmgr audit`; clear with `credmgr status --ack`)"
+        );
+    }
+    // ADR-165 M5: this Mac's machine-lock record names this folder under another vault id (owner only).
+    let detached = value["warnings"]
+        .as_array()
+        .is_some_and(|w| w.iter().any(|w| w == "machine_lock_record_detached"));
+    if detached {
+        println!(
+            "machine lock warning: this Mac's machine-lock record for this vault folder names a different vault \
+             id than the folder's vault.id (edited, removed, or the folder was put back to an older copy); \
+             nothing was repaired (see `credmgr keystore status`)"
+        );
+    }
     // ADR-090: a count only; `credmgr approvals` says what they are.
     let waiting = value["pendingApprovals"].as_u64().unwrap_or(0);
     if waiting > 0 {
         println!("approvals waiting: {waiting}   (see them with: credmgr approvals)");
     }
+    println!("{}", diag_log_line());
     Ok(())
 }
 
@@ -498,7 +1053,17 @@ fn print_unlock_result(value: &Value) {
     }
 }
 
-fn cmd_unlock() -> Result<(), String> {
+fn cmd_unlock(mut args: Vec<String>) -> Result<(), String> {
+    // ADR-098: `--touch-id` opens the vault with the Secure Enclave instead of the passphrase. The
+    // broker asks the system for Touch ID (or the Mac password) itself; nothing is read from stdin.
+    if take_bool_flag(&mut args, "--touch-id") {
+        reject_flags(&args, "usage: credmgr unlock [--touch-id]")?;
+        let value = call("vault.unlock", json!({ "method": "device" }))
+            .map_err(explain_touch_id_unlock_error)?;
+        print_unlock_result(&value);
+        return Ok(());
+    }
+    reject_flags(&args, "usage: credmgr unlock [--touch-id]")?;
     let passphrase = read_stdin_value()?;
     // ADR-063: the broker builds its keystore from this passphrase per
     // request, proves it against `root.wrap.pass`, and loads the vault from
@@ -508,31 +1073,405 @@ fn cmd_unlock() -> Result<(), String> {
     Ok(())
 }
 
+/// `credmgr presence status | enrol [--label <text>] | unenrol <id>` (ADR-098).
+fn cmd_presence(mut args: Vec<String>) -> Result<(), String> {
+    const USAGE: &str =
+        "usage: credmgr presence status [--json] | enrol [--label <text>] | unenrol <id>";
+    if args.is_empty() {
+        return Err(USAGE.to_string());
+    }
+    let sub = args.remove(0);
+    match sub.as_str() {
+        "status" => {
+            let as_json = take_bool_flag(&mut args, "--json");
+            let value = call("presence.status", json!({}))?;
+            if as_json {
+                println!("{value}");
+                return Ok(());
+            }
+            println!(
+                "secure enclave: {}   biometry: {}   device password: {}",
+                value["secureEnclave"].as_bool().unwrap_or(false),
+                value["biometry"].as_str().unwrap_or("none"),
+                value["passcode"].as_bool().unwrap_or(false),
+            );
+            let keys = value["enrolled"].as_array().cloned().unwrap_or_default();
+            if keys.is_empty() {
+                println!("presence keys: none - run `credmgr presence enrol`");
+            }
+            for k in keys {
+                println!(
+                    "presence key {}  {}",
+                    k["id"].as_str().unwrap_or("?"),
+                    k["label"].as_str().unwrap_or("")
+                );
+            }
+            println!(
+                "touch id unlock: {}",
+                value["touchIdUnlock"].as_bool().unwrap_or(false)
+            );
+            Ok(())
+        }
+        "enrol" | "enroll" => {
+            let label =
+                take_text_flag(&mut args, "--label")?.unwrap_or_else(|| "This Mac".to_string());
+            reject_flags(&args, USAGE)?;
+            let helper = credmgr_keystore::secure_enclave::Helper::locate()
+                .ok_or("this build has no Secure Enclave helper (macOS only)")?;
+            let state_dir = credmgr_store::paths::default_state_dir();
+            let key = credmgr_keystore::presence_client::create_key(&helper, &state_dir)
+                .map_err(|e| presence_error(&e))?;
+            let public = key.public().map_err(|e| presence_error(&e))?;
+            let params = json!({
+                "publicKey": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, public),
+                "label": label,
+            });
+            // ADR-148 §P2-4: prove this Mac holds the new key — it signs a broker nonce (Touch ID appears).
+            let challenge = call(
+                "presence.challenge",
+                json!({ "op": "presence.enrol", "params": params, "possession": true }),
+            )?;
+            let challenge = credmgr_keystore::presence_client::Challenge::from_value(&challenge)
+                .ok_or("the broker's possession challenge was malformed")?;
+            eprintln!(
+                "{}: touch the sensor (or use your Mac password)...",
+                challenge.reason
+            );
+            let params = credmgr_keystore::presence_client::attach_possession(
+                &helper, &state_dir, &challenge, &params,
+            )
+            .map_err(|e| presence_error(&e))?;
+            let value = call("presence.enrol", params)?;
+            println!(
+                "enrolled presence key {} ({})",
+                value["id"].as_str().unwrap_or("?"),
+                label
+            );
+            Ok(())
+        }
+        "unenrol" | "unenroll" => {
+            let [id] = args.as_slice() else {
+                return Err(USAGE.to_string());
+            };
+            call("presence.unenrol", json!({ "id": id }))?;
+            println!("removed presence key {id}");
+            Ok(())
+        }
+        _ => Err(USAGE.to_string()),
+    }
+}
+
+/// `credmgr touch-id enable | disable` - unlock this vault with Touch ID (ADR-098).
+fn cmd_touch_id(mut args: Vec<String>) -> Result<(), String> {
+    const USAGE: &str = "usage: credmgr touch-id enable | disable";
+    let sub = if args.is_empty() {
+        return Err(USAGE.to_string());
+    } else {
+        args.remove(0)
+    };
+    reject_flags(&args, USAGE)?;
+    match sub.as_str() {
+        "enable" => {
+            call("device.enrol", json!({}))?;
+            println!("Touch ID unlock is on. Lock the vault and try `credmgr unlock --touch-id`.");
+            Ok(())
+        }
+        "disable" => {
+            call("device.remove", json!({}))?;
+            println!("Touch ID unlock is off.");
+            Ok(())
+        }
+        _ => Err(USAGE.to_string()),
+    }
+}
+
+/// `credmgr keystore status | bind | unbind [--json]` - the machine lock (ADR-165).
+fn cmd_keystore(mut args: Vec<String>) -> Result<(), String> {
+    const USAGE: &str =
+        "usage: credmgr keystore status | bind | unbind [--json]   (bind: the passphrase, then \
+                         the current recovery code, then the NEW recovery code typed back, one stdin line \
+                         each; unbind: the passphrase)";
+    let json_out = take_bool_flag(&mut args, "--json");
+    let sub = if args.is_empty() {
+        return Err(USAGE.to_string());
+    } else {
+        args.remove(0)
+    };
+    reject_flags(&args, USAGE)?;
+    if !args.is_empty() {
+        return Err(USAGE.to_string());
+    }
+    // ADR-165 (review P1-1, P2-4): the secrets come from stdin, never the command line.
+    let (op, params) = match sub.as_str() {
+        "status" => ("keystore.status", json!({})),
+        "bind" => {
+            let value = keystore_bind_two_phase(json_out)?;
+            if !json_out {
+                print!("{}", keystore_text(&sub, &value));
+            }
+            return Ok(());
+        }
+        "unbind" => {
+            let passphrase = quick_cmds::ask_secret("Passphrase")?;
+            if passphrase.is_empty() {
+                ("keystore.unbind", json!({}))
+            } else {
+                (
+                    "keystore.unbind",
+                    json!({ "passphrase": passphrase.as_str() }),
+                )
+            }
+        }
+        _ => return Err(USAGE.to_string()),
+    };
+    let mut params = params;
+    let answer = call(op, params.clone());
+    quick_cmds::wipe_strings(&mut params);
+    let value = answer.map_err(|e| keystore_error_hint(&sub, e))?;
+    if json_out {
+        println!("{value}");
+        return Ok(());
+    }
+    print!("{}", keystore_text(&sub, &value));
+    Ok(())
+}
+
+/// `credmgr keystore bind` (review N1): `prepare` with the passphrase and the current recovery code (which
+/// changes nothing and answers the new code), the new code printed once, then `commit` with it typed back.
+/// Up to three tries at the retyping; anything else (an empty line, the end of stdin) cancels, and nothing
+/// has changed. Answers the commit's body.
+fn keystore_bind_two_phase(json_out: bool) -> Result<Value, String> {
+    let passphrase = quick_cmds::ask_secret("Passphrase")?;
+    if passphrase.is_empty() {
+        return Err("the passphrase is required (first stdin line)".to_string());
+    }
+    let code = quick_cmds::ask_secret("Current recovery code")?;
+    if code.trim().is_empty() {
+        return Err(
+            "the current recovery code is required (second stdin line): it is proven before the \
+             lock is turned on, so a lost device key can never lock you out"
+                .to_string(),
+        );
+    }
+    let mut params = json!({
+        "phase": "prepare",
+        "passphrase": passphrase.as_str(),
+        "recoveryCode": code.trim(),
+    });
+    let answer = call("keystore.bind", params.clone());
+    quick_cmds::wipe_strings(&mut params);
+    drop(passphrase);
+    drop(code);
+    let prepared = answer.map_err(|e| keystore_error_hint("bind", e))?;
+    if json_out {
+        println!("{prepared}");
+    }
+    if prepared["already"] == json!(true) {
+        // Bound already: no new code; the commit re-keys any project whose key dates from before the bind.
+        let value = call("keystore.bind", json!({ "phase": "commit" }))
+            .map_err(|e| keystore_error_hint("bind", e))?;
+        if json_out {
+            println!("{value}");
+        }
+        return Ok(value);
+    }
+    let new_code = prepared["newRecoveryCode"]
+        .as_str()
+        .ok_or("credmgrd did not return the new recovery code")?
+        .to_string();
+    if !json_out {
+        println!(
+            "Ready to turn the machine lock on. Nothing has changed yet.\n\n\
+             New vault recovery code - write this down now, it will not be shown again:\n\
+             (once the lock is on, the recovery code you typed stops working and only this one opens the\n\
+             vault on another Mac or after this Mac's device key is lost)\n\n\
+             RECOVERY_CODE={new_code}\n\n\
+             Retype it to turn the lock on (from stdin, one line; an empty line cancels and changes nothing):"
+        );
+    }
+    std::io::Write::flush(&mut std::io::stdout()).ok();
+    for attempt in 1..=3 {
+        let typed = quick_cmds::ask_secret("New recovery code").unwrap_or_default();
+        if typed.trim().is_empty() {
+            let _ = call("keystore.bind", json!({ "phase": "cancel" }));
+            return Err(
+                "cancelled - the machine lock was not turned on and nothing changed; the recovery code you \
+                 typed first still works"
+                    .to_string(),
+            );
+        }
+        let mut params = json!({ "phase": "commit", "recoveryCode": typed.trim() });
+        let answer = call("keystore.bind", params.clone());
+        quick_cmds::wipe_strings(&mut params);
+        match answer {
+            Ok(value) => {
+                if json_out {
+                    println!("{value}");
+                }
+                return Ok(value);
+            }
+            Err(e) if e.starts_with("recovery_code_mismatch") && attempt < 3 => {
+                eprintln!("That is not the code shown above. Nothing changed; type it again:");
+            }
+            Err(e) if e.starts_with("recovery_code_mismatch") => {
+                let _ = call("keystore.bind", json!({ "phase": "cancel" }));
+                return Err(
+                    "recovery_code_mismatch: the retyped code did not match three times - the machine lock was \
+                     not turned on and nothing changed; the recovery code you typed first still works. Run \
+                     `credmgr keystore bind` again"
+                        .to_string(),
+                );
+            }
+            Err(e) => return Err(keystore_error_hint("bind", e)),
+        }
+    }
+    unreachable!("the loop returns on its third try")
+}
+
+/// The words `credmgr keystore` prints for an answer (status, bind or unbind).
+fn keystore_text(sub: &str, v: &Value) -> String {
+    let mut out = String::new();
+    let bound = v["bound"].as_bool().unwrap_or(false);
+    match sub {
+        "bind" if v["changed"] == json!(false) => {
+            out.push_str("The machine lock was already on. No new root key, no new recovery code.\n")
+        }
+        "bind" => out.push_str(
+            "The machine lock is on: the root key was replaced and every project re-keyed, and the\n\
+             passphrase now opens this vault only on this Mac. Another Mac using this folder needs the\n\
+             recovery code. A copy of the folder made BEFORE now still opens with the passphrase and\n\
+             shows what it held then; nothing written from now on.\n",
+        ),
+        "unbind" if v["changed"] == json!(false) => {
+            out.push_str("The machine lock was already off. Nothing changed.\n")
+        }
+        "unbind" => out.push_str(
+            "The machine lock is off: the passphrase opens a copy of this vault folder on any computer again.\n",
+        ),
+        _ => {}
+    }
+    if sub == "bind" && v["changed"] == json!(true) {
+        out.push_str(
+            "The recovery code you retyped is now the vault's recovery code; the one you typed first no \
+             longer works.\n",
+        );
+    }
+    if let Some(failed) = v["rekeyFailed"].as_array().filter(|a| !a.is_empty()) {
+        for f in failed {
+            out.push_str(&format!(
+                "warning: project {} was not given a new key ({}); run `credmgr keystore bind` again\n",
+                f["node"].as_str().unwrap_or("?"),
+                f["reason"].as_str().unwrap_or("")
+            ));
+        }
+    }
+    // ADR-165 review M1: archives from before the bind leave the vault folder.
+    if let Some(n) = v["archivesMoved"].as_u64().filter(|n| *n > 0) {
+        out.push_str(&format!(
+            "Moved {n} backup archive{} from the vault folder's backups/ to CredMgr's state folder.\n",
+            if n == 1 { "" } else { "s" }
+        ));
+    }
+    if let Some(failed) = v["archivesNotMoved"].as_array().filter(|a| !a.is_empty()) {
+        for f in failed {
+            out.push_str(&format!(
+                "warning: backup archive {} is still in the vault folder ({}); every copy of the folder \
+                 carries it; run `credmgr keystore bind` again to move it\n",
+                f["file"].as_str().unwrap_or("?"),
+                f["reason"].as_str().unwrap_or("")
+            ));
+        }
+    }
+    if v["completionPending"].as_bool() == Some(true) {
+        out.push_str(
+            "note: the change is committed and the vault locked itself; unlock with your passphrase, then run \
+             `credmgr keystore bind` again to finish\n",
+        );
+    }
+    let tier = if bound {
+        "on (device key file on this Mac; not sealed in the Secure Enclave)"
+    } else {
+        "off"
+    };
+    out.push_str(&format!("machine lock: {tier}\n"));
+    if bound && v["opensHere"] == json!(false) {
+        out.push_str(
+            "warning: this Mac cannot open the passphrase file with its device key; unlock with\n\
+             `credmgr recover` (the recovery code) instead\n",
+        );
+    }
+    if let Some(w) = v["warning"].as_str() {
+        out.push_str(&format!("warning: {w}\n"));
+    }
+    if let Some(p) = v["protects"].as_str() {
+        out.push_str(&format!("protects: {p}\n"));
+    }
+    if let Some(p) = v["doesNotProtect"].as_str() {
+        out.push_str(&format!("does not protect: {p}\n"));
+    }
+    out.push_str(&format!(
+        "recovery code unlock: {}\n",
+        if v["recoveryUnlock"].as_bool().unwrap_or(false) {
+            "available (works without the device key)"
+        } else {
+            "not set up yet (change the passphrase to issue a recovery code; bind needs one)"
+        }
+    ));
+    out
+}
+
+fn keystore_error_hint(sub: &str, e: String) -> String {
+    if e.starts_with("two_factor_required") && sub == "unbind" {
+        return format!("{e}\n(turning the machine lock off needs a fresh second factor: run `credmgr gate verify` first)");
+    }
+    if e.starts_with("recovery_code_mismatch") && sub == "bind" {
+        return "recovery_code_mismatch: that recovery code does not open this vault - nothing was changed. \
+                Turning the machine lock on needs the CURRENT code (the last one CredMgr printed); without it, \
+                change the passphrase (`credmgr passphrase`) to be shown a new one first. Wrong guesses are \
+                rate-limited, like wrong passphrases"
+            .to_string();
+    }
+    e
+}
+
 fn cmd_lock() -> Result<(), String> {
     let value = call("vault.lock", json!({}))?;
     println!("locked: {}", value["locked"].as_bool().unwrap_or(true));
     Ok(())
 }
 
-/// `credmgr gate verify <code>` — completes `07_TWO_FACTOR.md §3`'s second
-/// factor after a `vault.unlock` that returned `two_factor_required`. `code`
-/// is a 6-digit TOTP, not a secret in the `passphrase`/`set`-value sense (it
-/// is worthless after ~90s, `07 §5`), so it is an ordinary positional
-/// argument rather than stdin — unlike every other secret this binary
-/// handles, argv exposure here costs an attacker nothing they couldn't get
-/// by shoulder-surfing the same 6 digits directly.
+/// `credmgr gate verify` — completes `07_TWO_FACTOR.md §3`'s second factor
+/// after a `vault.unlock` that returned `two_factor_required`. The code is a
+/// single-use TOTP, worthless after ~90 s (`07 §5`) and useless without the
+/// passphrase, but SECURITY.md counts a secret in argv as in scope (a same-user
+/// process sees it in `ps` while the command runs), so it is typed at a prompt or
+/// read from stdin (issue #39). `--code-on-argv <n>` keeps the old argv form for
+/// the places that cannot prompt, and says what it costs.
 fn cmd_gate(mut args: Vec<String>) -> Result<(), String> {
-    const USAGE: &str = "usage: credmgr gate verify <code> | gate enroll | gate recover";
+    const USAGE: &str = "usage: credmgr gate verify | gate enroll | gate recover";
     if args.is_empty() {
         return Err(USAGE.to_string());
     }
     let sub = args.remove(0);
+    // ADR-135: `--node <id>` makes the same subcommands about one project's own second factor.
+    if let Some(node) = take_flag_value(&mut args, "--node") {
+        return stable::cmd_node_gate(&sub, &node, args);
+    }
     match sub.as_str() {
         "verify" => {
-            let code = args
-                .first()
-                .cloned()
-                .ok_or("usage: credmgr gate verify <code>")?;
+            const VERIFY_USAGE: &str = "usage: credmgr gate verify  (the code is read from a prompt or stdin; --code-on-argv <n> puts it in the command line, visible to `ps`)";
+            let on_argv = take_flag_value(&mut args, "--code-on-argv");
+            reject_flags(&args, VERIFY_USAGE)?;
+            if !args.is_empty() {
+                // The old spelling, `gate verify 123456`: refused with the way out, never accepted quietly.
+                return Err(format!(
+                    "the code is no longer a command-line argument (a process list shows it while the command runs).\n{VERIFY_USAGE}"
+                ));
+            }
+            let code = match on_argv {
+                Some(code) => code,
+                None => read_authenticator_code()?,
+            };
             let value = call("vault.gate_verify", json!({ "code": code }))?;
             print_unlock_result(&value);
             Ok(())
@@ -545,7 +1484,7 @@ fn cmd_gate(mut args: Vec<String>) -> Result<(), String> {
             let begin = call("vault.gate_enroll_begin", json!({})).map_err(|e| {
                 if e.starts_with("two_factor_required") {
                     "two_factor_required — replacing an enrolled gate needs its second factor, \
-                     fresh: `credmgr lock`, unlock again, `credmgr gate verify <code>`, then run \
+                     fresh: `credmgr lock`, unlock again, `credmgr gate verify`, then run \
                      `credmgr gate enroll` within five minutes"
                         .to_string()
                 } else {
@@ -629,7 +1568,21 @@ fn absolute_dirs(dirs: Vec<String>) -> Result<Vec<String>, String> {
 /// MCP server has. Each `tools/call` reaches `credmgrd` over
 /// `credmgr_mcp::transport`'s own socket connection — this subcommand never
 /// touches the broker directly.
-fn cmd_mcp() -> Result<(), String> {
+fn cmd_mcp(mut args: Vec<String>) -> Result<(), String> {
+    // ADR-141: `credmgr mcp --print-config [<client>]` prints the client's configuration and exits;
+    // it touches no file and starts no server.
+    if take_bool_flag(&mut args, "--print-config") {
+        return agent::print_config(args);
+    }
+    if !args.is_empty() {
+        return Err(
+            "usage: credmgr mcp   (the stdio server)  |  credmgr mcp --print-config [<client>]"
+                .to_string(),
+        );
+    }
+    // ADR-164: an agent token in CREDMGR_AGENT_TOKEN scopes the session to its node; anything else there (a
+    // login above all) stops the server before it answers a single call.
+    credmgr_mcp::transport::agent_token_from_env()?;
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     credmgr_mcp::server::run(stdin.lock(), stdout.lock())
@@ -652,15 +1605,29 @@ fn cmd_whoami(mut args: Vec<String>) -> Result<(), String> {
         let names: Vec<&str> = reachable.iter().filter_map(Value::as_str).collect();
         println!("reachable: {}", names.join(", "));
     }
+    if let Some(level) = value["level"].as_str() {
+        println!(
+            "security level: {}",
+            credmgr_core::registry::SecurityLevel::parse(level).map_or(level, |l| l.label())
+        );
+    }
     Ok(())
 }
 
 fn cmd_list(mut args: Vec<String>) -> Result<(), String> {
     let as_json = take_bool_flag(&mut args, "--json");
     let node = take_flag_value(&mut args, "--node");
-    let value = match node {
-        Some(node) => call("entry.list", json!({ "node": node }))?,
-        None => call("node.list", json!({}))?,
+    // ADR-167: a tag narrows one node's list; it is never a query across nodes.
+    let tag = take_flag_value(&mut args, "--tag");
+    let value = match (node, tag) {
+        (Some(node), Some(tag)) => call("entry.list", json!({ "node": node, "tag": tag }))?,
+        (Some(node), None) => call("entry.list", json!({ "node": node }))?,
+        (None, Some(_)) => {
+            return Err(
+                "usage: credmgr list --node <id> --tag <tag> (a tag filters one node)".into(),
+            )
+        }
+        (None, None) => call("node.list", json!({}))?,
     };
     if as_json {
         println!("{value}");
@@ -683,11 +1650,21 @@ fn cmd_list(mut args: Vec<String>) -> Result<(), String> {
 
 fn cmd_search(mut args: Vec<String>) -> Result<(), String> {
     let as_json = take_bool_flag(&mut args, "--json");
+    // ADR-132: `--deep` looks inside field values (names and ids come back, never a value).
+    let deep = take_bool_flag(&mut args, "--deep");
+    let node = take_flag_value(&mut args, "--node");
     let term = args
         .first()
         .cloned()
-        .ok_or("usage: credmgr search <term>")?;
-    let value = call("search", json!({ "term": term }))?;
+        .ok_or("usage: credmgr search <term> [--node <id>] [--deep] [--json]")?;
+    if deep {
+        return stable::cmd_search_content(&term, node, as_json);
+    }
+    // ADR-156: `--node` on a name search asks that one node (`entry.search`).
+    let value = match &node {
+        Some(node) => call("entry.search", json!({ "node": node, "term": term }))?,
+        None => call("search", json!({ "term": term }))?,
+    };
     if as_json {
         println!("{value}");
         return Ok(());
@@ -696,7 +1673,7 @@ fn cmd_search(mut args: Vec<String>) -> Result<(), String> {
         for r in results {
             println!(
                 "{}\t{}",
-                r["node"].as_str().unwrap_or("?"),
+                r["node"].as_str().or(node.as_deref()).unwrap_or("?"),
                 r["name"].as_str().unwrap_or("?")
             );
         }
@@ -720,13 +1697,25 @@ fn resolve_name(name: &str, node: Option<&str>) -> Result<(String, String), Stri
                 ));
             }
         }
+        // ADR-121: an alias names the entry too. `search` carries it for every caller (the list's
+        // per-entry metadata does not reach an agent).
+        let found = call("search", json!({ "term": name }))?;
+        if let Some(hit) = found["results"].as_array().and_then(|rows| {
+            rows.iter()
+                .find(|r| r["node"].as_str() == Some(node) && r["alias"].as_str() == Some(name))
+        }) {
+            return Ok((
+                node.to_string(),
+                hit["id"].as_str().unwrap_or_default().to_string(),
+            ));
+        }
         return Err(format!("no entry named '{name}' on node '{node}'"));
     }
     let value = call("search", json!({ "term": name }))?;
     let results = value["results"].as_array().cloned().unwrap_or_default();
     let matches: Vec<&Value> = results
         .iter()
-        .filter(|r| r["name"].as_str() == Some(name))
+        .filter(|r| r["name"].as_str() == Some(name) || r["alias"].as_str() == Some(name))
         .collect();
     match matches.len() {
         0 => Err(format!("no entry named '{name}' found in scope")),
@@ -755,8 +1744,9 @@ fn resolve_name(name: &str, node: Option<&str>) -> Result<(String, String), Stri
 /// itself, so a locked vault still gets the one-tap approval path (ADR-042).
 fn cmd_get(mut args: Vec<String>) -> Result<(), String> {
     const USAGE: &str = "usage: credmgr get <name> [--node <id>] \
-         [--field <label> | --field-id <id> | --all] [--json]";
+         [--field <label> | --field-id <id> | --all] [--json | --copy]";
     let as_json = take_bool_flag(&mut args, "--json");
+    let copy = take_bool_flag(&mut args, "--copy");
     let all = take_bool_flag(&mut args, "--all");
     let node = take_flag_value(&mut args, "--node");
     let selector = fields::Selector::take(&mut args)?;
@@ -768,6 +1758,9 @@ fn cmd_get(mut args: Vec<String>) -> Result<(), String> {
         return Err(
             "--all shows every field; it cannot be combined with --field or --field-id".to_string(),
         );
+    }
+    if copy && (as_json || all) {
+        return Err("--copy copies one field's value and prints nothing; it cannot be combined with --json or --all".to_string());
     }
     let (node, entry) = resolve_name(name, node.as_deref())?;
 
@@ -781,6 +1774,24 @@ fn cmd_get(mut args: Vec<String>) -> Result<(), String> {
     }
     let answer = call("entry.reveal", params)?;
     let shown = fields::revealed(&answer);
+
+    if copy {
+        return match shown.as_slice() {
+            [only] => {
+                clip::copy_secret(only["value"].as_str().unwrap_or(""))?;
+                eprintln!(
+                    "copied; the clipboard clears in {} seconds if still unchanged",
+                    clip::CLEAR_AFTER_SECS
+                );
+                Ok(())
+            }
+            _ => Err(selection_error(format!(
+                "entry '{name}' has {} fields ({}) — pass --field <label> or --field-id <id> to say which one to copy",
+                shown.len(),
+                fields::label_list(&shown),
+            ))),
+        };
+    }
 
     if as_json {
         println!("{}", Value::Array(shown));
@@ -803,6 +1814,61 @@ fn cmd_get(mut args: Vec<String>) -> Result<(), String> {
     }
 }
 
+/// `credmgr totp <name> [--node <id>] [--field <label> | --field-id <id>] [--json]` — the current one-time
+/// code of a stored seed (`totp.code`). The seed never leaves the broker; only the six digits do, and they go to
+/// stdout alone so they pipe. The seconds the code stays valid go to stderr. Like `get`, the broker's "confirm
+/// before showing secrets" rule is answered at a terminal by `call`.
+fn cmd_totp(mut args: Vec<String>) -> Result<(), String> {
+    const USAGE: &str = "usage: credmgr totp <name> [--node <id>] [--field <label> | --field-id <id>] [--copy | --json]";
+    let as_json = take_bool_flag(&mut args, "--json");
+    let copy = take_bool_flag(&mut args, "--copy");
+    let node = take_flag_value(&mut args, "--node");
+    let selector = fields::Selector::take(&mut args)?;
+    reject_flags(&args, USAGE)?;
+    let [name] = args.as_slice() else {
+        return Err(USAGE.to_string());
+    };
+    if copy && as_json {
+        return Err("--copy puts the code on the clipboard and prints nothing; it cannot be combined with --json".to_string());
+    }
+    let (node, entry) = resolve_name(name, node.as_deref())?;
+    let mut params = json!({ "node": node, "entry": entry });
+    if selector.is_some() {
+        let id = match &selector.id {
+            Some(id) => id.clone(),
+            None => fields::pick(&fields::entry_meta(&node, &entry)?, name, &selector)?,
+        };
+        params["field"] = json!(id);
+    }
+    let answer = call("totp.code", params)?;
+    let code = answer["code"]
+        .as_str()
+        .ok_or("the broker answered without a code")?;
+    if copy {
+        clip::copy_secret(code)?;
+        eprintln!(
+            "copied the code{}; the clipboard clears in {} seconds if still unchanged",
+            answer["validForSeconds"]
+                .as_u64()
+                .map(|s| format!(" (valid for {s} more seconds)"))
+                .unwrap_or_default(),
+            clip::CLEAR_AFTER_SECS
+        );
+    } else if as_json {
+        let mut out = json!({ "code": code });
+        if let Some(s) = answer["validForSeconds"].as_u64() {
+            out["validForSeconds"] = json!(s);
+        }
+        println!("{out}");
+    } else {
+        println!("{code}");
+        if let Some(s) = answer["validForSeconds"].as_u64() {
+            eprintln!("valid for {s} more seconds");
+        }
+    }
+    Ok(())
+}
+
 /// `credmgr set <name> --node <id>` and its multi-field forms. The value (or the
 /// bulk text) is read from stdin, never argv.
 ///
@@ -813,8 +1879,14 @@ fn cmd_get(mut args: Vec<String>) -> Result<(), String> {
 /// - `--field` / `--field-id`: change one field of an existing entry.
 fn cmd_set(mut args: Vec<String>) -> Result<(), String> {
     const USAGE: &str = "usage: credmgr set <name> --node <id> \
-         [--bulk | --field <label> | --field-id <id>] [--label <l>]   (value from stdin)";
+         [--bulk | --field <label> | --field-id <id>] [--label <l>] \
+         [--sensitivity low|medium|high|critical|auto]   (value from stdin)";
     let bulk = take_bool_flag(&mut args, "--bulk");
+    let sensitivity = take_choice(
+        &mut args,
+        "--sensitivity",
+        &["low", "medium", "high", "critical", "auto"],
+    )?;
     let node = take_flag_value(&mut args, "--node").ok_or(USAGE)?;
     let selector = fields::Selector::take(&mut args)?;
     let label = take_text_flag(&mut args, "--label")?;
@@ -857,6 +1929,9 @@ fn cmd_set(mut args: Vec<String>) -> Result<(), String> {
         Some(entry_id) => {
             let generation = list["generation"].as_u64().unwrap_or(0);
             let mut params = json!({ "node": node, "entry": entry_id, "generation": generation });
+            if let Some(sv) = &sensitivity {
+                params["sensitivity"] = json!(sv);
+            }
             match payload {
                 Payload::Fields(f) => params["fields"] = json!(f),
                 Payload::Value(v) => {
@@ -880,6 +1955,9 @@ fn cmd_set(mut args: Vec<String>) -> Result<(), String> {
                 ));
             }
             let mut params = json!({ "node": node, "name": name });
+            if let Some(sv) = &sensitivity {
+                params["sensitivity"] = json!(sv);
+            }
             match payload {
                 Payload::Fields(f) => params["fields"] = json!(f),
                 Payload::Value(v) => {
@@ -893,6 +1971,7 @@ fn cmd_set(mut args: Vec<String>) -> Result<(), String> {
         }
     };
     print_name_warnings(&value);
+    offer_seed_typing(&node, &name, &value);
     let count = value["fieldCount"].as_u64().unwrap_or(1);
     let many = if count > 1 {
         format!(" ({count} fields)")
@@ -948,6 +2027,7 @@ fn cmd_rotate(mut args: Vec<String>) -> Result<(), String> {
         params["field"] = json!(field);
     }
     let value = call("entry.rotate", params).map_err(|e| fields::with_field_hint(e, name))?;
+    offer_seed_typing(&node, name, &value);
     println!(
         "rotated — generation {}",
         value["generation"].as_u64().unwrap_or(generation)
@@ -990,6 +2070,11 @@ fn cmd_undo(mut args: Vec<String>) -> Result<(), String> {
 }
 
 fn cmd_audit(mut args: Vec<String>) -> Result<(), String> {
+    // ADR-134: `credmgr audit report ...` - a summary for a period instead of the recent records.
+    if args.first().map(String::as_str) == Some("report") {
+        args.remove(0);
+        return stable::cmd_audit_report(args);
+    }
     let as_json = take_bool_flag(&mut args, "--json");
     let limit: u64 = take_flag_value(&mut args, "--limit")
         .map(|s| {
@@ -1138,6 +2223,10 @@ fn cmd_pending(mut args: Vec<String>) -> Result<(), String> {
 }
 
 fn cmd_doctor(mut args: Vec<String>) -> Result<(), String> {
+    // ADR-161: the tidy-up scan is read-only and a different op; it shares the command, not its flags.
+    if take_bool_flag(&mut args, "--scan") {
+        return quick_cmds::cmd_doctor_scan(args);
+    }
     let dry_run = take_bool_flag(&mut args, "--dry-run");
     let purge_expired = take_bool_flag(&mut args, "--purge-expired-seals");
     let rebuild = take_bool_flag(&mut args, "--rebuild-registry");
@@ -1201,17 +2290,27 @@ fn cmd_doctor(mut args: Vec<String>) -> Result<(), String> {
 /// goes to stdout alone so it pipes (`credmgr generate | credmgr set NAME --node n`);
 /// the strength goes to stderr. It is never put in argv by this command.
 fn cmd_generate(mut args: Vec<String>) -> Result<(), String> {
-    const USAGE: &str =
-        "usage: credmgr generate [--length <8-128>] [--no-symbols] [--pronounceable] [--json]";
+    const USAGE: &str = "usage: credmgr generate [--length <8-128>] [--no-symbols] [--pronounceable | --hex] [--copy | --json]";
     let as_json = take_bool_flag(&mut args, "--json");
+    let copy = take_bool_flag(&mut args, "--copy");
     let no_symbols = take_bool_flag(&mut args, "--no-symbols");
     let pronounceable = take_bool_flag(&mut args, "--pronounceable");
+    let hex = take_bool_flag(&mut args, "--hex");
     let length = take_flag_value(&mut args, "--length");
     reject_flags(&args, USAGE)?;
     if !args.is_empty() {
         return Err(USAGE.to_string());
     }
+    if hex && pronounceable {
+        return Err("--hex and --pronounceable are different alphabets; give one".to_string());
+    }
+    if copy && as_json {
+        return Err("--copy puts the value on the clipboard and prints nothing; it cannot be combined with --json".to_string());
+    }
     let mut params = json!({});
+    if hex {
+        params["hex"] = json!(true);
+    }
     if let Some(l) = length {
         params["length"] = json!(l
             .parse::<u64>()
@@ -1224,7 +2323,15 @@ fn cmd_generate(mut args: Vec<String>) -> Result<(), String> {
         params["pronounceable"] = json!(true);
     }
     let value = call("util.generate", params)?;
-    if as_json {
+    if copy {
+        clip::copy_secret(value["value"].as_str().unwrap_or_default())?;
+        eprintln!(
+            "copied {} characters (about {} bits of entropy); the clipboard clears in {} seconds if still unchanged",
+            value["length"].as_u64().unwrap_or(0),
+            value["entropyBits"].as_u64().unwrap_or(0),
+            clip::CLEAR_AFTER_SECS
+        );
+    } else if as_json {
         println!("{value}");
     } else {
         println!("{}", value["value"].as_str().unwrap_or_default());
@@ -1237,36 +2344,63 @@ fn cmd_generate(mut args: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
-/// `credmgr approve <request> [--deny] [--code <n>]` (ADR-088, 4b) - decides one
-/// agent request while the vault stays locked. The passphrase is read from stdin
-/// (never argv); the authenticator code, when two-factor is on, is `--code` (it is
-/// worthless after about ninety seconds, like `gate verify <code>`). The login in
-/// `CREDMGR_TOKEN`, if any, is deliberately not sent: the factors are the
-/// authority here, and a token from before the lock is dead anyway.
+/// `credmgr approve <request> [--deny] [--code-on-argv <n>]` (ADR-088, 4b) - decides
+/// one agent request while the vault stays locked. The passphrase is the first
+/// line of stdin (never argv); the authenticator code, when two-factor is on, is
+/// the second line, or - at a terminal - asked for after the broker says it is
+/// needed (issue #39: a code in argv is visible to `ps`; `--code-on-argv` keeps
+/// that form on purpose). The login in `CREDMGR_TOKEN`, if any, is deliberately
+/// not sent: the factors are the authority here, and a token from before the lock
+/// is dead anyway.
 fn cmd_approve(mut args: Vec<String>) -> Result<(), String> {
-    const USAGE: &str = "usage: credmgr approve <request> [--deny] [--code <authenticator code>]  (passphrase from stdin)";
+    const USAGE: &str = "usage: credmgr approve <request> [--deny] [--code-on-argv <n>]  (passphrase = first stdin line; the authenticator code = second line, or asked for at a terminal)";
     let deny = take_bool_flag(&mut args, "--deny");
-    let code = take_flag_value(&mut args, "--code");
+    let mut code = take_flag_value(&mut args, "--code-on-argv");
     reject_flags(&args, USAGE)?;
     let [request] = args.as_slice() else {
         return Err(USAGE.to_string());
     };
-    let passphrase = read_stdin_value()?;
-    let mut params = json!({ "request": request, "approved": !deny, "passphrase": passphrase });
-    if let Some(code) = code {
-        params["code"] = json!(code);
-    }
-    let response = transport::call("vault.approval_decide", None, params)
-        .map_err(|e: TransportError| e.to_string())?;
-    let value = unwrap_ok(response).map_err(|e| {
-        if e.starts_with("two_factor_required") {
-            "two_factor_required - two-factor is on: add --code <your authenticator code> \
-             (a recovery code is not accepted here)"
-                .to_string()
-        } else {
-            e
+    let interactive = std::io::stdin().is_terminal();
+    let passphrase = if interactive {
+        eprint!("Vault passphrase: ");
+        std::io::Write::flush(&mut std::io::stderr()).ok();
+        read_stdin_line()?
+    } else {
+        let mut all = String::new();
+        std::io::stdin()
+            .read_to_string(&mut all)
+            .map_err(|e| format!("could not read the passphrase from stdin: {e}"))?;
+        let (first, rest) = split_first_line(&all);
+        if code.is_none() && !rest.trim().is_empty() {
+            code = Some(rest.trim().to_string());
         }
-    })?;
+        first.to_string()
+    };
+    let decide = |code: Option<&str>| -> Result<Value, String> {
+        let mut params = json!({ "request": request, "approved": !deny, "passphrase": passphrase });
+        if let Some(code) = code {
+            params["code"] = json!(code);
+        }
+        let response = transport::call("vault.approval_decide", None, params)
+            .map_err(|e: TransportError| e.to_string())?;
+        unwrap_ok(response)
+    };
+    let value = match decide(code.as_deref()) {
+        Err(e) if e.starts_with("two_factor_required") && code.is_none() && interactive => {
+            // Two-factor is on and no code came with the passphrase: ask for it now.
+            let typed = read_authenticator_code()?;
+            decide(Some(&typed))?
+        }
+        Err(e) if e.starts_with("two_factor_required") => {
+            return Err(
+                "two_factor_required - two-factor is on: give the authenticator code as the \
+                 second line of stdin (or run this at a terminal and type it when asked). \
+                 A recovery code is not accepted here"
+                    .to_string(),
+            );
+        }
+        other => other?,
+    };
     println!(
         "{} request {} (node {}, entry {}) - the vault stayed locked",
         if deny { "denied" } else { "approved" },
@@ -1320,7 +2454,7 @@ fn cmd_approvals(mut args: Vec<String>) -> Result<(), String> {
             None => a["entry"].as_str().unwrap_or("?").to_string(),
         };
         println!(
-            "{}  {}  node {node}  entry {entry}  {} s left{}",
+            "{}  {}  node {node}  entry {entry}  {} s left{}{}",
             a["request"].as_str().unwrap_or("?"),
             a["state"].as_str().unwrap_or("pending"),
             a["expiresIn"].as_u64().unwrap_or(0),
@@ -1329,6 +2463,7 @@ fn cmd_approvals(mut args: Vec<String>) -> Result<(), String> {
             } else {
                 ""
             },
+            agent_tokens::asked_by(a),
         );
     }
     Ok(())
@@ -1346,17 +2481,212 @@ fn cmd_backup(mut args: Vec<String>) -> Result<(), String> {
     if passphrase.is_empty() {
         return Err("a backup passphrase is required on stdin".to_string());
     }
+    if passphrase.contains('\n') {
+        return Err("the backup passphrase is one line; stdin held more than one".to_string());
+    }
     let value = call(
         "maintenance.backup",
         json!({ "passphrase": passphrase, "retain": retain }),
     )?;
     println!("backup written: {}", value["path"].as_str().unwrap_or("?"));
+    println!(
+        "  a complete archive: restore it into an empty directory with `credmgr restore <file>` \
+         (the backup passphrase, then your vault passphrase)"
+    );
+    // ADR-165 (review N2): a machine-locked vault's archive holds the passphrase file unsealed, so it is kept
+    // outside the vault folder, where no copy of the folder carries it.
+    if value["outsideVaultFolder"] == json!(true) {
+        println!(
+            "  the machine lock is on, so this archive is kept outside the vault folder (in CredMgr's state \
+             folder, beside this Mac's device key) and no copy of the vault folder carries it. It opens with \
+             the backup passphrase and the vault passphrase alone, without the device key: keep any copy of \
+             it as safe as the vault"
+        );
+    }
     if let Some(pruned) = value["pruned"].as_array() {
         if !pruned.is_empty() {
             println!("pruned {} old backup(s)", pruned.len());
         }
     }
     Ok(())
+}
+
+/// `credmgr restore <archive> [--to <dir>] [--state-dir <dir>]` (issue #36, ADR-112) -
+/// rebuilds a vault from a backup archive. Offline: it needs no broker and talks to
+/// none (the target must not hold a vault). The backup passphrase is read from stdin,
+/// never argv. The archive is decrypted in memory, validated whole, and written into
+/// the target all at once or not at all; a vault is never merged into or overwritten.
+fn cmd_restore(mut args: Vec<String>) -> Result<(), String> {
+    const USAGE: &str =
+        "usage: credmgr restore <archive file> [--to <empty directory>] [--state-dir <directory>] [--json]  (backup passphrase from stdin)";
+    let to = take_flag_value(&mut args, "--to");
+    let state_dir = take_flag_value(&mut args, "--state-dir");
+    // ADR-166: the desktop app's Settings > Backup > Restore runs this command with `--json`,
+    // so the app and the terminal share one restore and one set of refusals.
+    let as_json = take_bool_flag(&mut args, "--json");
+    let fail = |code: &str, message: String| -> String {
+        if as_json {
+            println!("{}", json!({ "error": code, "message": message }));
+        }
+        message
+    };
+    if let Err(e) = reject_flags(&args, USAGE) {
+        return Err(fail("restore_failed", e));
+    }
+    let [archive] = args.as_slice() else {
+        return Err(fail("restore_failed", USAGE.to_string()));
+    };
+    let target = match to {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => credmgr_store::paths::VaultPaths::default_location()
+            .root()
+            .to_path_buf(),
+    };
+    let state_dir = match state_dir {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => credmgr_store::paths::default_state_dir(),
+    };
+    // Say where it will land before asking for a secret, and refuse early, before the
+    // slow key derivation, a target that cannot be used or a broker that is running.
+    let sockets = [
+        transport::socket_path(),
+        credmgr_store::paths::VaultPaths::new(target.clone()).run_socket(),
+    ];
+    if let Some(refusal) = restore_refusal(&target, &sockets) {
+        return Err(fail(refusal.code(), refusal.message()));
+    }
+    let passphrase = read_stdin_value()?;
+    if passphrase.is_empty() {
+        return Err(fail(
+            "restore_failed",
+            "the backup passphrase is required on stdin".to_string(),
+        ));
+    }
+    let blob = std::fs::read(archive)
+        .map_err(|e| fail("restore_failed", format!("cannot read {archive}: {e}")))?;
+    let plaintext = credmgr_keystore::backup_passphrase::decrypt_with_passphrase(
+        &secrecy::SecretBox::new(Box::new(passphrase)),
+        &blob,
+    )
+    .map_err(|_| {
+        fail(
+            "restore_failed",
+            "could not decrypt the archive - wrong backup passphrase, or the file is damaged"
+                .to_string(),
+        )
+    })?;
+    let report = credmgr_store::backup::restore_bundle(&plaintext, &target, &state_dir)
+        .map_err(|e| fail("restore_failed", e.to_string()))?;
+    if as_json {
+        let counter = match report.counter {
+            credmgr_store::backup::CounterOutcome::Restored => "restored",
+            credmgr_store::backup::CounterOutcome::KeptExisting => "keptExisting",
+            credmgr_store::backup::CounterOutcome::NotInArchive => "notInArchive",
+            // ADR-148 amendment: the one-shot marker the first unlock of the target consumes.
+            credmgr_store::backup::CounterOutcome::AcceptMarker => "acceptMarker",
+        };
+        println!(
+            "{}",
+            json!({
+                "restored": true,
+                "target": target.display().to_string(),
+                "stateDir": state_dir.display().to_string(),
+                "files": report.files,
+                "bytes": report.bytes,
+                "counter": counter,
+                "complete": report.complete,
+            })
+        );
+        return Ok(());
+    }
+    println!(
+        "restored {} files ({} bytes) into {}",
+        report.files,
+        report.bytes,
+        target.display()
+    );
+    match report.counter {
+        credmgr_store::backup::CounterOutcome::Restored => {
+            println!("generation counter restored into {}", state_dir.display());
+        }
+        credmgr_store::backup::CounterOutcome::KeptExisting => println!(
+            "generation counter: {} already holds one and it was kept. If it is ahead of this \
+             archive the vault will refuse to open as rolled back - that is the counter doing \
+             its job; restore into a new --state-dir to start from the archive's",
+            state_dir.display()
+        ),
+        credmgr_store::backup::CounterOutcome::NotInArchive => println!(
+            "the archive carries neither a generation counter nor a restore ticket: with no counter in {} \
+             the vault opens only when credmgrd is started once with CREDMGR_ACCEPT_MISSING_ROLLBACK_COUNTER=1",
+            state_dir.display()
+        ),
+        credmgr_store::backup::CounterOutcome::AcceptMarker => println!(
+            "generation counter: none in {}; a one-time restore marker there lets the first unlock of \
+             this folder set it (for this restored vault only)",
+            state_dir.display()
+        ),
+    }
+    if !report.complete {
+        println!(
+            "note: this archive predates the complete format - it holds entries, manifests, the \
+             registry and keys only, so sealed-node and removed-entry archives, rotation history \
+             and notes are not in it"
+        );
+    }
+    println!("next: `credmgr unlock` with the vault passphrase, then `credmgr verify`");
+    Ok(())
+}
+
+/// Why a restore is refused before the passphrase is read or a byte is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RestoreRefusal {
+    /// The target holds something: a restore never merges into, or overwrites, a vault.
+    TargetNotEmpty(std::path::PathBuf),
+    /// A broker answers on this socket (K-23 (d), ADR-156; ADR-166).
+    BrokerRunning(std::path::PathBuf),
+}
+
+impl RestoreRefusal {
+    /// The code `--json` prints, which the desktop app passes on as its error code.
+    fn code(&self) -> &'static str {
+        match self {
+            RestoreRefusal::TargetNotEmpty(_) => "restore_target_not_empty",
+            RestoreRefusal::BrokerRunning(_) => "broker_running",
+        }
+    }
+
+    fn message(&self) -> String {
+        match self {
+            RestoreRefusal::TargetNotEmpty(target) => format!(
+                "{} is not an empty directory: a restore never merges into, or overwrites, a vault. \
+                 Give --to <an empty or new directory>",
+                target.display()
+            ),
+            RestoreRefusal::BrokerRunning(socket) => format!(
+                "credmgrd is running (it answers on {}): quit CredMgr or stop credmgrd before \
+                 restoring, so the restored vault and its generation counter are not written beside \
+                 a live broker",
+                socket.display()
+            ),
+        }
+    }
+}
+
+/// The one check every restore makes first, the terminal's and the app's alike (ADR-166): the
+/// target must be empty or new, and no broker may answer on any of `sockets` (the vault's own and
+/// the target's). A live connection is a running broker; a socket file nobody listens on (a broker
+/// that died) does not block.
+fn restore_refusal(
+    target: &std::path::Path,
+    sockets: &[std::path::PathBuf],
+) -> Option<RestoreRefusal> {
+    if target.exists() && target.read_dir().map_or(true, |mut d| d.next().is_some()) {
+        return Some(RestoreRefusal::TargetNotEmpty(target.to_path_buf()));
+    }
+    sockets
+        .iter()
+        .find(|socket| std::os::unix::net::UnixStream::connect(socket).is_ok())
+        .map(|socket| RestoreRefusal::BrokerRunning(socket.clone()))
 }
 
 fn cmd_node(mut args: Vec<String>) -> Result<(), String> {
@@ -1368,6 +2698,24 @@ fn cmd_node(mut args: Vec<String>) -> Result<(), String> {
     }
     let sub = args.remove(0);
     match sub.as_str() {
+        // ADR-130: `credmgr node rekey <id>` - a new key for the node, every file re-sealed to it.
+        "rekey" => stable::cmd_node_rekey(args),
+        // ADR-098: `credmgr node reparent <id> --to <parent> --reason "..."` - needs Touch ID.
+        "reparent" => {
+            const USAGE: &str = "usage: credmgr node reparent <id> --to <parent> --reason \"...\"";
+            let to = take_flag_value(&mut args, "--to").ok_or(USAGE)?;
+            let reason = take_text_flag(&mut args, "--reason")?.ok_or(USAGE)?;
+            reject_flags(&args, USAGE)?;
+            let [id] = args.as_slice() else {
+                return Err(USAGE.to_string());
+            };
+            let value = call(
+                "node.reparent",
+                json!({ "node": id, "newParent": to, "reason": reason }),
+            )?;
+            println!("moved '{id}' under '{to}' (depth {})", value["depth"]);
+            Ok(())
+        }
         "create" => {
             let id = args
                 .first()
@@ -1577,13 +2925,15 @@ const IMPORT_MAX_ENTRIES: usize = 500;
 /// request; nothing in this function prints one. Errors name a line number and
 /// never its text (`dotenv.rs`).
 fn cmd_import(mut args: Vec<String>) -> Result<(), String> {
-    const USAGE: &str = "usage: credmgr import <file|-> --node <id> [--json]";
+    const USAGE: &str = "usage: credmgr import <file|-> --node <id> [--format json|env] [--json]";
     let as_json = take_bool_flag(&mut args, "--json");
     let node = take_flag_value(&mut args, "--node").ok_or(USAGE)?;
+    let forced_format = take_flag_value(&mut args, "--format");
     reject_flags(&args, USAGE)?;
     let [source] = args.as_slice() else {
         return Err(USAGE.to_string());
     };
+    let format = import_json::Format::choose(forced_format.as_deref(), source)?;
 
     let label = if source == "-" { "stdin" } else { source };
     let text = if source == "-" {
@@ -1593,41 +2943,78 @@ fn cmd_import(mut args: Vec<String>) -> Result<(), String> {
             std::fs::File::open(source).map_err(|e| format!("could not open '{source}': {e}"))?;
         read_capped(file, IMPORT_MAX_BYTES, &format!("'{source}'"))?
     };
-    let parsed = dotenv::parse(&text).map_err(|e| format!("{label}: {e}"))?;
+    // Both formats end in the same three things: the batch items, the names skipped for an empty value, and the
+    // `.env` lines that were refused (always none for JSON).
+    let (entries, skipped_empty, refused_lines, what_was_expected): (
+        Vec<Value>,
+        Vec<String>,
+        Value,
+        &str,
+    ) = match format {
+        import_json::Format::Json => {
+            let parsed = import_json::parse(&text).map_err(|e| format!("{label}: {e}"))?;
+            (
+                parsed.entries,
+                parsed.skipped_empty,
+                json!([]),
+                "no entry with a value",
+            )
+        }
+        import_json::Format::Env => {
+            let parsed = credmgr_core::dotenv::parse(&text).map_err(|e| format!("{label}: {e}"))?;
+            warn_refused_env_lines(label, &parsed.refused_lines);
+            (
+                parsed
+                    .entries
+                    .iter()
+                    .map(|e| json!({ "name": e.name, "value": e.value }))
+                    .collect(),
+                parsed.skipped_empty,
+                json!(parsed.refused_lines),
+                "no NAME=value line with a value",
+            )
+        }
+    };
 
-    if parsed.entries.is_empty() {
-        let skipped = if parsed.skipped_empty.is_empty() {
+    if entries.is_empty() {
+        let skipped = if skipped_empty.is_empty() {
             String::new()
         } else {
             format!(
                 " ({} had an empty value: {})",
-                parsed.skipped_empty.len(),
-                parsed.skipped_empty.join(", ")
+                skipped_empty.len(),
+                skipped_empty.join(", ")
             )
         };
         return Err(format!(
-            "nothing to import from {label}: no NAME=value line with a value{skipped}"
+            "nothing to import from {label}: {what_was_expected}{skipped}"
         ));
     }
-    if parsed.entries.len() > IMPORT_MAX_ENTRIES {
+    if entries.len() > IMPORT_MAX_ENTRIES {
         return Err(format!(
             "{label} holds {} entries; one import takes at most {IMPORT_MAX_ENTRIES} — \
              split the file and import the parts one after another",
-            parsed.entries.len()
+            entries.len()
         ));
     }
-
-    let entries: Vec<Value> = parsed
-        .entries
-        .iter()
-        .map(|e| json!({ "name": e.name, "value": e.value }))
-        .collect();
+    let total_entries = entries.len();
     let mut value = call(
         "entry.create_batch",
         json!({ "node": node, "entries": entries }),
     )?;
-    value["skippedEmpty"] = json!(parsed.skipped_empty);
+    value["skippedEmpty"] = json!(skipped_empty);
+    value["refusedLines"] = refused_lines;
     print_name_warnings(&value);
+    for c in value["created"].as_array().into_iter().flatten() {
+        if c.get("possibleSeedFields").is_some() {
+            eprintln!(
+                "warning: '{}' has a value that looks as though it could be a 2FA seed; as text it stays readable to anything \
+                 that may reveal it. Type it: credmgr field ls '{}' --node {node}, then credmgr field set ... --type totp-seed",
+                c["name"].as_str().unwrap_or("?"),
+                c["name"].as_str().unwrap_or("?"),
+            );
+        }
+    }
 
     let created = value["created"].as_array().cloned().unwrap_or_default();
     let complete = value["complete"].as_bool() == Some(true);
@@ -1649,15 +3036,13 @@ fn cmd_import(mut args: Vec<String>) -> Result<(), String> {
         println!(
             "imported {} of {} entries into {node}",
             created.len(),
-            value["total"]
-                .as_u64()
-                .unwrap_or(parsed.entries.len() as u64)
+            value["total"].as_u64().unwrap_or(total_entries as u64)
         );
-        if !parsed.skipped_empty.is_empty() {
+        if !skipped_empty.is_empty() {
             println!(
                 "skipped {} empty value(s), not imported: {}",
-                parsed.skipped_empty.len(),
-                parsed.skipped_empty.join(", ")
+                skipped_empty.len(),
+                skipped_empty.join(", ")
             );
         }
         if held > 0 {
@@ -1713,6 +3098,12 @@ fn partial_import_error(saved: usize, failed: &Value) -> String {
 const AGENT_ACCESS: &[&str] = &["read-write", "read-only", "none"];
 const TWO_FACTOR: &[&str] = &["never", "reveal", "always"];
 const SIBLING_VISIBILITY: &[&str] = &["shared", "isolated"];
+const SECURITY_LEVEL: &[&str] = &["open", "guarded", "strict", "sealed"];
+
+/// ADR-152: `--security-level strict` is the name for people; the stored and wire value stays `sealed`.
+fn security_level_wire(v: &str) -> &str {
+    credmgr_core::registry::SecurityLevel::parse_input(v).map_or(v, |l| l.as_str())
+}
 
 /// `--on` / `--no-on` pairs: neither → unchanged, one → that value, both →
 /// a contradiction worth refusing rather than guessing at.
@@ -1760,12 +3151,14 @@ fn cmd_node_policy(mut args: Vec<String>) -> Result<(), String> {
     const USAGE: &str = "usage: credmgr node policy <id> --reason \"...\" \
          [--agent-access read-write|read-only|none] [--require-two-factor never|reveal|always] \
          [--lock-after-seconds <n>|none] [--private-names|--no-private-names] \
-         [--sibling-visibility shared|isolated] [--descendant-read|--no-descendant-read] [--json]";
+         [--sibling-visibility shared|isolated] [--descendant-read|--no-descendant-read] \
+         [--security-level open|guarded|strict] [--json]";
     let as_json = take_bool_flag(&mut args, "--json");
     let reason = take_text_flag(&mut args, "--reason")?;
     let agent_access = take_choice(&mut args, "--agent-access", AGENT_ACCESS)?;
     let two_factor = take_choice(&mut args, "--require-two-factor", TWO_FACTOR)?;
     let sibling = take_choice(&mut args, "--sibling-visibility", SIBLING_VISIBILITY)?;
+    let security_level = take_choice(&mut args, "--security-level", SECURITY_LEVEL)?;
     let lock_after = take_flag_value(&mut args, "--lock-after-seconds");
     let private_names = take_bool_pair(&mut args, "--private-names", "--no-private-names")?;
     let descendant_read = take_bool_pair(&mut args, "--descendant-read", "--no-descendant-read")?;
@@ -1786,6 +3179,9 @@ fn cmd_node_policy(mut args: Vec<String>) -> Result<(), String> {
     }
     if let Some(v) = private_names {
         policy.insert("privateNames".into(), json!(v));
+    }
+    if let Some(v) = security_level {
+        policy.insert("securityLevel".into(), json!(security_level_wire(&v)));
     }
     if let Some(v) = descendant_read {
         policy.insert("descendantRead".into(), json!(v));
@@ -1843,11 +3239,16 @@ fn cmd_node_policy(mut args: Vec<String>) -> Result<(), String> {
         "privateNames",
         "siblingVisibility",
         "descendantRead",
+        "securityLevel",
     ] {
-        println!(
-            "  {field:<19}{}",
-            show_policy_value(&value["policy"][field])
-        );
+        let shown = show_policy_value(&value["policy"][field]);
+        let shown = if field == "securityLevel" {
+            credmgr_core::registry::SecurityLevel::parse(&shown)
+                .map_or(shown.clone(), |l| l.label().to_string())
+        } else {
+            shown
+        };
+        println!("  {field:<19}{shown}");
     }
     println!(
         "reason recorded: {}",
@@ -1871,6 +3272,37 @@ fn cmd_node_policy(mut args: Vec<String>) -> Result<(), String> {
 
 /// `notes.write`'s `conflict` — the manifest moved between reading its
 /// generation and the write landing.
+/// ADR-148 addendum: say why `credmgr unlock --touch-id` was refused, in words a person can act on. The broker
+/// refuses the Touch ID unlock to a caller it identifies as an agent — an agent token, or no token from inside
+/// a registered project folder — with a bare `capability_not_held`.
+fn explain_touch_id_unlock_error(e: String) -> String {
+    if e.starts_with("capability_not_held") {
+        format!(
+            "{e}\n(Touch ID unlock is refused to anything that looks like an AI agent: a CREDMGR_TOKEN that is an \
+             agent token, or a command run from inside a registered project folder. Run it outside your project \
+             folders without an agent token, or unlock with your passphrase: `credmgr unlock`)"
+        )
+    } else if e.starts_with("presence_failed") && e.contains("no presence key is enrolled") {
+        format!("{e}\n(set it up first with `credmgr touch-id enable`, while unlocked)")
+    } else {
+        e
+    }
+}
+
+/// ADR-148 addendum: name (by number only, never their text) the `.env` lines that were refused because they
+/// are only the padded end of a base64 value. The rest of the file still imports.
+pub(crate) fn warn_refused_env_lines(label: &str, lines: &[usize]) {
+    if lines.is_empty() {
+        return;
+    }
+    let list: Vec<String> = lines.iter().map(usize::to_string).collect();
+    eprintln!(
+        "warning: {label}: skipped line(s) {} - only the padded end of a base64 value, not NAME=value; \
+         quote the whole value on one line to import it",
+        list.join(", ")
+    );
+}
+
 fn explain_notes_error(e: String) -> String {
     if e.starts_with("conflict") {
         format!(
@@ -2056,6 +3488,106 @@ fn cmd_notes(mut args: Vec<String>) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    // ---- ADR-162: what the App Store edition's sandboxed CLI refuses -----------------------------
+
+    fn v(args: &[&str]) -> Vec<String> {
+        args.iter().map(|a| a.to_string()).collect()
+    }
+
+    #[test]
+    fn the_mas_cli_refuses_a_named_file_and_keeps_stdin() {
+        let e = mas_limit("import-env", &v(&[".env", "--node", "n_aaaaaaaa"])).unwrap();
+        assert!(
+            e.contains("cannot open '.env'")
+                && e.contains("credmgr import-env - --node <id> < .env"),
+            "{e}"
+        );
+        assert!(mas_limit("import-env", &v(&["-", "--node", "n_aaaaaaaa"])).is_none());
+        assert!(
+            mas_limit("import-env", &v(&["--node", "n_aaaaaaaa", "-"])).is_none(),
+            "a flag value is not the file"
+        );
+        assert!(mas_limit("import", &v(&["secrets.txt", "--node", "n_a"])).is_some());
+        assert!(mas_limit("import", &v(&["-", "--node", "n_a"])).is_none());
+        assert!(mas_limit("notes", &v(&["set", "n_a", "--file", "x.md"])).is_some());
+        assert!(mas_limit("notes", &v(&["set", "n_a"])).is_none());
+    }
+
+    #[test]
+    fn the_mas_cli_refuses_exports_restores_and_agent_config_writes_with_the_way_round() {
+        for (cmd, args) in [
+            ("export", v(&["--node", "n_a", "--out", "x.age", "--age"])),
+            ("restore", v(&["backup.enc"])),
+            ("agent", v(&["connect", "claude-code", "--yes"])),
+            ("agent", v(&["detect"])),
+        ] {
+            let e = mas_limit(cmd, &args).unwrap_or_else(|| panic!("{cmd} must be refused"));
+            assert!(
+                e.contains("macOS sandbox") && e.contains("full CLI"),
+                "{cmd}: {e}"
+            );
+        }
+        assert!(mas_limit("agent", &v(&["connect", "x"]))
+            .unwrap()
+            .contains("mcp --print-config"));
+    }
+
+    #[test]
+    fn the_mas_cli_leaves_every_vault_command_alone() {
+        // The broker does the work for these, inside the group container: nothing to refuse.
+        for cmd in [
+            "get", "list", "set", "unlock", "lock", "status", "mcp", "backup", "prompt", "search",
+            "doctor",
+        ] {
+            assert!(mas_limit(cmd, &v(&["--node", "n_a"])).is_none(), "{cmd}");
+        }
+        // The default build never consults the table.
+        assert_eq!(
+            credmgr_store::paths::FLAVOUR == credmgr_store::paths::Flavour::Mas,
+            cfg!(feature = "mas")
+        );
+    }
+
+    #[test]
+    fn a_restore_is_refused_for_a_used_target_or_a_live_broker_and_not_for_a_dead_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty = dir.path().join("new");
+        let dead = dir.path().join("dead.sock");
+        // A socket file nobody listens on: the broker that made it is gone.
+        drop(std::os::unix::net::UnixListener::bind(&dead).unwrap());
+        assert_eq!(restore_refusal(&empty, std::slice::from_ref(&dead)), None);
+
+        let live = dir.path().join("live.sock");
+        let _listener = std::os::unix::net::UnixListener::bind(&live).unwrap();
+        let refused = restore_refusal(&empty, &[dead.clone(), live.clone()]).unwrap();
+        assert_eq!(refused, RestoreRefusal::BrokerRunning(live.clone()));
+        assert_eq!(refused.code(), "broker_running");
+
+        let used = dir.path().join("used");
+        std::fs::create_dir_all(&used).unwrap();
+        std::fs::write(used.join("registry.json"), b"x").unwrap();
+        let refused = restore_refusal(&used, &[live]).unwrap();
+        assert_eq!(refused.code(), "restore_target_not_empty");
+        assert!(refused.message().contains("not an empty directory"));
+    }
+
+    #[test]
+    fn a_refused_touch_id_unlock_says_why_and_what_to_do() {
+        let agent = explain_touch_id_unlock_error("capability_not_held".to_string());
+        assert!(
+            agent.contains("registered project folder") && agent.contains("credmgr unlock`"),
+            "{agent}"
+        );
+        let unset = explain_touch_id_unlock_error(
+            "presence_failed: no presence key is enrolled on this vault".to_string(),
+        );
+        assert!(unset.contains("credmgr touch-id enable"), "{unset}");
+        let dismissed = explain_touch_id_unlock_error(
+            "presence_failed: the Touch ID prompt was dismissed or timed out".to_string(),
+        );
+        assert!(!dismissed.contains("touch-id enable"), "{dismissed}");
+    }
+
     #[test]
     fn a_conflict_is_explained_and_anything_else_passes_through() {
         let c = explain_notes_error(
@@ -2203,5 +3735,33 @@ mod tests {
         assert!(read_capped(&[0xff, 0xfe][..], 8, "x")
             .unwrap_err()
             .contains("UTF-8"));
+    }
+
+    #[test]
+    fn security_level_strict_is_an_alias_for_the_stored_sealed() {
+        let mut args = vec!["--security-level".to_string(), "strict".to_string()];
+        let v = take_choice(&mut args, "--security-level", SECURITY_LEVEL)
+            .unwrap()
+            .unwrap();
+        assert_eq!(v, "strict");
+        assert_eq!(
+            security_level_wire(&v),
+            "sealed",
+            "the wire value stays sealed"
+        );
+        // the stored spelling and the others still parse, unchanged
+        for (given, wire) in [
+            ("sealed", "sealed"),
+            ("open", "open"),
+            ("guarded", "guarded"),
+        ] {
+            let mut a = vec!["--security-level".to_string(), given.to_string()];
+            let v = take_choice(&mut a, "--security-level", SECURITY_LEVEL)
+                .unwrap()
+                .unwrap();
+            assert_eq!(security_level_wire(&v), wire);
+        }
+        let mut bad = vec!["--security-level".to_string(), "locked".to_string()];
+        assert!(take_choice(&mut bad, "--security-level", SECURITY_LEVEL).is_err());
     }
 }

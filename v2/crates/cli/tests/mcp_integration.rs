@@ -69,7 +69,12 @@ fn start_fixture_broker() -> Fixture {
             depth: 1,
             parent_id: Some(GLOBAL_ID.to_string()),
             workdirs: vec![acme_workdir.to_string_lossy().into_owned()],
-            policy: NodePolicy::default(),
+            // ADR-140: these tests read `high` entries as an agent and are about the CLI/MCP surface; the security-level
+            // behaviour has its own suite (`crates/brokerd/tests/security_levels.rs`).
+            policy: NodePolicy {
+                security_level: credmgr_core::registry::SecurityLevel::Open,
+                ..NodePolicy::default()
+            },
         },
     );
     state.set_registry(registry);
@@ -99,6 +104,8 @@ fn start_fixture_broker() -> Fixture {
         expires_at: None,
         rotated_at: None,
         has_totp: false,
+        aliases: Vec::new(),
+        tags: Vec::new(),
     });
     manifest.entries.push(ManifestEntry {
         id: "e2".to_string(),
@@ -112,6 +119,8 @@ fn start_fixture_broker() -> Fixture {
         expires_at: None,
         rotated_at: None,
         has_totp: false,
+        aliases: Vec::new(),
+        tags: Vec::new(),
     });
     manifest.counts = Counts {
         entries: 2,
@@ -370,4 +379,177 @@ fn tools_call_a_cross_node_entry_is_denied_end_to_end() {
         })],
     );
     assert_eq!(responses[0]["result"]["isError"], true);
+}
+
+/// One `tools/call`'s inner JSON answer.
+fn tool_answer(response: &Value) -> Value {
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content");
+    serde_json::from_str(text).expect("tool result is itself JSON")
+}
+
+fn call_tool(id: u64, name: &str, arguments: Value) -> Value {
+    json!({ "jsonrpc": "2.0", "id": id, "method": "tools/call", "params": { "name": name, "arguments": arguments } })
+}
+
+/// Runs the real `credmgr` CLI against the fixture with `stdin`, returning stdout (asserting success).
+fn cli(fixture: &Fixture, args: &[&str], stdin: &str, token: Option<&str>) -> String {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_credmgr"));
+    cmd.args(args)
+        .current_dir(fixture.vault_dir.parent().unwrap())
+        .env("CREDMGR_VAULT_DIR", &fixture.vault_dir)
+        .env_remove("CREDMGR_TOKEN")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(t) = token {
+        cmd.env("CREDMGR_TOKEN", t);
+    }
+    let mut child = cmd.spawn().expect("launch credmgr");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "credmgr {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// ADR-155, end to end from a real MCP client: an agent discovers every setting, reads the KB, changes a cosmetic and a
+/// stricter setting at once, and asks for a weakening one, which waits until the owner — through the real CLI, with a
+/// fresh confirmation — approves it; the agent then sees it applied.
+#[test]
+fn the_switchboard_end_to_end_from_a_real_mcp_client() {
+    let fixture = start_fixture_broker();
+    let r = run_mcp_session(
+        &fixture,
+        &[
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {} }),
+            call_tool(2, "credmgr_settings_list", json!({ "node": "acme" })),
+            call_tool(3, "credmgr_kb", json!({})),
+            call_tool(
+                4,
+                "credmgr_settings_set",
+                json!({ "id": "app.theme", "value": "dark", "reason": "user asked for dark mode" }),
+            ),
+            call_tool(
+                5,
+                "credmgr_settings_set",
+                json!({ "id": "node.securityLevel", "node": "acme", "value": "guarded", "reason": "user wants approvals for critical values" }),
+            ),
+            call_tool(
+                6,
+                "credmgr_settings_set",
+                json!({ "id": "app.autoLockMins", "value": 0, "reason": "user asked never to auto-lock" }),
+            ),
+        ],
+    );
+    let list = tool_answer(&r[1]);
+    assert_eq!(list["caller"], "agent");
+    let level = list["settings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == "node.securityLevel")
+        .unwrap();
+    assert_eq!(level["value"], "open");
+    assert!(tool_answer(&r[2])["markdown"]
+        .as_str()
+        .unwrap()
+        .contains("## 4. The switchboard"));
+    assert_eq!(tool_answer(&r[3])["applied"], true);
+    let stricter = tool_answer(&r[4]);
+    assert_eq!(stricter["applied"], true);
+    assert_eq!(stricter["change"], "strengthens");
+    let pending = tool_answer(&r[5]);
+    assert_eq!(pending["state"], "pending");
+    // The hint an agent reads must name the MCP tool it can call, not the broker op behind it.
+    let next = pending["next"].as_str().unwrap();
+    assert!(next.contains("credmgr_settings_request"), "{next}");
+    assert!(!next.contains("settings.request_get"), "{next}");
+    let request = pending["request"].as_str().unwrap().to_string();
+
+    // The owner, through the real CLI: unlock, confirm, list, approve.
+    let unlocked = cli(&fixture, &["unlock"], &format!("{PASSPHRASE}\n"), None);
+    let token = unlocked
+        .lines()
+        .find_map(|l| l.strip_prefix("export CREDMGR_TOKEN="))
+        .expect("unlock prints a token")
+        .to_string();
+    let requests = cli(&fixture, &["settings", "requests"], "", Some(&token));
+    assert!(requests.contains(&request), "{requests}");
+    // Approving without a fresh confirmation is refused (the step-up), and nothing changes.
+    let refused = Command::new(env!("CARGO_BIN_EXE_credmgr"))
+        .args(["settings", "approve", &request])
+        .env("CREDMGR_VAULT_DIR", &fixture.vault_dir)
+        .env("CREDMGR_TOKEN", &token)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        !refused.status.success(),
+        "approve without confirming must fail"
+    );
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("confirm"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    // This fixture vault has no root wrap on disk, so `credmgr confirm`'s passphrase check (covered against a durable
+    // vault in crates/brokerd/tests/switchboard.rs) cannot run here; record the confirmation it would have made.
+    let session = fixture
+        ._state
+        .tokens
+        .public_id(&token)
+        .expect("a live login");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    fixture._state.record_confirmation(&session, now);
+    let approved = cli(
+        &fixture,
+        &["settings", "approve", &request],
+        "",
+        Some(&token),
+    );
+    assert!(approved.contains("approved"), "{approved}");
+
+    // The agent sees it applied.
+    let r = run_mcp_session(
+        &fixture,
+        &[
+            call_tool(1, "credmgr_settings_request", json!({ "request": request })),
+            call_tool(
+                2,
+                "credmgr_settings_get",
+                json!({ "id": "app.autoLockMins" }),
+            ),
+        ],
+    );
+    assert_eq!(tool_answer(&r[0])["state"], "approved");
+    let got = tool_answer(&r[1]);
+    assert_eq!(got["value"], 0);
+    assert_eq!(got["recentChanges"][0]["request"], request.as_str());
+    // An agent tool to decide does not exist.
+    let r = run_mcp_session(
+        &fixture,
+        &[call_tool(
+            1,
+            "credmgr_settings_decide",
+            json!({ "request": request, "approve": true }),
+        )],
+    );
+    assert!(
+        r[0].get("error").is_some() || r[0]["result"]["isError"] == true,
+        "{:?}",
+        r[0]
+    );
 }

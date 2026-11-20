@@ -33,6 +33,16 @@ export async function dialogFocusSettled(firstControl: Locator): Promise<void> {
   await expect(firstControl).toBeFocused();
 }
 
+/**
+ * The app marks the control its own delayed focus move has landed on with `data-focus-settled` (core.js focusModalFirst, settings.js focusLater,
+ * fields.js toggleFieldMenu).  Wait for that mark, then for the focus itself, before typing into or sending keys to the control: until then the move
+ * can still take focus away mid-`fill` (WebKit) or leave a key on the button that opened a menu.  QT-1: this replaces the quarantine of four specs.
+ */
+export async function focusSettled(control: Locator): Promise<void> {
+  await expect(control).toHaveAttribute("data-focus-settled", "true");
+  await expect(control).toBeFocused();
+}
+
 /** Fill the single-entry form. */
 export async function fillSingle(dlg: Locator, f: { name: string; value: string; label?: string }): Promise<void> {
   await dlg.getByLabel("entry name").fill(f.name);

@@ -3,12 +3,14 @@
 //! identified before the token is even read** — `LOCAL_PEERCRED` first,
 //! hard gate, then the request frame.
 
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
+
 use std::os::unix::io::AsRawFd;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use zeroize::Zeroize;
 
 use secrecy::ExposeSecret;
 
@@ -24,6 +26,7 @@ use crate::state::BrokerState;
 fn audit_action_for(kind: AnomalyKind) -> &'static str {
     match kind {
         AnomalyKind::TokenWorkdirMismatch => "anomaly.token_workdir_mismatch",
+        AnomalyKind::AgentTokenWorkdirMismatch => "anomaly.agent_token_workdir_mismatch",
     }
 }
 
@@ -49,6 +52,22 @@ fn audit_actor(state: &BrokerState, scope: &crate::scope::BrokerScope) -> String
     }
 }
 
+/// ADR-164: a revoked, rotated-out or expired agent token that is presented again
+/// is refused (`session_expired`), and the record of that refusal names the token
+/// by its public id and why it is dead (`Agent:a_…(revoked)`), so a replay is
+/// visible on the trail. Never the bearer.
+fn dead_agent_actor(
+    state: &BrokerState,
+    scope: &crate::scope::BrokerScope,
+    presented: Option<&str>,
+) -> Option<String> {
+    if scope.token_id.is_some() {
+        return None;
+    }
+    let (public_id, why) = state.tokens.dead_agent_public_id(presented?)?;
+    Some(format!("Agent:{public_id}({})", why.as_str()))
+}
+
 /// ADR-077: the last line of defence on the way into the audit log. Whatever a
 /// caller passes — an actor, a `reason` somebody pasted a token into, a detail
 /// built by a future call site — a bearer-shaped string is replaced before it is
@@ -59,6 +78,39 @@ fn scrubbed(mut event: credmgr_store::audit::NewEvent) -> credmgr_store::audit::
         .detail
         .map(|d| crate::token::redact_bearer_tokens(&d).into_owned());
     event
+}
+
+/// ADR-156: `05 §7`'s "five cross-node denials in ten minutes", on the audit trail. Best-effort like
+/// [`record_anomaly`]; the detail is a fixed sentence, never anything a caller sent.
+fn record_cross_node_alarm(
+    state: &BrokerState,
+    scope: &crate::scope::BrokerScope,
+    actor: &str,
+    target: &str,
+    now: i64,
+) {
+    let Ok(root_key) = state.reauth_root_key("audit: anomaly") else {
+        return;
+    };
+    let event = scrubbed(credmgr_store::audit::NewEvent {
+        actor: actor.to_string(),
+        action: "anomaly.cross_node_denials".to_string(),
+        node_id: Some(scope.node_id.clone()),
+        entry_id: None,
+        decision: None,
+        detail: Some(format!(
+            "five cross-node denials in ten minutes; the last asked for node {target}"
+        )),
+        generation: None,
+    });
+    let year_month = credmgr_store::audit::year_month_for(now);
+    let _ = credmgr_store::audit::append(
+        &state.paths,
+        root_key.expose_secret(),
+        &year_month,
+        event,
+        now,
+    );
 }
 
 /// `10_API_AND_MCP.md §1`: an anomaly "only gets logged" — it never blocks
@@ -101,7 +153,7 @@ fn record_anomaly(
 /// matched so a new `OpError` variant is a compile error here, not a
 /// silently-generic audit line — the same guarantee `audit_action_for` gives
 /// `AnomalyKind` above.
-fn error_tag(err: &OpError) -> &'static str {
+pub(crate) fn error_tag(err: &OpError) -> &'static str {
     match err {
         OpError::NodeAccessDenied { .. } => "node_access_denied",
         OpError::TwoFactorRequired { .. } => "two_factor_required",
@@ -116,6 +168,7 @@ fn error_tag(err: &OpError) -> &'static str {
         OpError::EntryExists { .. } => "entry_exists",
         OpError::Internal(_) => "internal",
         OpError::PresenceRequired { .. } => "presence_required",
+        OpError::PresenceFailed { .. } => "presence_failed",
         OpError::ArchiveExpired { .. } => "archive_expired",
         OpError::ApprovalDenied { .. } => "approval_denied",
         OpError::RateLimited { .. } => "rate_limited",
@@ -128,6 +181,8 @@ fn error_tag(err: &OpError) -> &'static str {
         OpError::VaultInitNotPending => "vault_init_not_pending",
         OpError::RecoveryCodeMismatch => "recovery_code_mismatch",
         OpError::SessionExpired => "session_expired",
+        OpError::ConfirmationRequired { .. } => "confirmation_required",
+        OpError::MachineLockRefused { .. } => "machine_lock_refused",
     }
 }
 
@@ -181,6 +236,16 @@ fn field_audit_detail(params: &serde_json::Value) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("; "))
 }
 
+/// `a_` and 16 lower-case hex digits: an agent token's public id. Anything else a caller sent as `params.id` stays out
+/// of the log.
+fn is_agent_public_id_shaped(s: &str) -> bool {
+    s.len() == 18
+        && s.starts_with("a_")
+        && s[2..]
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 /// `10_API_AND_MCP.md §1`: "every decision, allow or deny, appends one audit
 /// record and returns its id, so a caller can cite exactly what it did."
 /// Generic and op-agnostic by design — one call site here covers every
@@ -204,17 +269,39 @@ fn record_decision(
     result: &Result<serde_json::Value, OpError>,
 ) -> Option<String> {
     let root_key = state.reauth_root_key("audit: decision").ok()?;
+    flush_unaudited_recoveries(state, root_key.expose_secret());
+    // ADR-164 review P2-2: rotate and revoke name a token, not a node; the record goes under the token's own node.
     let node_id = params
         .get("node")
         .and_then(|v| v.as_str())
+        .or_else(|| {
+            op.starts_with("agent.token_")
+                .then(|| {
+                    result
+                        .as_ref()
+                        .ok()
+                        .and_then(|v| v.get("node"))
+                        .and_then(|v| v.as_str())
+                })
+                .flatten()
+        })
         .map(str::to_string)
         .unwrap_or_else(|| scope.node_id.clone());
     // ADR-055: generic and additive, the same "one call site, not every
     // dispatch arm" reasoning ADR-049 already applied to `node_id` — an op
     // whose params/response carry neither field simply leaves both `None`.
+    // ADR-156: an op that creates an entry names it only in its answer (`entry.create`), so an allowed
+    // record falls back to the answer's `entry` - `entry.history` then starts at the creation.
     let entry_id = params
         .get("entry")
         .and_then(|v| v.as_str())
+        .or_else(|| {
+            result
+                .as_ref()
+                .ok()
+                .and_then(|v| v.get("entry"))
+                .and_then(|v| v.as_str())
+        })
         .map(str::to_string);
     let generation = result
         .as_ref()
@@ -232,7 +319,22 @@ fn record_decision(
         // that addresses fields records their ids — never a label or a value
         // (ADR-078, `field_audit_detail`).
         detail: match result {
+            // ADR-164 review P2-2: a refused rotate or revoke still names the token it was about.
+            Err(e) if op.starts_with("agent.token_") => {
+                let tag = error_tag(e).to_string();
+                match params
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .filter(|id| is_agent_public_id_shaped(id))
+                {
+                    Some(id) => Some(format!("{tag}; token {id}")),
+                    None => Some(tag),
+                }
+            }
             Err(e) => Some(error_tag(e).to_string()),
+            Ok(answer) if op.starts_with("agent.token_") && op != "agent.token_status" => {
+                crate::ops::agent_token_audit_detail(op, answer)
+            }
             Ok(_) => {
                 let reason = params
                     .get("reason")
@@ -245,6 +347,44 @@ fn record_decision(
                 }
             }
         },
+        generation,
+    });
+    let year_month = credmgr_store::audit::year_month_for(now);
+    credmgr_store::audit::append(
+        &state.paths,
+        root_key.expose_secret(),
+        &year_month,
+        event,
+        now,
+    )
+    .ok()
+    .map(|record| record.id)
+}
+
+/// ADR-122: an extra audit record for one item of an op that does many writes in
+/// one request (`entry.import_env`), so each write is on the trail by itself and
+/// `entry.undo`-style lookups by entry id find it. Same actor, same file, same
+/// best-effort rule as [`record_decision`]; `detail` is a fixed word chosen by the
+/// op, never anything a caller typed.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn record_item_event(
+    state: &BrokerState,
+    scope: &crate::scope::BrokerScope,
+    now: i64,
+    action: &str,
+    node_id: &str,
+    entry_id: &str,
+    generation: Option<u64>,
+    detail: &str,
+) -> Option<String> {
+    let root_key = state.reauth_root_key("audit: item").ok()?;
+    let event = scrubbed(credmgr_store::audit::NewEvent {
+        actor: audit_actor(state, scope),
+        action: action.to_string(),
+        node_id: Some(node_id.to_string()),
+        entry_id: Some(entry_id.to_string()),
+        decision: Some("allow".to_string()),
+        detail: Some(detail.to_string()),
         generation,
     });
     let year_month = credmgr_store::audit::year_month_for(now);
@@ -281,29 +421,75 @@ pub fn serve_connection(state: &Arc<BrokerState>, stream: UnixStream) -> io::Res
     let fd = stream.as_raw_fd();
     let peer_info = match peer::identify_peer(fd) {
         Ok(p) => p,
-        Err(_) => return Ok(()), // cannot identify the peer — refuse silently, close.
+        Err(_) => {
+            // cannot identify the peer — refuse silently, close.
+            crate::diag_log::event(
+                "peer",
+                &[("result", crate::diag_log::Value::Str("unidentified"))],
+            );
+            return Ok(());
+        }
     };
     if !peer_is_owner(&peer_info, peer::owning_uid()) {
+        crate::diag_log::event(
+            "peer",
+            &[("result", crate::diag_log::Value::Str("not_owner"))],
+        );
         // "connection closed before the first frame is read" (10 §1).
         return Ok(());
     }
 
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut writer = stream;
-    let mut line = String::new();
+    // K-10 (a), ADR-156: one request line is read under a cap, and the bytes
+    // (which carry values and passphrases) are wiped before the buffer is reused.
+    let mut bytes = zeroize::Zeroizing::new(Vec::new());
     loop {
-        line.clear();
-        let n = reader.read_line(&mut line)?;
-        if n == 0 {
-            return Ok(()); // EOF
+        bytes.zeroize();
+        bytes.clear();
+        match read_request_line(&mut reader, &mut bytes, REQUEST_LINE_MAX)? {
+            LineRead::Eof => return Ok(()),
+            LineRead::TooLong => {
+                crate::diag_log::event(
+                    "frame",
+                    &[("error", crate::diag_log::Value::Str("too_long"))],
+                );
+                let body = protocol::to_wire(
+                    "?",
+                    &Err(OpError::Malformed(format!(
+                        "a request line is at most {} MiB; this connection is closed",
+                        REQUEST_LINE_MAX / (1024 * 1024)
+                    ))),
+                );
+                writeln!(writer, "{body}")?;
+                // The rest of the oversized line cannot be framed again.
+                return Ok(());
+            }
+            LineRead::Line => {}
         }
-        let trimmed = line.trim_end();
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            crate::diag_log::event(
+                "frame",
+                &[("error", crate::diag_log::Value::Str("not_utf8"))],
+            );
+            let body = protocol::to_wire(
+                "?",
+                &Err(OpError::Malformed("a request line is UTF-8 JSON".into())),
+            );
+            writeln!(writer, "{body}")?;
+            continue;
+        };
+        let trimmed = text.trim_end();
         if trimmed.is_empty() {
             continue;
         }
-        let request: Request = match serde_json::from_str(trimmed) {
+        let mut request: Request = match serde_json::from_str(trimmed) {
             Ok(r) => r,
             Err(e) => {
+                crate::diag_log::event(
+                    "frame",
+                    &[("error", crate::diag_log::Value::Str("not_json"))],
+                );
                 let body = protocol::to_wire("?", &Err(OpError::Malformed(e.to_string())));
                 writeln!(writer, "{body}")?;
                 continue;
@@ -311,6 +497,12 @@ pub fn serve_connection(state: &Arc<BrokerState>, stream: UnixStream) -> io::Res
         };
         let (response_body, audit_id) = handle_request(state, &peer_info, &request);
         let mut wire = protocol::to_wire(&request.id, &response_body);
+        // K-23 (b), ADR-156: the parsed request held passphrases and values as
+        // plain strings; wipe them before they are freed.
+        protocol::wipe_strings(&mut request.params);
+        if let Some(token) = request.token.as_mut() {
+            token.zeroize();
+        }
         // `10_API_AND_MCP.md §1`: "returns its id, so a caller can cite
         // exactly what it did" — best-effort (`record_decision` itself, e.g.
         // a locked vault), so a caller that gets no `audit` field learned
@@ -319,7 +511,52 @@ pub fn serve_connection(state: &Arc<BrokerState>, stream: UnixStream) -> io::Res
             wire["audit"] = serde_json::Value::String(id.clone());
         }
         writeln!(writer, "{wire}")?;
+        // ADR-164 review P2-5: the answer can hold a secret (a new agent bearer, a revealed value); wipe the copies
+        // this function owns once written. The writer's and the kernel's buffers are out of reach (K-10).
+        protocol::wipe_strings(&mut wire);
+        let mut response_body = response_body;
+        if let Ok(v) = response_body.as_mut() {
+            protocol::wipe_strings(v);
+        }
     }
+}
+
+/// K-10 (a), ADR-156: the most bytes one request line may hold, newline
+/// included. Twice the 64 MiB `entry.create_batch` limit, so a full batch
+/// still fits after JSON escaping of ordinary text; a batch whose values are
+/// mostly escaped characters may be refused here before its own check.
+pub const REQUEST_LINE_MAX: usize = 128 * 1024 * 1024;
+
+/// What [`read_request_line`] found.
+#[derive(Debug, PartialEq, Eq)]
+pub enum LineRead {
+    /// End of stream before any byte of a new line.
+    Eof,
+    /// One line (or a final unterminated one) is in the buffer.
+    Line,
+    /// More than `limit` bytes arrived without a newline; the buffer holds a
+    /// prefix only and the stream cannot be framed again.
+    TooLong,
+}
+
+/// Read one newline-terminated line into `buf`, never holding more than
+/// `limit + 1` bytes of it. `pub` so the limit can be tested small.
+pub fn read_request_line<R: BufRead>(
+    reader: &mut R,
+    buf: &mut Vec<u8>,
+    limit: usize,
+) -> io::Result<LineRead> {
+    let n = reader
+        .by_ref()
+        .take(limit as u64 + 1)
+        .read_until(b'\n', buf)?;
+    if n == 0 {
+        return Ok(LineRead::Eof);
+    }
+    if buf.len() > limit && buf.last() != Some(&b'\n') {
+        return Ok(LineRead::TooLong);
+    }
+    Ok(LineRead::Line)
 }
 
 /// `pub` (not just crate-private) so the isolation suite can drive the real
@@ -347,6 +584,8 @@ const TOKENLESS_OK_OPS: &[&str] = &[
     "vault.unlock",
     "vault.gate_verify",
     "vault.gate_recover",
+    // ADR-163: the forgotten-passphrase way in is, like the unlock, made by someone with no live login.
+    "vault.recover",
     "vault.init_begin",
     "vault.init_confirm",
     "vault.lock",
@@ -382,16 +621,22 @@ pub fn handle_request_at(
     // plan and its switch, and the rotation's own audit record is written
     // under the new one. Every request starts shared; a rotation is upgraded to
     // exclusive below, only once the caller has passed the cheap checks.
+    // ADR-159: timed for the diagnostic log only; `clock` above stays the caller's fixed instant.
+    let started = Instant::now();
     let mut _barrier = state.request_barrier(false);
-    let (scope, anomaly) = scope::resolve_scope(
+    let (scope, anomaly) = scope::resolve_scope_at(
         &state.registry.read().expect("registry poisoned"),
         &state.tokens,
         peer_info,
         request.token.as_deref(),
+        now,
     );
     // ADR-077: named once, before dispatch, from the session's public id —
     // never from the bearer (see `audit_actor`).
-    let actor = audit_actor(state, &scope);
+    let actor = match dead_agent_actor(state, &scope, request.token.as_deref()) {
+        Some(dead) => dead,
+        None => audit_actor(state, &scope),
+    };
     if let Some(anomaly) = &anomaly {
         record_anomaly(state, &scope, &actor, anomaly, now);
     }
@@ -435,7 +680,25 @@ pub fn handle_request_at(
     let is_auth_path = request.op == "vault.unlock"
         || request.op == "vault.gate_verify"
         || request.op == "vault.gate_recover"
+        // ADR-163: the recovery-code unlock guesses at a code and a second factor; same counter, so an attacker
+        // cannot spend five guesses on each door in turn.
+        || request.op == "vault.recover"
         || request.op == "maintenance.rotate_root"
+        // ADR-156: a passphrase change proves the current passphrase the same way.
+        || request.op == "vault.set_passphrase"
+        // ADR-135: a node's own code is guessed at exactly like the vault's, and shares the backoff.
+        || request.op == "node.gate_verify"
+        || request.op == "node.gate_remove"
+        // ADR-150: `session.confirm` with a passphrase guesses the vault passphrase from inside a login; the
+        // Touch ID form is held back by the same lockout so a locked-out uid cannot confirm at all.
+        || request.op == "session.confirm"
+        // ADR-165 (review P1-1, P2-4): turning the machine lock on proves the passphrase and the recovery code;
+        // turning it off proves the passphrase when it is sent. Both guess at what `vault.unlock` guards.
+        // Review N1: only the bind's `prepare` proves anything; its `commit` checks the code it just showed
+        // this login (a retyping, which guesses at nothing) and `cancel` proves nothing.
+        || (request.op == "keystore.bind"
+            && request.params.get("phase").and_then(|p| p.as_str()) == Some("prepare"))
+        || (request.op == "keystore.unbind" && request.params.get("passphrase").is_some())
         || (request.op == "vault.approval_decide" && request.params.get("passphrase").is_some());
     let locked_out = is_auth_path
         .then(|| state.auth_backoff.remaining_lockout(peer_info.uid, clock))
@@ -455,11 +718,32 @@ pub fn handle_request_at(
     // is refused further down while sharing the barrier like any other request.
     // (Whether the session may actually rotate — human, `Admin`, second factor,
     // presence — is `ops.rs`'s decision; this only gates who may *wait*.)
-    if request.op == "maintenance.rotate_root"
+    // ADR-130: `node.rekey` swaps a node's key and rewrites its files; no other request may read an
+    // envelope while that happens, so it runs alone the same way.
+    // ADR-165: a machine-lock bind or unbind rewrites `root.wrap.pass`, the file every passphrase check reads;
+    // it runs alone the same way.
+    if (request.op == "maintenance.rotate_root"
+        || request.op == "vault.set_passphrase"
+        || request.op == "node.rekey"
+        // ADR-158: `entry.move` changes two manifests and the files they name; it runs alone too.
+        || request.op == "entry.move"
+        || request.op == "keystore.bind"
+        || request.op == "keystore.unbind"
+        // ADR-169: a doctor plan is a run of `entry.move`s; it runs alone for the whole plan.
+        || request.op == "vault.doctor_apply")
         && locked_out.is_none()
         && !dead_token
         && state.is_owner_session(&scope)
     {
+        drop(_barrier);
+        _barrier = state.request_barrier(true);
+    }
+    // ADR-163: `vault.recover` is a root rotation too, made by someone with no login (the vault is locked, so
+    // little is in flight). It waits for the world whenever the uid is not backed off — whether or not the
+    // vault looks locked now. Review P2-b: asking `is_locked()` here raced an auto-lock between this check and
+    // the dispatch, which would have run the rotation under a shared barrier. An open vault refuses the op at
+    // once (`AlreadyUnlocked`), so a caller on one only waits for the requests already in flight.
+    if request.op == "vault.recover" && locked_out.is_none() && !dead_token {
         drop(_barrier);
         _barrier = state.request_barrier(true);
     }
@@ -468,15 +752,49 @@ pub fn handle_request_at(
             retry_after_seconds: remaining.as_secs().max(1),
         }),
         None if dead_token => Err(OpError::SessionExpired),
-        None => guard_against_panic(&request.op, || {
-            ops::dispatch(state, &scope, now, &request.op, &request.params)
-        }),
+        None => {
+            // ADR-148 §P1-5: `_peer` is the server's to fill — a client's value is always removed, and the
+            // Touch ID unlock is given the description of the process that is actually asking.
+            let params = with_peer_param(&request.op, &request.params, peer_info);
+            guard_against_panic(&request.op, || {
+                ops::dispatch(state, &scope, now, &request.op, &params)
+            })
+        }
     };
 
     if is_auth_path {
         match &result {
+            // ADR-150 (review P1): a successful `session.confirm` never resets the counter. Its caller already
+            // holds a login; letting a confirm clear the backoff would let that login guess node and vault gate
+            // codes without limit by confirming between guesses. It records failures only.
+            Ok(_) if request.op == "session.confirm" => {}
             Ok(_) => state.auth_backoff.record_success(peer_info.uid),
             Err(OpError::WrongPassphrase) | Err(OpError::GateVerificationFailed) => {
+                state.auth_backoff.record_failure(peer_info.uid, clock);
+            }
+            // ADR-163: a wrong recovery code is a failed guess. (`recovery_code_mismatch` elsewhere is
+            // `vault.init_confirm`'s "you copied it down wrong", which guesses at nothing.)
+            Err(OpError::RecoveryCodeMismatch)
+                if request.op == "vault.recover" || request.op == "keystore.bind" =>
+            {
+                state.auth_backoff.record_failure(peer_info.uid, clock);
+            }
+            // ADR-148 §P1-5: a dismissed or locked-out Touch ID prompt is a failed attempt too. Otherwise a
+            // caller could put the prompt in front of the person again and again, for free, until a tired
+            // tap lets it through.
+            Err(OpError::PresenceFailed {
+                operation,
+                reason: "cancelled" | "locked_out",
+            }) if operation == "vault.unlock" => {
+                state.auth_backoff.record_failure(peer_info.uid, clock);
+            }
+            // ADR-150 (review P3-b): the same for `session.confirm`. Its Touch ID prompt is shown by the client,
+            // so the broker sees a failed check as a proof that does not verify (`invalid`); a cancel or lockout
+            // reported in its name counts too.
+            Err(OpError::PresenceFailed {
+                operation,
+                reason: "cancelled" | "locked_out" | "invalid",
+            }) if operation == "session.confirm" => {
                 state.auth_backoff.record_failure(peer_info.uid, clock);
             }
             // `two_factor_required` is neither: the passphrase was correct
@@ -490,8 +808,10 @@ pub fn handle_request_at(
     }
 
     if let Err(OpError::NodeAccessDenied { target, .. }) = &result {
-        if target != &scope.node_id {
-            state.rate_limiter.record_denial(peer_info.uid, clock);
+        // ADR-156: the trip is no longer thrown away. It counts as an unseen alarm (`vault.status` tells the
+        // owner's login) and is written to the audit trail, so the owner can see when it happened.
+        if target != &scope.node_id && state.rate_limiter.record_denial(peer_info.uid, clock) {
+            record_cross_node_alarm(state, &scope, &actor, target, now);
         }
     }
 
@@ -504,7 +824,94 @@ pub fn handle_request_at(
         &request.params,
         &result,
     );
+    // ADR-159: the op's own label (never the caller's text), `ok` or the static error code, and the time.
+    crate::diag_log::request(
+        &request.op,
+        result.as_ref().map(|_| ()).map_err(error_tag),
+        started.elapsed(),
+        passive,
+    );
+    // ADR-163: every recovery attempt reaches the audit trail. One made while the vault is locked has no root
+    // key to sign a record with, so it waits in memory (time, actor, outcome; no secret) and the next request
+    // that writes a record writes it first.
+    if request.op == "vault.recover" && audit_id.is_none() {
+        let (decision, reason) = match &result {
+            Ok(_) => ("allow", "completion_pending"),
+            Err(e) => ("deny", error_tag(e)),
+        };
+        state.note_unaudited_recovery(crate::state::UnauditedRecovery {
+            at: now,
+            actor: actor.clone(),
+            decision,
+            reason,
+        });
+    }
     (result, audit_id)
+}
+
+/// ADR-163: write the recovery attempts that were made while the vault was locked, at the time each was made,
+/// before the record that found a root key to sign with. Best effort, like every audit write.
+fn flush_unaudited_recoveries(state: &BrokerState, root_key: &[u8; 32]) {
+    let (attempts, dropped) = state.take_unaudited_recoveries();
+    for attempt in attempts {
+        let event = scrubbed(credmgr_store::audit::NewEvent {
+            actor: attempt.actor,
+            action: "vault.recover".to_string(),
+            node_id: Some(credmgr_core::registry::GLOBAL_ID.to_string()),
+            entry_id: None,
+            decision: Some(attempt.decision.to_string()),
+            detail: Some(format!(
+                "{}; made while the vault was locked, recorded at the next unlock",
+                attempt.reason
+            )),
+            generation: None,
+        });
+        let year_month = credmgr_store::audit::year_month_for(attempt.at);
+        let _ =
+            credmgr_store::audit::append(&state.paths, root_key, &year_month, event, attempt.at);
+    }
+    if dropped > 0 {
+        let now = now_epoch();
+        let event = scrubbed(credmgr_store::audit::NewEvent {
+            actor: "system:vault.recover".to_string(),
+            action: "vault.recover".to_string(),
+            node_id: Some(credmgr_core::registry::GLOBAL_ID.to_string()),
+            entry_id: None,
+            decision: Some("deny".to_string()),
+            detail: Some(format!(
+                "{dropped} more recovery attempts made while the vault was locked were not itemised"
+            )),
+            generation: None,
+        });
+        let year_month = credmgr_store::audit::year_month_for(now);
+        let _ = credmgr_store::audit::append(&state.paths, root_key, &year_month, event, now);
+    }
+}
+
+/// ADR-148 §P1-5: the params `ops::dispatch` sees. [`ops::PEER_PARAM`] is removed from whatever the client sent
+/// and, for `vault.unlock`, set to [`crate::peer::describe`] of the connecting process — the requester named
+/// in the Touch ID dialog. Every other op's params are passed through unchanged (no copy when there is
+/// nothing to remove).
+fn with_peer_param<'a>(
+    op: &str,
+    params: &'a serde_json::Value,
+    peer_info: &PeerInfo,
+) -> std::borrow::Cow<'a, serde_json::Value> {
+    let carries = params.get(ops::PEER_PARAM).is_some();
+    if op != "vault.unlock" && !carries {
+        return std::borrow::Cow::Borrowed(params);
+    }
+    let mut owned = params.clone();
+    if let Some(map) = owned.as_object_mut() {
+        map.remove(ops::PEER_PARAM);
+        if op == "vault.unlock" {
+            map.insert(
+                ops::PEER_PARAM.to_string(),
+                serde_json::Value::String(crate::peer::describe(peer_info)),
+            );
+        }
+    }
+    std::borrow::Cow::Owned(owned)
 }
 
 /// ADR-077 (MX-1): one op that panics must not take its caller's connection
@@ -590,6 +997,43 @@ pub fn run(state: Arc<BrokerState>, socket_path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_request_line_over_the_limit_is_cut_off_and_one_at_the_limit_is_read() {
+        let mut buf = Vec::new();
+        let mut at_limit = io::Cursor::new(b"0123456\nnext\n".to_vec());
+        assert_eq!(
+            read_request_line(&mut at_limit, &mut buf, 8).unwrap(),
+            LineRead::Line
+        );
+        assert_eq!(buf, b"0123456\n");
+        buf.clear();
+        assert_eq!(
+            read_request_line(&mut at_limit, &mut buf, 8).unwrap(),
+            LineRead::Line
+        );
+        assert_eq!(buf, b"next\n");
+        buf.clear();
+        assert_eq!(
+            read_request_line(&mut at_limit, &mut buf, 8).unwrap(),
+            LineRead::Eof
+        );
+
+        let mut over = io::Cursor::new(vec![b'x'; 64]);
+        buf.clear();
+        assert_eq!(
+            read_request_line(&mut over, &mut buf, 8).unwrap(),
+            LineRead::TooLong
+        );
+        assert_eq!(buf.len(), 9, "never more than limit + 1 bytes are held");
+
+        let mut unterminated = io::Cursor::new(b"{}".to_vec());
+        buf.clear();
+        assert_eq!(
+            read_request_line(&mut unterminated, &mut buf, 8).unwrap(),
+            LineRead::Line
+        );
+    }
 
     /// ADR-077 (MX-1): an op that panics is answered, not propagated. The
     /// panic message still goes to stderr through the default hook (that is how

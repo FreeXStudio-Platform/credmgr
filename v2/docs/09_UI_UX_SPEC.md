@@ -11,7 +11,7 @@ surface: repo
 last_reviewed: 2026-08-18
 ---
 
-<!-- artifact-hardened: NEEDS RE-HARDENING — rewritten to ultimate-destination state on
+<!-- artifact-hardened: NEEDS RE-HARDENING — edited 2026-11-06 for ADR-098 (Touch ID honesty pass). Earlier note: rewritten to ultimate-destination state on
      2026-08-18, after the freeze on this document was lifted. The previous stamp (Approved
      With Known Risks @ d15a5c7 on 2026-08-04, reconciled 2026-08-10 under ADR-052) attested to
      a body written almost entirely in the present tense, describing screens, a design system
@@ -64,11 +64,16 @@ the design's own hand-written canvas (`apps/desktop/src/design/logic/graph.js`, 
 > *not yet wired to the vault*; read it as **`built` in the app, with its real-app result recorded in
 > `RELEASE_VERIFICATION.md`**, except for the pieces this callout lists as absent.
 > **Where the shipped app differs from this specification** (`apps/desktop/design-upstream/PROVENANCE.md`, "Deliberate
-> changes"): the Agents / LLM section, the machine lock, the duress code, per-node security levels, content search
+> changes"; **updated 2026-11-06:** Settings → Agents and the per-node security level control are now built, ADR-140 and
+> ADR-143; the machine lock is defined and not built, ADR-144; the duress code is dropped, ADR-145): the machine lock, the duress code, content search
 > (search matches names only) and `--age` export are **not in the app** (no backing feature); there is no
-> re-parent dialog and no approval prompt (no control calls `node.reparent` or `vault.approval_decide`); five
-> operations are sent for real and refused with `presence_required` (grant creation, the full audit record, a TOTP
-> field's seed, root-key rotation, a registry rebuild) and the app says so; the donation address is one static entry
+> re-parent dialog and no approval prompt (no control calls `node.reparent` or `vault.approval_decide`; the CLI has
+> `credmgr node reparent`); since ADR-098 the operations that need a person present (grant creation, the full audit
+> record, a TOTP field's seed, root-key rotation, a registry rebuild, opening a sealed entry) are sent for real and
+> **run after Touch ID** on a Mac with an enrolled presence key: the shell asks for the fingerprint itself, the page
+> never sees a nonce or signature, and Settings → Security → Touch ID turns it on and off; with no key enrolled the
+> broker answers `presence_required` and the app says so and offers to set Touch ID up. The Lock screen offers
+> the **fingerprint icon beside the passphrase field** once it is on (the vault key sealed to the Mac's Secure Enclave; the passphrase stays); the donation address is one static entry
 > under About → Donate, never a banner; the design's "looks sensitive" hint is gone with its own inference (the
 > preview shows the Rust inference); Settings keeps its preferences in `credmgr_prefs` (`PRIVACY.md`).
 > `19_FRONTEND_DELIVERY_SCOPE.md` is the sibling document that scopes *how much* must be
@@ -378,10 +383,12 @@ say so rather than fail silently:
 - An item using 8 digits or SHA-256/SHA-512 cannot be served at all, because no op stores or reads
   per-item parameters today (`07_TWO_FACTOR.md §6`).
 - A separate **"Show raw secret"** affordance — for exporting to another authenticator app — will
-  route through `totp.seed`, which is gated on 2FA **and** presence and is unreachable end to end
-  on every transport that exists, because `presence_attested` is hardcoded `false` at every call
-  site (`crates/brokerd/src/ops.rs`). That affordance will fail closed exactly as `totp.seed` does
-  today, and the screen will say why rather than presenting a button that cannot work.
+  route through `totp.seed`, which is gated on 2FA **and** presence (ADR-098): the broker releases the seed to the
+  owner's login with a Touch ID proof and never to an agent. The desktop app's "show seed" displays it after a Touch ID check
+  (and a fresh second factor too, if the vault has one), re-masks it after the reveal window, never copies it and clears it on lock
+  (ADR-098; 2026-11-08, `d9e6c7c`); an export-to-another-authenticator screen is still not built. With no presence
+  key enrolled the broker fails closed (`presence_required`) and the screen says why and offers to set Touch ID up
+  rather than presenting a button that cannot work.
 
 ---
 
@@ -492,10 +499,9 @@ Depth-2 nodes cannot have children (the registry enforces the cap); the parent p
 not offer them.
 
 **Remove node — the seal flow.** Destructive-looking, non-destructive in fact — and, unlike the
-grant dialog in §10, this one is not blocked on a missing gate: `node.seal` is a built, dispatched
-op that re-authenticates through the platform keystore rather than through the unbuilt presence
-attestation, so it already works end to end from the CLI or MCP today. Only the confirmation
-screen below is missing.
+grant dialog in §10, this one never waited on a presence gate: `node.seal` is a built, dispatched
+op that re-authenticates through the platform keystore rather than through a presence proof, so it works
+end to end from the CLI or MCP and from the app.
 
 ```
   ⚠  Remove node "linux"?
@@ -524,9 +530,10 @@ biometric prompt per item (`04 §5`). Restore will be available in **both** Pro 
 change the node's ancestor set and therefore what it can read, exactly as a grant would. It will
 carry the full grant gate — 2FA, presence, a mandatory reason — and the dialog will enumerate by
 name which nodes become newly readable and which stop being readable (`06 §6a`). Unlike node
-seal, `node.reparent` is one of the five ops that return `PresenceRequired` unconditionally today
-(`crates/brokerd/src/ops.rs`), so — exactly like grant creation in §10 — this dialog's confirm
-button will reach a real refusal until presence attestation exists, not merely an unbuilt screen.
+seal, `node.reparent` is one of the ops that require a presence proof (ADR-098): the broker op and the CLI
+(`credmgr node reparent`, which asks for Touch ID itself) are built and run on a Mac with an enrolled presence key;
+with none enrolled the op answers `PresenceRequired`. The app has no re-parent dialog yet, so the confirmation
+screen described here is the part that is still unbuilt.
 
 **Orphaned view** — reached from the rail or the docked canvas node:
 
@@ -540,7 +547,8 @@ button will reach a real refusal until presence attestation exists, not merely a
       …
 
       Values are sealed. Opening one needs Touch ID and a fresh
-      2FA code, every time. No agent can read this node.
+      2FA code, every time (built, ADR-098: the app's Open on a sealed item calls
+      `orphan.reveal`; no CLI command and no MCP tool exists). No agent can read this node.
 
       [ Open an item… ]   [ Restore to a node… ]   [ Destroy… ]
   └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
@@ -575,16 +583,13 @@ Will be created by dragging node → node on the canvas, or `Settings → Grants
 `Settings → Grants` will list every grant with from/to, scope, reason, expiry, last used, and a
 one-click **Revoke**. Grants unused for 30 days will be flagged.
 
-**Listing and revoking are already real at the broker level** — `grant.list` and `grant.revoke`
-are built, tested ops (`03_DATA_MODEL.md §6`, `crates/brokerd/tests/grant_ops.rs`); only the
-screen above them is missing. **`grant.create` is different, and the `[ Create grant ]` button
-will not simply be unwired — it will reach a real, working refusal.** Creating a grant requires a
-presence attestation (`Origin::Native` with `presence_attested: true`), and no transport in this
-build constructs one: `presence_attested` is hardcoded `false` at every call site
-(`crates/brokerd/src/ops.rs`), including every one of the Tauri bridge's commands — `grant_create`
-among them since `ADR-062`. Until presence
-attestation exists on some transport, this dialog is complete design sitting in front of an
-honest, unconditional `PresenceRequired` denial — not a stub waiting on UI work.
+**Listing and revoking are real at the broker level** — `grant.list` and `grant.revoke`
+are built, tested ops (`03_DATA_MODEL.md §6`, `crates/brokerd/tests/grant_ops.rs`). **`grant.create` needs a
+person present, and the `[ Create grant ]` button reaches that gate for real.** Creating a grant requires a
+presence proof (ADR-098, `04_CRYPTO_AND_KEYS.md §5.3`): the Tauri bridge's `grant_create` (since `ADR-062`) sends the
+request, the shell answers the broker's `presence_required` by asking for Touch ID, and the grant is written. On a
+Mac with no enrolled presence key the dialog sits in front of an honest `PresenceRequired` denial; it says so and
+offers to set Touch ID up. Agents can never hold a proof.
 
 ---
 
@@ -598,8 +603,10 @@ will show nothing, because it is what a thief sees.)
         ⬢
    credmgr is locked
 
-   [  Unlock with Touch ID  ]
-     use passphrase instead
+   [ passphrase ........... ] [fingerprint]
+   [        Unlock          ]
+     the icon is always shown: pressable once Touch ID is set up, dimmed (and a press says how to turn it on) until then;
+     Face ID and the Windows and Android quick unlocks take the same slot
 
    ── then ──
    2FA code   [ _ _ _ _ _ _ ]
@@ -622,8 +629,10 @@ node holding seed phrases will be shut whenever it is idle. [Pass 2 · F-7]
 **Approval on demand.** [Pass 2 · F-15] **`partial`** — the broker half is built and tested
 (`ops::reveal_via_approval`, the `vault.approval_decide` op) and already works over the CLI or MCP
 today: an agent that asks for a value while the vault is locked does not fail and does not force
-an unlock. **Nothing shows the operator the notification, because no native app exists**
-(`07_TWO_FACTOR.md §5a`). Once built, the native app will raise a notification naming the
+an unlock. **Nothing shows the operator a native notification** (`07_TWO_FACTOR.md §5a`); the Lock screen lists the
+request and the operator decides it with the passphrase. A Touch ID tap on Approve is *not* what is built: a presence
+proof needs the owner's session and a locked vault has none (the Lock screen's separate **fingerprint icon** is
+built, ADR-098). Once built, the native app will raise a notification naming the
 requesting folder and the entry; one Touch ID tap will release **that one value** and the vault
 will stay locked. It times out in 120 s, defaulting to deny — already true today, at the broker
 (`07 §5a`). There is no "agent session" that holds the vault open.
@@ -635,8 +644,8 @@ will stay locked. It times out in 120 s, defaulting to deny — already true tod
 Five screens are planned, and the flow will not let a user skip the two that matter.
 
 1. **Create vault** — name.
-2. **Protect it** — Touch ID enrolment + a passphrase (**mandatory**, it is the only
-   portable escrow).
+2. **Protect it** — a passphrase (**mandatory**, it is the only portable escrow). Touch ID is optional and is
+   set up afterwards in Settings → Security (ADR-098); the first-run flow does not enrol it.
 3. **Recovery code** — will be shown once, must be confirmed transcribed. The flow will not
    continue otherwise.
 4. **Two-factor** — enrol the global gate, confirm one code, receive 10 recovery codes.
@@ -742,13 +751,12 @@ Pass 2 findings F-1, F-7, F-8, F-13, F-15, F-18, cited inline where each changed
 pending-tray claims); `totp.code`, `totp.seed` (§8.1); `vault.node_lock`, `vault.node_unlock`
 (§11's node-lock claim); `ops::reveal_via_approval`, `vault.approval_decide` (§11's
 approval-on-demand claim); `node.seal`, `node.reparent` (§9 — the seal/reparent contrast);
-`grant.list`, `grant.revoke`, `grant.create` (§10) — all in `crates/brokerd/src/ops.rs`. The five
-ops that return `PresenceRequired` unconditionally today — `audit.get`, `totp.seed`,
-`node.reparent`, `grant.create`, `maintenance.doctor --rebuild-registry` — and the fact that
-`presence_attested` is hardcoded `false` at every call site on every transport, including the
-Tauri bridge's built commands, are the reason §9's reparent dialog and §10's grant dialog are
-described as reaching a real refusal rather than an unbuilt screen. `graph.snapshot`'s `counts`
-and `gate.twofa` fields (§3, §4) and the 53 built Tauri commands (status callout) are
+`grant.list`, `grant.revoke`, `grant.create` (§10) — all in `crates/brokerd/src/ops.rs`. The
+ops that require a presence proof since ADR-098 — `audit.get`, `totp.seed`, `node.reparent`, `grant.create`,
+`maintenance.doctor --rebuild-registry`, `maintenance.rotate_root`, a widening `node.policy` and `orphan.reveal` —
+run after Touch ID on a Mac with an enrolled key and answer `PresenceRequired` otherwise, which is why §9's
+reparent dialog and §10's grant dialog are described as reaching a real gate rather than an unbuilt screen. `graph.snapshot`'s `counts`
+and `gate.twofa` fields (§3, §4) and the built Tauri commands (status callout; the list gained the Touch ID prompt commands in ADR-098) are
 `apps/desktop/src-tauri/src/commands.rs` and `crates/brokerd/src/ops.rs`, both re-read in this
 pass.
 

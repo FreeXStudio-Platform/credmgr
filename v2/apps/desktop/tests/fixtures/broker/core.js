@@ -12,6 +12,7 @@
  *   read.js      graph_snapshot, entry_list, entry_get, entry_reveal, totp, notes, search, grants, pending list, node lock
  *   write.js     entry_create(+batch), field add / update / remove / reorder, fields_preview, pending accept / discard
  *   admin.js     grant create / revoke, audit, maintenance
+ *   switchboard.js  settings_* (ADR-155): the app.* settings, their history, agents' waiting requests
  *   install.js   defines window.__TAURI_INTERNALS__ and window.__BROKER__ (the control surface the specs call)
  *
  * EVERY HANDLER NEEDS AN EXAMPLE.  Next to each handler a file registers `B.examples.<command> = [ ... ]`: one or more
@@ -103,7 +104,7 @@
       if (Object.prototype.hasOwnProperty.call(next, "result")) return B.clone(next.result);
       // `{}` (or only a delay) falls through to the real handler
     }
-    if (B.S.unreachable && cmd.indexOf("plugin:") !== 0) {
+    if (B.S.unreachable && cmd.indexOf("plugin:") !== 0 && B.LOCAL.indexOf(cmd) < 0) {
       throw B.error("broker_unreachable", "credmgrd is not running", undefined, "transport");
     }
     var h = B.handlers[cmd];
@@ -118,11 +119,18 @@
     return out;
   };
 
+  /** The shell's own commands that never reach the broker, so a stopped broker does not refuse them (ADR-156: start at login is offered on the broker-down screen). */
+  B.LOCAL = ["login_agent_status", "login_agent_install", "login_agent_uninstall", "backup_restore"];
+
   B.AUDITED = [
     "entry_create", "entry_create_batch", "entry_update", "entry_rotate", "entry_remove", "entry_restore", "entry_undo",
     "field_add", "field_update", "field_remove", "field_reorder", "notes_write",
     "node_create", "node_update", "node_policy", "node_set_workdirs", "node_reparent", "node_seal", "node_restore",
     "grant_create", "grant_revoke", "vault_pending_accept", "vault_pending_discard", "vault_approval_decide",
+    "entry_alias", "entry_import_env", "entry_set_expiry", "entry_move",
+    "entry_tag_set", "merge_apply", "merge_auto", "merge_auto_all", "merge_dismiss", "merge_undismiss", "merge_restore_all",
+    "vault_doctor_apply",
+    "settings_set", "settings_revert", "settings_request_decide",
   ];
 
   /** The broker's `names::mixes_scripts`: Latin letters together with Greek or Cyrillic ones (ADR-084). */

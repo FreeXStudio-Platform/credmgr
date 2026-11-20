@@ -8,16 +8,25 @@
 #![forbid(unsafe_code)]
 
 pub mod access;
+pub mod age_format;
+pub mod agentcfg;
 pub mod cold;
+pub mod doctor;
+pub mod dotenv;
 pub mod envelope;
 pub mod error;
 pub mod fields;
 pub mod generate;
 pub mod inference;
 pub mod keys;
+pub mod licence;
 pub mod names;
 pub mod parser;
+pub mod presence;
 pub mod recovery;
 pub mod registry;
+pub mod reveal_confirm;
+pub mod settings;
 pub mod signing;
+pub mod tags;
 pub mod totp;

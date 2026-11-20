@@ -105,7 +105,7 @@ test("Doctor: a problem it cannot fix offers a registry rebuild, which asks for 
   await prompt.getByLabel("passphrase of the latest backup").fill(BACKUP_PHRASE);
   await prompt.getByRole("button", { name: "Rebuild" }).click();
 
-  await expect(page.getByRole("alert").filter({ hasText: "Needs presence (Touch ID)" })).toContainText("(maintenance.doctor)");
+  await expect(page.getByRole("alert").filter({ hasText: "Needs Touch ID" })).toContainText("(maintenance.doctor)");
   expect((await broker.calls("maintenance_doctor")).pop()).toEqual({ cmd: "maintenance_doctor", args: { apply: true, rebuildRegistry: true, passphrase: BACKUP_PHRASE } });
   await expect(prompt).toHaveCount(0); // refused for lack of presence: nothing to retry here
   expect(await everything(app)).not.toContain(BACKUP_PHRASE);
@@ -196,12 +196,12 @@ test("Rotate root key: the vault passphrase is asked, sent, and the broker's pre
   await openSettings(app, "Advanced");
   await page.getByRole("button", { name: "Rotate…" }).click();
   const prompt = app.screen("Passphrase prompt");
-  await expect(prompt).toContainText("needs presence (Touch ID)");
+  await expect(prompt).toContainText("asks for Touch ID");
   await expect(prompt.getByLabel("repeat the passphrase")).toHaveCount(0); // only a new passphrase is typed twice
   await prompt.getByLabel("vault passphrase").fill(FIXTURE_PASSPHRASE);
   await prompt.getByRole("button", { name: "Rotate", exact: true }).click();
 
-  await expect(page.getByRole("alert").filter({ hasText: "Needs presence (Touch ID)" })).toContainText("(maintenance.rotate_root)");
+  await expect(page.getByRole("alert").filter({ hasText: "Needs Touch ID" })).toContainText("(maintenance.rotate_root)");
   expect(await broker.calls("maintenance_rotate_root")).toEqual([{ cmd: "maintenance_rotate_root", args: { passphrase: FIXTURE_PASSPHRASE } }]);
   await expect(prompt).toHaveCount(0);
   await expect(app.screen("New recovery code")).toHaveCount(0);

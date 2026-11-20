@@ -7,7 +7,7 @@ import { BridgeSource } from "../../src/vault/bridge-source";
 import { VaultModel } from "../../src/vault/model";
 import { DemoSource } from "../../src/vault/demo-source";
 import { NotWiredError } from "../../src/vault/errors";
-import { copyEntry, loadNotes, lockNode, readTotp, readTotpSeed, renameNode, searchEntries, TOTP_STEP_MS, unlockNode } from "../../src/vault/actions/read";
+import { copyEntry, loadNotes, lockNode, readTotp, readTotpSeed, renameNode, searchEntries, seedSlot, TOTP_STEP_MS, unlockNode } from "../../src/vault/actions/read";
 
 type Handler = (args: Record<string, unknown>) => unknown;
 interface Call {
@@ -242,8 +242,32 @@ describe("TOTP", () => {
   it("the seed is asked for and refused; nothing is kept", async () => {
     const calls = installInvoke({ totp_seed: () => { throw refuse("presence_required"); } });
     const m = bridgeModel();
-    await expect(readTotpSeed(m, "atlas", "e3")).rejects.toMatchObject({ code: "presence_required" });
+    await expect(readTotpSeed(m, "atlas", "e3", 20_000)).rejects.toMatchObject({ code: "presence_required" });
     expect(calls).toEqual([{ cmd: "totp_seed", args: { node: "atlas", entry: "e3" } }]);
+    expect(m.secretCount).toBe(0);
+  });
+
+  it("when the broker answers the seed it is held in its own slot for the window, beside the code, and dropped on wipe or hide", async () => {
+    const calls = installInvoke({
+      totp_code: (a) => ({ node: a.node, entry: a.entry, code: "246810" }),
+      totp_seed: (a) => ({ node: a.node, entry: a.entry, seed: "JBSWY3DPEHPK3PXP" }),
+    });
+    const m = bridgeModel();
+    await readTotp(m, "atlas", "e3", Number.POSITIVE_INFINITY, "f_00000007");
+    const r = await readTotpSeed(m, "atlas", "e3", 20_000, "f_00000007");
+    expect(r.held).toBe(true);
+    expect(m.plain("atlas", "e3", seedSlot("f_00000007"))).toBe("JBSWY3DPEHPK3PXP");
+    expect(m.plain("atlas", "e3", "f_00000007")).toBe("246810"); // the code's slot is untouched
+    expect(calls.map((c) => c.cmd)).toEqual(["totp_code", "totp_seed"]);
+    m.wipeSecrets();
+    expect(m.secretCount).toBe(0);
+  });
+
+  it("a seed that arrives after the window was hidden is dropped on arrival", async () => {
+    const m = bridgeModel();
+    installInvoke({ totp_seed: (a) => { m.wipeSecrets(); return { node: a.node, entry: a.entry, seed: "JBSWY3DPEHPK3PXP" }; } });
+    const r = await readTotpSeed(m, "atlas", "e3", 20_000);
+    expect(r.held).toBe(false);
     expect(m.secretCount).toBe(0);
   });
 
@@ -256,7 +280,7 @@ describe("TOTP", () => {
     await readTotp(m, "atlas", "e3", Number.POSITIVE_INFINITY, "f_00000007");
     expect(m.plain("atlas", "e3", "f_00000007")).toBe("246810");
     expect(m.plain("atlas", "e3", 0)).toBeUndefined(); // not under the position of a field that has an id
-    await expect(readTotpSeed(m, "atlas", "e3", "f_00000007")).rejects.toMatchObject({ code: "presence_required" });
+    await expect(readTotpSeed(m, "atlas", "e3", 20_000, "f_00000007")).rejects.toMatchObject({ code: "presence_required" });
     expect(calls).toEqual([
       { cmd: "totp_code", args: { node: "atlas", entry: "e3", field: "f_00000007" } },
       { cmd: "totp_seed", args: { node: "atlas", entry: "e3", field: "f_00000007" } },

@@ -499,11 +499,75 @@ fn a_stray_token_on_a_read_response_is_not_adopted_as_a_session() {
 
     assert!(
         !session.is_authenticated(),
-        "only vault.unlock/vault.gate_verify may establish a session"
+        "only vault.unlock/vault.gate_verify/vault.recover may establish a session"
     );
     // It does pass through to the webview, because reads are unreshaped —
     // recorded here as the known, accepted consequence of that choice rather
-    // than left as an unexamined surprise. No real op returns one:
-    // `mint_session_token` has exactly two call sites, both in the auth path.
+    // than left as an unexamined surprise. No real read returns one:
+    // `mint_session_token`'s call sites are all in the auth path (`vault.unlock`,
+    // `vault.gate_verify` and, since ADR-163, `vault.recover`).
     assert_eq!(value["token"], "cmt_stray");
+}
+
+/// ADR-163: the recovery-code unlock is an auth path too. A `two_factor_required` answer mints
+/// nothing; the retry with the factor does, and the bridge keeps that token. A recovery whose files
+/// the next unlock must finish answers `locked: true` and leaves no session.
+#[test]
+fn recover_logs_in_only_when_the_broker_says_the_vault_is_open() {
+    let broker = FakeBroker::spawn(|request| {
+        let params = &request["params"];
+        match request["op"].as_str().unwrap_or_default() {
+            "vault.recover" if params.get("code").is_none() => err(
+                "two_factor_required",
+                json!({ "challenge": "totp", "scope": "vault", "expiresIn": 0 }),
+            ),
+            "vault.recover" if params["code"] == "pending" => ok(json!({
+                "recovered": true, "locked": true, "completionPending": true,
+                "recoveryCode": "RC-NEW", "meta": { "vaultLocked": true }
+            })),
+            "vault.recover" => ok(json!({
+                "recovered": true, "locked": false, "recoveryCode": "RC-NEW", "token": MINTED
+            })),
+            _ => ok(json!({ "locked": false })),
+        }
+    });
+    let session = Session::new();
+
+    let error = block_on(commands::vault_recover_at(
+        &session,
+        broker.socket.clone(),
+        "RC-OLD".into(),
+        "new".into(),
+        None,
+    ))
+    .expect_err("an enrolled second factor is still asked for");
+    assert_eq!(error.code, "two_factor_required");
+    assert!(!session.is_authenticated());
+
+    let pending = block_on(commands::vault_recover_at(
+        &session,
+        broker.socket.clone(),
+        "RC-OLD".into(),
+        "new".into(),
+        Some("pending".into()),
+    ))
+    .unwrap();
+    assert_eq!(pending["recoveryCode"], "RC-NEW");
+    assert!(
+        !session.is_authenticated(),
+        "a recovery that left the vault locked is no login"
+    );
+
+    let done = block_on(commands::vault_recover_at(
+        &session,
+        broker.socket.clone(),
+        "RC-OLD".into(),
+        "new".into(),
+        Some("123456".into()),
+    ))
+    .unwrap();
+    assert!(session.is_authenticated());
+    assert!(!serde_json::to_string(&done).unwrap().contains("cmt_"));
+    block_on(commands::vault_status_at(&session, broker.socket.clone())).unwrap();
+    assert_eq!(broker.token_on(3).as_deref(), Some(MINTED));
 }

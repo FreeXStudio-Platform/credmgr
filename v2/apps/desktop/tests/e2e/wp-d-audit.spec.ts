@@ -69,7 +69,7 @@ test("opening a record is audit.get, and its presence_required is shown honestly
   const broker = await open(app);
   await openSettings(app, "Audit");
   await page.locator(ROW).first().click();
-  await expect(page.getByRole("alert").filter({ hasText: "Needs presence (Touch ID)" })).toContainText("(audit.get)");
+  await expect(page.getByRole("alert").filter({ hasText: "Needs Touch ID" })).toContainText("(audit.get)");
   expect(await broker.calls("audit_get")).toEqual([{ cmd: "audit_get", args: { id: "a_1" } }]);
 });
 

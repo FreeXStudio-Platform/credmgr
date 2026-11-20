@@ -1,0 +1,24 @@
+<!-- ADR-143: the diff the person sees before CredMgr writes a coding assistant's config file.  It sits ahead of the settings overlay in the document, for the same
+     reason as the capture dialog (S12-settings.html): the focus trap acts on the first .cm-modal-panel in the page.  Nothing is written until "Write this change". -->
+<sc-if value="{{dlgAgent}}" hint-placeholder-val="{{false}}">
+<div style="position:fixed;inset:0;z-index:90;background:var(--scrim);display:flex;align-items:center;justify-content:center" onClick="{{agentCancel}}">
+  <div class="cm-modal-panel" data-screen-label="S21b Agent change" onClick="{{stop}}" role="dialog" aria-modal="true" aria-labelledby="dlg-agent-title" style="width:min(640px,94vw);max-height:86vh;background:var(--steel);border:1px solid var(--hair-strong);border-radius:var(--r-md);box-shadow:0 24px 64px var(--scrim);padding:24px;display:flex;flex-direction:column;gap:12px">
+    <span id="dlg-agent-title" class="t-eyebrow">{{agentDlgTitle}}</span>
+    <div class="t-body-sm" style="overflow-wrap:anywhere">{{agentDlgPath}}</div>
+    <sc-if value="{{agentDlgNothing}}" hint-placeholder-val="{{false}}"><div class="t-body-sm" role="status">{{agentDlgNothingText}}</div></sc-if>
+    <sc-if value="{{agentDlgHasDiff}}" hint-placeholder-val="{{true}}">
+      <div class="t-caption">Only the lines marked + or - change. Everything else in the file stays exactly as it is.</div>
+      <div data-agent-diff="1" role="group" aria-label="the change to the file" style="overflow:auto;border:1px solid var(--hair);border-radius:var(--r-sm);padding:8px 0;font-family:var(--f-mono);font-size:var(--fs-sm);line-height:1.5;max-height:40vh">
+        <sc-for list="{{agentDiffRows}}" as="d" hint-placeholder-count="8">
+          <div style="display:grid;grid-template-columns:20px minmax(0,1fr);padding:0 12px;background:{{d.bg}};color:{{d.fg}};white-space:pre-wrap;overflow-wrap:anywhere"><span aria-hidden="true">{{d.mark}}</span><span>{{d.text}}</span></div>
+        </sc-for>
+      </div>
+      <sc-if value="{{agentDlgBackup}}" hint-placeholder-val="{{true}}"><div class="t-caption">The file is copied to {{agentDlgBackupName}} first, written through a temporary file, then read back to check.</div></sc-if>
+    </sc-if>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="k-btn" data-agent-cancel="1" onClick="{{agentCancel}}">Cancel</button>
+      <sc-if value="{{agentDlgCanWrite}}" hint-placeholder-val="{{true}}"><button class="k-btn" data-variant="primary" data-agent-write="1" disabled="{{agentBusy}}" onClick="{{agentConfirm}}">{{agentDlgWriteLabel}}</button></sc-if>
+    </div>
+  </div>
+</div>
+</sc-if>

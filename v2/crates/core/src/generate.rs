@@ -44,6 +44,9 @@ pub struct Params {
     pub length: usize,
     pub symbols: bool,
     pub pronounceable: bool,
+    /// Lower-case hexadecimal only (`0-9a-f`), for keys, tokens and webhook secrets. The caller (the broker)
+    /// refuses it together with `pronounceable` or `symbols`; here it simply takes precedence.
+    pub hex: bool,
 }
 
 impl Default for Params {
@@ -52,6 +55,7 @@ impl Default for Params {
             length: DEFAULT_LENGTH,
             symbols: true,
             pronounceable: false,
+            hex: false,
         }
     }
 }
@@ -100,6 +104,14 @@ pub fn generate<R: RngCore + ?Sized>(
     if !(MIN_LENGTH..=MAX_LENGTH).contains(&params.length) {
         return Err(GenerateError::LengthOutOfRange {
             length: params.length,
+        });
+    }
+    if params.hex {
+        const HEX: &[u8] = b"0123456789abcdef";
+        let bytes: Vec<u8> = (0..params.length).map(|_| pick(rng, HEX)).collect();
+        return Ok(Generated {
+            value: Zeroizing::new(String::from_utf8(bytes).expect("the hex digits are ASCII")),
+            entropy_bits: (params.length * 4) as u32,
         });
     }
     if params.pronounceable {
@@ -182,10 +194,41 @@ mod tests {
                 length,
                 symbols,
                 pronounceable,
+                hex: false,
             },
             &mut OsRng,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn hex_is_lower_case_hex_of_exactly_the_length_with_four_bits_a_character() {
+        for length in [MIN_LENGTH, 20, 64, MAX_LENGTH] {
+            let g = generate(
+                Params {
+                    length,
+                    hex: true,
+                    ..Params::default()
+                },
+                &mut OsRng,
+            )
+            .unwrap();
+            assert_eq!(g.value.len(), length);
+            assert!(g
+                .value
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
+            assert_eq!(g.entropy_bits as usize, length * 4);
+        }
+        let r = generate(
+            Params {
+                length: MAX_LENGTH + 1,
+                hex: true,
+                ..Params::default()
+            },
+            &mut OsRng,
+        );
+        assert!(r.is_err());
     }
 
     #[test]

@@ -65,12 +65,15 @@ model is [`v2/docs/05_THREAT_MODEL.md`](v2/docs/05_THREAT_MODEL.md); the build's
 and in [`v2/RELEASE.md`](v2/RELEASE.md). Reporting a known risk is welcome if you can show it is
 worse than it is described.
 
-**What V2's Software tier does and does not protect** (the same wording is in
+**What V2's keys do and do not protect** (the same wording is in
 [`v2/SECURITY.md`](v2/SECURITY.md)): your passphrase is the key — a copy of the vault folder can be attacked
-offline on any computer, slowed only by Argon2id (256 MiB, 3 passes, 4 lanes) per guess, and nothing is held in
-the Mac's Secure Enclave; while the vault is unlocked, `credmgrd` holds the root key and every unlocked project
-key in memory and does not lock its pages or block debuggers; there is no Touch ID or presence check, so
-presence-gated operations are refused; and **two-factor guards the door, not the safe** — `credmgrd` enforces
+offline on any computer, slowed only by Argon2id (256 MiB, 3 passes, 4 lanes) per guess. On a Mac with a Secure
+Enclave you can add Touch ID (ADR-098): a Secure Enclave key then proves a person is present for the sensitive
+operations, and you can unlock with it, but the passphrase and recovery wraps stay and the Enclave wrap is
+bound to that one Mac, so Touch ID is an extra door and never a replacement. Without an enrolled presence key
+the presence-gated operations are still refused, and agents never hold a proof. While the vault is unlocked,
+`credmgrd` holds the root key and every unlocked project key in memory and does not lock its pages or block
+debuggers; and **two-factor guards the door, not the safe** — `credmgrd` enforces
 it, the encryption does not, so someone with your passphrase or recovery code and a copy of the vault folder
 can decrypt without the second factor.
 

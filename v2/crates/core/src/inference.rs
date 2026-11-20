@@ -108,6 +108,59 @@ fn looks_like_totp_seed(value: &str) -> bool {
             .all(|g| g.len() == 4 && g.chars().all(|c| c.is_ascii_alphabetic() || digits(c)))
 }
 
+/// Issue #40: a value that is not recognised as a TOTP seed (so it is readable by
+/// anyone who can reveal the entry, and `totp.code` refuses it) but could be one.
+/// It drives a warning and the owner's "this is a 2FA seed" choice; it never changes
+/// how a field is treated by itself.
+///
+/// A candidate is one base32-alphabet run of 16 to 128 characters (padding, and
+/// spaces or dashes between groups of four, ignored), and then either
+/// * it mixes letters with at least one of the digits 2-7 - the shape of a random
+///   base32 string, which a word, a hex digest (it has 0, 1, 8 or 9), an API key or
+///   a UUID almost never has - or
+/// * the field's label names a second factor (`2fa`, `totp`, `otp`, `authenticator`,
+///   `mfa`, `two-factor`, `seed`).
+///
+/// A recovery phrase (words) never matches: only a single run, or groups of
+/// exactly four characters. Deliberately over-inclusive: a wrong guess costs one
+/// dismissible hint; a missed seed stays readable to an agent.
+pub fn looks_like_possible_totp_seed(label: &str, value: &str) -> bool {
+    if looks_like_totp_seed(value) || looks_like_seed_phrase(value) {
+        return false;
+    }
+    let trimmed = value.trim();
+    let digit = |c: char| ('2'..='7').contains(&c);
+    let parts: Vec<&str> = trimmed.split([' ', '-']).collect();
+    if parts.len() > 1 && !(parts.len() >= 4 && parts.iter().all(|g| g.len() == 4)) {
+        return false;
+    }
+    let run: String = trimmed
+        .chars()
+        .filter(|c| *c != ' ' && *c != '-')
+        .collect::<String>()
+        .trim_end_matches('=')
+        .to_string();
+    if !(16..=128).contains(&run.len()) || !run.chars().all(|c| c.is_ascii_alphabetic() || digit(c))
+    {
+        return false;
+    }
+    let mixed = run.chars().any(digit) && run.chars().any(|c| c.is_ascii_alphabetic());
+    let label = label.to_ascii_lowercase();
+    let labelled = [
+        "2fa",
+        "totp",
+        "otp",
+        "authenticator",
+        "mfa",
+        "two-factor",
+        "two factor",
+        "seed",
+    ]
+    .iter()
+    .any(|w| label.contains(w));
+    mixed || labelled
+}
+
 fn looks_like_seed_phrase(value: &str) -> bool {
     let words: Vec<&str> = value.split_whitespace().collect();
     matches!(words.len(), 12 | 15 | 18 | 21 | 24)
@@ -363,6 +416,40 @@ mod tests {
             FieldType::TotpSeed
         );
         assert_ne!(infer_field_type("", "JBSWY3DPEHPK3PX"), FieldType::TotpSeed);
+    }
+
+    #[test]
+    fn a_value_that_could_be_a_seed_is_flagged_but_ordinary_text_is_not() {
+        // The two shapes issue #40 names: a plain lower-case run and a padded one.
+        assert!(looks_like_possible_totp_seed("", "jbswy3dpehpk3pxp"));
+        assert!(looks_like_possible_totp_seed("", "JBSWY3DPEHPK3PXP===="));
+        // grouped in fours, a length the recognised list leaves out
+        assert!(looks_like_possible_totp_seed(
+            "",
+            "jbsw y3dp ehpk 3pxp jbsw y3dp ehpk"
+        ));
+        // a label that names a second factor is enough for a run of letters
+        assert!(looks_like_possible_totp_seed(
+            "2FA backup seed",
+            "abcdefghijklmnopqrst"
+        ));
+        // never: what is already a seed, words, hex digests, uuids, short values, key material
+        for (label, v) in [
+            ("", "JBSWY3DPEHPK3PXP"),
+            ("", "otpauth://totp/x?secret=ABC"),
+            ("", "correct horse battery staple extra words here now ok"),
+            ("seed phrase", "abandon ability able about above absent absorb abstract absurd abuse access accident"),
+            ("", "correcthorsebatterystaple"),
+            ("", "d41d8cd98f00b204e9800998ecf8427e"),
+            ("", "3f2504e0-4f89-11d3-9a0c-0305e82c3301"),
+            ("", "JBSWY3DPEHPK3PX"),
+            ("", "hunter2"),
+            // (assembled at compile time so the secret scanner has nothing to match in the source)
+            ("", concat!("sk", "-abcdefghijklmnopqrstuvwxyz")),
+            ("", concat!("-----BEGIN ", "PRIVATE KEY-----")),
+        ] {
+            assert!(!looks_like_possible_totp_seed(label, v), "{label:?} {v:?}");
+        }
     }
 
     #[test]

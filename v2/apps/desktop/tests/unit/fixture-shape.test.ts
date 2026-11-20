@@ -190,7 +190,7 @@ const shellCommand = (c: string) => c.startsWith("plugin:");
 
 describe("the declarations are read correctly (so the guard cannot pass by reading nothing)", () => {
   it("finds the shapes the app depends on", () => {
-    expect(splitTop(D.interfaces.get("AuthState")!, ";").length).toBe(4);
+    expect(splitTop(D.interfaces.get("AuthState")!, ";").length).toBe(7); // +1: ADR-163 recoveryUnlock
     expect(D.commands.get("vault_status")).toBe("AuthState");
     expect(D.commands.get("entry_list")).toBe("EntryList");
     expect(D.commands.get("vault_pending_list")).toMatch(/pending: PendingItem\[\]/);
@@ -252,7 +252,7 @@ describe("the fixture broker answers exactly as src/lib/bridge.ts declares", () 
 
   it("every error code the fixture raises is one the broker or the bridge really has", () => {
     const codes = new Set<string>();
-    for (const name of ["core.js", "seed.js", "fields.js", "session.js", "read.js", "write.js", "admin.js"]) {
+    for (const name of ["core.js", "seed.js", "fields.js", "session.js", "read.js", "write.js", "admin.js", "confirm.js", "switchboard.js"]) {
       const src = readFileSync(resolve(FIXTURE_DIR, name), "utf8");
       for (const m of src.matchAll(/B\.error\(\s*"([a-z_]+)"/g)) codes.add(m[1]);
       for (const m of src.matchAll(/error:\s*"([a-z_]+)"/g)) codes.add(m[1]);

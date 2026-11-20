@@ -58,6 +58,8 @@ fn one_entry_manifest(entry_id: &str, name: &str) -> ManifestBody {
             expires_at: None,
             rotated_at: None,
             has_totp: false,
+            aliases: Vec::new(),
+            tags: Vec::new(),
         }],
         counts: Counts {
             entries: 1,
@@ -65,6 +67,7 @@ fn one_entry_manifest(entry_id: &str, name: &str) -> ManifestBody {
         },
         notes_sha256: None,
         generation: 1,
+        merge_sha256: None,
     }
 }
 

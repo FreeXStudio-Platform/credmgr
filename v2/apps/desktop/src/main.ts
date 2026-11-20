@@ -11,6 +11,12 @@ import { DCBoundary, DCHost, describeError } from "./dc/runtime";
 import render from "./design/app.template.html?dc";
 import Component from "./design/logic/core.js";
 
+// ADR-160: the window's native drag-and-drop is off (tauri.conf.json `dragDropEnabled: false`) so a dropped QR image reaches the
+// Add entry dialog's drop zone as an ordinary DOM drop.  A file dropped anywhere else must not make the webview open it: every
+// drop that no zone handled is refused here.  Nothing is read from it.
+window.addEventListener("dragover", (ev) => ev.preventDefault());
+window.addEventListener("drop", (ev) => ev.preventDefault());
+
 const container = document.getElementById("dc-root");
 if (!container) throw new Error("index.html has no #dc-root");
 

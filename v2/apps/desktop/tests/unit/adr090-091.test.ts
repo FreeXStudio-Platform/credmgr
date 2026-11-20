@@ -9,6 +9,19 @@ import { nextApprovalState } from "../../src/design/logic/gates.js";
 import { LOCK_PHRASE } from "../../src/design/logic/session.js";
 import { PAGE_LOCK_NOTE_KEY, RELOAD_REASON_KEY, rememberPageLockNote, takeReloadLockNote } from "../../src/vault/shell-events";
 
+// Node 25+ has a global Web Storage; Node 22 (the `engines` floor) does not, and vitest runs these in the node environment.
+// One in-memory Storage, installed on every Node version, so the result never depends on which runtime ran the suite.
+class MemoryStorage implements Storage {
+  #m = new Map<string, string>();
+  get length(): number { return this.#m.size; }
+  clear(): void { this.#m.clear(); }
+  getItem(k: string): string | null { return this.#m.has(k) ? (this.#m.get(k) as string) : null; }
+  key(i: number): string | null { return [...this.#m.keys()][i] ?? null; }
+  removeItem(k: string): void { this.#m.delete(k); }
+  setItem(k: string, v: string): void { this.#m.set(k, String(v)); }
+}
+Object.defineProperty(globalThis, "sessionStorage", { value: new MemoryStorage(), configurable: true, writable: true });
+
 async function logic(state: Record<string, unknown> = {}, props: Record<string, unknown> = { mode: "pro" }) {
   const l = new (Component as any)(props);
   await l.model.boot();
@@ -163,7 +176,7 @@ describe("the audit passthrough (ADR-091)", () => {
     const block = /B\.AUDITED = \[([\s\S]*?)\];/.exec(js)![1];
     const fixture = [...block.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
     expect(fixture.sort()).toEqual(rustList().map((op) => op.replace(/\./g, "_")).sort());
-    expect(fixture.length).toBe(24);
+    expect(fixture.length).toBe(39); // + vault.doctor_apply (ADR-169); + entry.tag_set and six merge.* writes (ADR-167, ADR-168); + entry.move (ADR-158); + entry.set_expiry (ADR-156); + settings.set, settings.revert, settings.request_decide (ADR-155)
   });
 
   it("the real-daemon shim carries the same list", () => {

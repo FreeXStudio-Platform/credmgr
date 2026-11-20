@@ -22,6 +22,8 @@ export interface DNode {
   gate: { locked: boolean; twofa: "none" | "enrolled" | "required" };
   /** `true` when the node hides its name from everyone but its owner (`privateNames`, ADR-083); this login is the owner and still sees it. */
   nameHidden?: boolean;
+  /** ADR-140: how much an agent may do here without the owner.  Absent from a broker that predates it: the screens read that as `guarded`. */
+  securityLevel?: "open" | "guarded" | "sealed";
   /** `null` in every broker response today. */
   health: null;
   /** The node's note as plain text, or `null` while it is not loaded (or not readable).  Never rendered as HTML. */
@@ -41,6 +43,8 @@ export interface DField {
   /** `type` is the user's pin, not what inference says.  The screens send a type only when the user changes it. */
   typeOverridden?: boolean;
   maskedOverridden?: boolean;
+  /** ADR-111 (issue #40): the broker says this field could be a 2FA seed that is not typed as one.  Absent otherwise. */
+  possibleSeed?: boolean;
 }
 
 export interface DEntry {
@@ -60,6 +64,10 @@ export interface DEntry {
    * bridge entry has `[]` here and its fields are read on demand into {@link DEntryDetail} (`VaultModel.detail`).
    */
   fields: DField[];
+  /** ADR-121: the other names the entry answers to; absent when none or when the list carries none. */
+  aliases?: string[];
+  /** ADR-167: the entry's tags; absent when none or when the list carries none. */
+  tags?: string[];
 }
 
 /**
@@ -84,6 +92,10 @@ export interface DEntryDetail {
   expiresAt: number | null;
   /** In stored order; every one has an id. */
   fields: Array<DField & { id: string }>;
+  /** ADR-121: the other names the entry answers to; absent when none. */
+  aliases?: string[];
+  /** ADR-167: the entry's tags; absent when none. */
+  tags?: string[];
 }
 
 export interface DGrant {

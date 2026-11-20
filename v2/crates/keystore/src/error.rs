@@ -16,6 +16,11 @@ pub enum KeystoreError {
     /// ADR-041. Callers must check `capabilities()` before calling
     /// `verify_presence`; this is the honest failure when they don't.
     PresenceUnavailable,
+    /// ADR-098: the macOS presence helper (`credmgr-presence`) could not be found or run.
+    HelperMissing(String),
+    /// ADR-098: the helper ran and said no. `code` is its stable error code
+    /// (`unavailable`, `cancelled`, `locked_out`, `failed`, `bad_request`); `detail` is its text.
+    Helper { code: String, detail: String },
     Io {
         path: PathBuf,
         source: std::io::Error,
@@ -37,6 +42,18 @@ impl fmt::Display for KeystoreError {
                 f,
                 "keystore: this tier cannot verify presence — check capabilities() first"
             ),
+            KeystoreError::HelperMissing(why) => {
+                write!(
+                    f,
+                    "keystore: the Secure Enclave helper is not available: {why}"
+                )
+            }
+            KeystoreError::Helper { code, detail } => {
+                write!(
+                    f,
+                    "keystore: the Secure Enclave helper said {code}: {detail}"
+                )
+            }
             KeystoreError::Io { path, source } => write!(f, "{}: {source}", path.display()),
             KeystoreError::Json { path, source } => {
                 write!(f, "{}: malformed JSON: {source}", path.display())

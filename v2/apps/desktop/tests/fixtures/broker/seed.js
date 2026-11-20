@@ -29,7 +29,9 @@
 
   /**
    * options: { passphrase, gateCode, gate: boolean (a second factor is enrolled), locked: boolean, initialized: boolean,
-   *            unreachable: boolean (every broker call fails with broker_unreachable) }
+   *            unreachable: boolean (every broker call fails with broker_unreachable),
+   *            touchId: boolean (presence is attested: totp_seed answers the seed),
+   *            presenceKey: boolean (a presence key is enrolled: approving an agent's request from a login needs a proof, ADR-173) }
    */
   B.reset = function (options) {
     var o = options || {};
@@ -42,14 +44,19 @@
       // The root recovery code printed at first run (vault_gate_recover takes it with the passphrase) and the code a spec types to confirm an enrolment.
       rootRecoveryCode: o.rootRecoveryCode || "FIXT-ROOT-RECO-VERY-0001",
       enrollCode: o.enrollCode || "654321",
+      // ADR-163: the vault has a recovery wrap, so the recovery code alone opens it (vault_recover); `recoveryUnlock: false` is a vault made before wraps existed.
+      recoveryUnlock: o.recoveryUnlock !== false,
       enrolling: null,
       elevated: false,
       factorGate: false,
       tfLevels: {},
       approvals: o.approvals || {},
+      windowState: o.windowState || null,
       fieldHistory: {},
       initialized: o.initialized !== false,
       unreachable: !!o.unreachable,
+      presenceKey: !!o.presenceKey,
+      touchId: !!o.touchId, // Touch ID is set up and the prompt is approved: totp_seed answers the seed (ADR-098); otherwise presence_required
       locked: o.locked !== false,
       authenticated: o.locked === false,
       pendingLogin: false,
@@ -77,7 +84,36 @@
       pending: {},
       notes: { atlas: "Fixture note for atlas." },
       grants: [{ id: "g-f1", from: "beacon", to: { kind: "node", nodeId: "atlas" }, direction: "one-way", scope: ["read"], expiresAt: null, reason: "fixture grant" }],
+      // The switchboard (ADR-155, switchboard.js): the `app.*` values the registry holds (only those ever set; the rest read as their
+      // default), the change history, and agents' waiting requests.  A spec seeds them with app.open({ broker: { settings, settingRequests } }).
+      settings: {},
+      settingsHistory: [],
+      changeSeq: 0,
+      settingRequests: [],
     };
+    // A seeded value was set before the spec started: it has a history (so the app's migration rule leaves it to the broker).
+    Object.keys(o.settings || {}).forEach(function (id) {
+      B.S.changeSeq += 1;
+      B.S.settings[id] = o.settings[id];
+      B.S.settingsHistory.push({ id: "chg-seed-" + B.S.changeSeq, setting: id, from: null, to: o.settings[id], by: "owner", at: 1760000000, reason: "seeded by the spec" });
+    });
+    // An agent's request: { id, to, from?, reason?, node?, cwd?, request?, expiresIn? (seconds, default 600) }.
+    (o.settingRequests || []).forEach(function (r, i) {
+      var t = Math.floor(Date.now() / 1000);
+      B.S.settingRequests.push({
+        request: r.request || "srq-" + (i + 1),
+        id: r.id,
+        node: r.node || null,
+        from: Object.prototype.hasOwnProperty.call(r, "from") ? r.from : null,
+        to: r.to,
+        reason: r.reason || "an agent asked",
+        cwd: r.cwd || null,
+        requestedAt: t - (o.settingRequests.length - i),
+        expiresAt: t + (r.expiresIn || 600),
+        decided: null,
+        changeId: null,
+      });
+    });
     (o.privateNodes || []).forEach(function (id) {
       var n = B.node(id);
       if (n) n.policy = { privateNames: true };

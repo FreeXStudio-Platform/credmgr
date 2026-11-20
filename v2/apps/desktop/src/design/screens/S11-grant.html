@@ -18,9 +18,9 @@
     <div style="font-size:var(--fs-base);color:var(--ash);border-left:3px solid var(--faint);padding-left:12px">This creates a dashed line on the graph. Anyone working in <span style="font-family:var(--f-mono);color:var(--bone)">{{grantFromLabel}}</span> will be able to see the ticked things in <span style="font-family:var(--f-mono);color:var(--bone)">{{grantToLabel}}</span> until the grant is revoked.</div>
     <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end">
       <button class="k-btn" data-variant="primary" onClick="{{confirmGrant}}" disabled="{{grantSaveDisabled}}">Create grant</button>
-      <button class="k-btn" onClick="{{closeDialog}}">Cancel</button>
+      <button class="k-btn" onClick="{{closeGrantDlg}}">Cancel</button>
     </div>
-    <div class="t-caption">Creating a grant needs presence (Touch ID), which this beta cannot attest yet. The broker will refuse it and nothing will change. A grant never expires by itself; revoke it in Settings → Grants.</div>
+    <div class="t-caption">Creating a grant asks for Touch ID. Without it set up (Settings → Security) the broker refuses and nothing changes. A grant never expires by itself; revoke it in Settings → Grants.</div>
   </div>
 </div>
 </sc-if>

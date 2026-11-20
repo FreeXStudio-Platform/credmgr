@@ -5,7 +5,7 @@
  */
 import { expect, test, type App } from "./harness";
 import { entryOpened, openWith, railRow, type SeedVault } from "./wp-b-helpers";
-import { lockAndUnlock, notice, openSettingsNodes } from "./wp-c-util";
+import { focusSettled, lockAndUnlock, notice, openSettingsNodes } from "./wp-c-util";
 
 const VAULT: SeedVault = {
   nodes: [
@@ -132,15 +132,12 @@ test.describe("(e) the field menu is a menu", () => {
     return btn;
   }
 
-  test("Home and End jump to the first and last item; Escape closes the menu only and focus returns to its button", async ({ app, browserName }) => {
-    // QUARANTINED on WebKit (OPEN_WORK_REGISTER.md QT-1, 2026-10-26): the menu's first item takes focus a moment after the menu opens, so a key sent in
-    // that moment lands on the button and `toBeFocused` fails. 5 of 10 runs under load, the same on the base commit. Every assertion stays; Chromium
-    // still runs the test.
-    test.fixme(browserName === "webkit", "QT-1: WebKit focus race on the field menu");
+  test("Home and End jump to the first and last item; Escape closes the menu only and focus returns to its button", async ({ app }) => {
     await app.open({ broker: { locked: false } });
     await expect(app.screen("S1 Main")).toBeVisible();
     const btn = await openMenu(app);
     const items = app.page.locator(".cm-fieldmenu button:not([disabled])");
+    await focusSettled(items.first()); // QT-1: the menu's own focus move has landed; a key sent before it would reach the button
     const n = await items.count();
     expect(n).toBeGreaterThan(2);
     await app.page.keyboard.press("End");

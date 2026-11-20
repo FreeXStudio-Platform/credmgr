@@ -1,0 +1,7 @@
+# cargo-audit configuration. Keep in step with deny.toml [advisories].ignore (same reason, same review date).
+[advisories]
+ignore = [
+    # crypto-bigint 0.5.5 timing on secret integers; pulled by p256, used only to VERIFY signatures over public
+    # values (ADR-098). The fix needs a Rust 1.85+ dependency generation (workspace MSRV is 1.78, ADR-036).
+    "RUSTSEC-2026-0387",
+]

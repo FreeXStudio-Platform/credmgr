@@ -95,6 +95,8 @@ fn build_fixture() -> Fixture {
                 expires_at: None,
                 rotated_at: None,
                 has_totp: false,
+                aliases: Vec::new(),
+                tags: Vec::new(),
             }],
             counts: Counts {
                 entries: 1,
@@ -102,6 +104,7 @@ fn build_fixture() -> Fixture {
             },
             notes_sha256: None,
             generation: 1,
+            merge_sha256: None,
         },
     );
 

@@ -49,6 +49,7 @@ pub const VAULT_STATE_OPS: &[&str] = &[
     "vault.status",
     "vault.unlock",
     "vault.gate_verify",
+    "vault.recover",
     "vault.lock",
 ];
 
@@ -57,6 +58,10 @@ pub const VAULT_STATE_OPS: &[&str] = &[
 pub struct Session {
     /// `None` = no login session held. Never serialised, never returned.
     token: Mutex<Option<String>>,
+    /// ADR-164 review P2-4: the public ids (`a_…`) of agent tokens this shell minted but could not hand to anyone (the
+    /// clipboard refused, usually because the vault locked mid-call) and could not revoke at the time (a lock ends
+    /// the login a revoke needs). The next login revokes them. Ids only: never a bearer.
+    unheld_agent_tokens: Mutex<Vec<String>>,
 }
 
 /// ADR-077: `Debug` says whether a login is held, never what it is — a derived
@@ -94,6 +99,27 @@ impl Session {
 
     pub fn clear(&self) {
         *self.lock() = None;
+    }
+
+    /// Remember an agent token to revoke at the next login (ADR-164 review P2-4).
+    pub fn queue_agent_revoke(&self, public_id: String) {
+        let mut q = self
+            .unheld_agent_tokens
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !q.contains(&public_id) {
+            q.push(public_id);
+        }
+    }
+
+    /// Take every queued agent token id, leaving the queue empty.
+    pub fn take_agent_revokes(&self) -> Vec<String> {
+        std::mem::take(
+            &mut *self
+                .unheld_agent_tokens
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     /// Take the `token` field out of an unlock/gate-verify response, store

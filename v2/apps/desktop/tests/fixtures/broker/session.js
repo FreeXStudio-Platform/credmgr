@@ -13,7 +13,46 @@
     // ADR-090: a bare count of the requests waiting for a person, left out when 0 (as the shell does).
     var waiting = Object.keys(B.S.approvals || {}).length;
     if (waiting > 0) out.pendingApprovals = waiting;
+    // ADR-156: the unseen cross-node alarm count, to the owner's login only, left out when 0 (broker.set({ anomaliesUnseen: 2 })).
+    if (B.S.authenticated && !B.S.locked && B.S.anomaliesUnseen > 0) out.anomaliesUnseen = B.S.anomaliesUnseen;
+    // ADR-163: the vault can be opened with its recovery code (its recovery wrap exists), left out when not.
+    if (B.S.initialized && B.S.recoveryUnlock) out.recoveryUnlock = true;
     return out;
+  };
+
+  // ADR-163, "Forgot passphrase?" (crates/brokerd/src/ops.rs "vault.recover", ops::recover_response): a LOCKED vault, the root recovery code
+  // alone, a new passphrase; an enrolled second factor is still asked for (two_factor_required, then `code`: the TOTP code or a gate recovery
+  // code, burned).  Then the root rotation of vault_set_passphrase: the passphrase and the root recovery code both move on (the used code and the
+  // old passphrase stop working) and the login opens, its token kept by the shell.  S.recoveries counts the successes for a spec.
+  H.vault_recover = function (a) {
+    var S = B.S;
+    if (typeof a.recoveryCode !== "string" || typeof a.newPassphrase !== "string") throw B.error("malformed_request", "params.recoveryCode and params.newPassphrase are required");
+    if (!a.recoveryCode.trim() || !a.newPassphrase) throw B.error("malformed_request", "params.recoveryCode and params.newPassphrase must not be empty");
+    if (a.code !== undefined && a.code !== null && typeof a.code !== "string") throw B.error("malformed_request", "params.code must be a string");
+    if (!S.locked) throw B.error("malformed_request", "the vault is already unlocked - change the passphrase with vault.set_passphrase instead");
+    if (!S.initialized || !S.recoveryUnlock) throw B.error("not_found", "this vault has no recovery-code unlock yet");
+    if (a.recoveryCode.trim() !== S.rootRecoveryCode) {
+      B.audit("vault.recover", null, null, "deny");
+      throw B.error("recovery_code_mismatch", "the recovery code does not open this vault");
+    }
+    if (S.gateEnrolled) {
+      if (!a.code) throw B.error("two_factor_required", "a second factor is required", { challenge: "totp", scope: "vault", expiresIn: 0 });
+      var codes = S.gateRecoveryCodes || [], i = codes.indexOf(String(a.code).toUpperCase());
+      if (i >= 0) codes.splice(i, 1);
+      else if (String(a.code) !== String(S.gateCode)) {
+        B.audit("vault.recover", null, null, "deny");
+        throw B.error("gate_verification_failed", "that code was not accepted");
+      }
+    }
+    S.passphrase = a.newPassphrase;
+    S.recoveries = (S.recoveries || 0) + 1;
+    var code = "FIXTURE-RECOVERED-ROOT-" + S.recoveries;
+    S.rootRecoveryCode = code;
+    S.pendingLogin = false;
+    S.locked = false;
+    S.authenticated = true;
+    B.audit("vault.recover");
+    return { rotated: true, recoveryCode: code, nodesRewrapped: S.nodes.length, vaultGeneration: 2, filesReplaced: 3, artifactsResigned: 1, completionPending: false, notResigned: [], passphraseChanged: true, recovered: true, locked: false };
   };
 
   // Rejects two_factor_required when a gate is enrolled; the login completes with vault_gate_verify.
@@ -54,6 +93,7 @@
     S.authenticated = false;
     S.pendingLogin = false;
     S.elevated = false;
+    S.machineLockPending = null; // ADR-165 review N1: a lock forgets a prepared machine-lock bind
     return auth();
   };
 
@@ -168,6 +208,8 @@
       }
     } else {
       B.requireLogin();
+      // ADR-173: from a login, approving needs a presence proof once a key is enrolled (the real shell attaches it; here `touchId` is that proof).  Deny never does.
+      if (a.approved && S.presenceKey && !S.touchId) throw B.error("presence_required", "presence is required", { operation: "vault.approval_decide" });
     }
     var req = (S.approvals || {})[a.request];
     if (!req) throw B.error("not_found", "no such waiting request");
@@ -227,7 +269,7 @@
   var E = B.examples;
   var WAITING_ONE = function () { B.S.approvals = { rq_fixture0009: { node: "atlas", entry: "e-a1" } }; };
   var PASS = function () { return { passphrase: B.S.passphrase }; };
-  E.vault_status = [{ args: {} }, { reset: { initialized: false }, args: {} }, { reset: { locked: true }, setup: WAITING_ONE, args: {} }];
+  E.vault_status = [{ args: {} }, { reset: { locked: false }, setup: function () { B.S.anomaliesUnseen = 2; }, args: {} }, { reset: { initialized: false }, args: {} }, { reset: { locked: true }, setup: WAITING_ONE, args: {} }];
   // ADR-090.  The list, one request, an unknown one, and the owner-only refusal on an unlocked vault is the bridge's `vault_locked`-style login check.
   E.vault_approval_get = [
     { reset: { locked: true }, setup: WAITING_ONE, args: {} },
@@ -257,6 +299,10 @@
     { reset: { locked: true }, args: function () { return { request: "rq_nothing", approved: true, passphrase: B.S.passphrase }; }, error: "not_found" },
     { reset: { locked: false }, setup: WAITING, args: function () { return { request: "rq_fixture0001", approved: true, passphrase: B.S.passphrase }; }, error: "malformed_request" },
     { reset: { locked: false }, setup: WAITING, args: { request: "rq_fixture0001", approved: true } },
+    // ADR-173: a presence key is enrolled: approving from a login is presence_required, denying is not, and an attested proof approves.
+    { reset: { locked: false, presenceKey: true }, setup: WAITING, args: { request: "rq_fixture0001", approved: true }, error: "presence_required" },
+    { reset: { locked: false, presenceKey: true }, setup: WAITING, args: { request: "rq_fixture0001", approved: false } },
+    { reset: { locked: false, presenceKey: true, touchId: true }, setup: WAITING, args: { request: "rq_fixture0001", approved: true } },
   ];
   E.vault_lock = [{ reset: { locked: false }, args: {} }];
   E.whoami = [{ reset: { locked: false }, args: {} }, { reset: { locked: true }, args: {}, error: "vault_locked" }];
@@ -276,6 +322,16 @@
     { reset: OPEN, setup: BEGUN, args: { code: "000000" }, error: "gate_verification_failed" },
     { reset: OPEN, args: { code: "654321" }, error: "gate_not_enrolling" },
   ];
+  // ADR-163: a recovery, one through the second factor, a wrong code, a gated vault with no factor, an open vault, a vault with no wrap.
+  var ROOT = function () { return { recoveryCode: B.S.rootRecoveryCode, newPassphrase: "a recovered fixture passphrase" }; };
+  E.vault_recover = [
+    { reset: { locked: true }, args: ROOT },
+    { reset: { locked: true, gate: true }, args: function () { return { recoveryCode: B.S.rootRecoveryCode, newPassphrase: "another recovered one", code: B.S.gateCode }; } },
+    { reset: { locked: true }, args: { recoveryCode: "not-the-recovery-code", newPassphrase: "x" }, error: "recovery_code_mismatch" },
+    { reset: { locked: true, gate: true }, args: ROOT, error: "two_factor_required" },
+    { reset: { locked: false }, args: ROOT, error: "malformed_request" },
+    { reset: { locked: true, recoveryUnlock: false }, args: ROOT, error: "not_found" },
+  ];
   E.vault_gate_recover = [
     { reset: { locked: true, gate: true }, args: function () { return { passphrase: B.S.passphrase, recoveryCode: B.S.rootRecoveryCode }; } },
     { reset: { locked: true, gate: true }, args: function () { return { passphrase: B.S.passphrase, recoveryCode: "not-the-recovery-code" }; }, error: "wrong_passphrase" },
@@ -287,7 +343,7 @@
 
   // The shell's own commands.
   H["plugin:app|version"] = function () {
-    return "2.0.0-beta.1";
+    return "2.0.0-rc.2";
   };
 
   // Events: @tauri-apps/api/event's listen() registers a callback with the shell and gets an event id back.  B.emit(event, payload)

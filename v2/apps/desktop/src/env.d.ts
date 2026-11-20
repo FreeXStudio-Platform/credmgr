@@ -9,3 +9,6 @@ declare module "*.template.html?dc" {
 }
 
 declare module "virtual:dc-pseudo.css";
+
+/** The git commit (short sha) this bundle was built from, or `unknown`; inlined by vite.config.ts `define`. */
+declare const __CREDMGR_BUILD_COMMIT__: string;

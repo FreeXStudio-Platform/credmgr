@@ -10,7 +10,7 @@ surface: repo
 last_reviewed: 2026-08-19
 ---
 
-<!-- artifact-hardened: NEEDS RE-HARDENING — corrected 2026-08-18 (Session 21, closing this
+<!-- artifact-hardened: NEEDS RE-HARDENING — edited 2026-11-06 for ADR-098 (Touch ID honesty pass). Earlier note: corrected 2026-08-18 (Session 21, closing this
      document's entry in VERIFICATION_BACKLOG_S21.md). The previous stamp (rewritten the same
      day, pre-verification) attested to a body that an independent skeptic pass then found six
      surviving defects in: a claim that the day-7 archive trees are covered by `verify` and
@@ -74,10 +74,12 @@ last_reviewed: 2026-08-19
 > living only in memory — **stopped being true on 2026-09-24** (ADR-063): the live unlock builds
 > the Software keystore from the passphrase, loads and verifies the vault from disk, and every
 > change is written through (§2.1). Nothing *installs* the launchd unit; `RELEASE.md` has the
-> operator copy it by hand. The desktop shell is **built**: a Tauri bridge exposing all 53
+> operator copy it by hand. The desktop shell is **built**: a Tauri bridge exposing all 63
 > operations exists and is tested, behind a real Content Security Policy (ADR-062), and the window
 > hosts the precompiled design (ADR-075) with every screen wired to the broker — reads and writes
-> alike, with no demo data and no local-only write path in a release build (§5). Hardware keystores, user presence, memory locking, the
+> alike, with no demo data and no local-only write path in a release build (§5). On macOS, user presence and an optional hardware wrap
+> of the root key are **built** since ADR-098 (§6.3: a Secure Enclave key proves presence for the gated operations and
+> unlocks the vault with Touch ID). Hardware keystores on Windows and Linux, memory locking, the
 > Windows transport and release self-integrity are **planned**, and are designed in full
 > below. Evidence for every marking is cited in place and collected in §11.
 
@@ -165,7 +167,7 @@ and the built/partial/planned split runs *across the clients*, never through the
 | **`credmgrd`** (broker) | `crates/brokerd`, bin `credmgrd` | long-running, auto-locks | launchd user agent `com.credmgr.brokerd` *(the unit ships in `packaging/`; nothing installs it — `RELEASE.md` has the operator copy it)* | **Yes**, only between unlock and lock — node keys and, on a live vault, the root key; zeroised on lock | **`partial`** — `src/main.rs` runs and serves the socket (ADR-061); since ADR-063 it unlocks an existing vault by passphrase, loads it from disk, and writes every change through. Hardware keystores and presence are `planned` (§6.3) |
 | **`credmgr`** (CLI) | `crates/cli`, bin `credmgr` | per invocation | user shell | No | **`built`** — 24 top-level subcommands |
 | **`credmgr mcp`** (MCP stdio) | `crates/mcp`, hosted by the same binary | per agent session | an agent's MCP config | No | **`built`** — 15 tools |
-| **CredMgr desktop** (Tauri 2) | `apps/desktop` | user session | user | No — it will broker presence, never keys | **`partial`** — 56 registered commands: all 53 broker ops bridged plus the shell's own three (ADR-062, ADR-075, ADR-078), and the hosted design with every screen wired to the broker, writes included. `partial` because presence attestation (Touch ID) and signing are not built (§6.3) |
+| **CredMgr desktop** (Tauri 2) | `apps/desktop` | user session | user | No — it brokers presence (asks for the fingerprint), never keys | **`partial`** — every broker op bridged (63 since ADR-098) plus the shell's own commands (ADR-062, ADR-075, ADR-078; the Touch ID prompt commands in `src/presence.rs`, ADR-098), and the hosted design with every screen wired to the broker, writes included. `partial` because signing and notarisation are not done and the Touch ID tier exists on macOS only (§6.3) |
 
 **The stub was the load-bearing caveat of this document, and it is gone.** Until 2026-08-31
 `crates/brokerd/src/main.rs` printed one line and exited, and `credmgr_brokerd::server::run`
@@ -191,9 +193,10 @@ Neither passphrase nor recovery code is ever read from argv. Test: `crates/cli/t
 **What bootstrap does not cover, precisely.** Two steps this section once listed as part of a
 target `init` are still unbuilt, and the operation existing does not hide them:
 `keys/root.wrap.se` is not written, because no platform keystore exists to produce one (§6.3),
-so a new vault has two root wraps rather than three; and **nothing installs the launchd unit** —
-`crates/brokerd/packaging/` carries it, and the release tarball carries a copy under
-`packaging/` with `RELEASE.md`'s instructions to copy it into `~/Library/LaunchAgents/` by hand.
+so a new vault has two root wraps rather than three. The launchd unit is installed by the
+desktop app's Start at login (ADR-156, macOS only), pointing at the `credmgrd` the `.app` carries
+(ADR-157); `crates/brokerd/packaging/` keeps the template, and the release tarball a copy under
+`packaging/` for a hand install.
 
 **The live unlock — `built`** (ADR-063, as amended after review on 2026-09-24). Until that date
 the sharper limit was in the daemon rather than in `init`: a long-running `credmgrd`'s
@@ -540,45 +543,53 @@ Beyond the broker bridge the shell does what the webview cannot do for itself:
   does not require a password does not lock the vault.
 - **`credmgr://window-inactive`** on focus loss, so the window can hide revealed values.
 
-`10_API_AND_MCP.md §5` specifies the allowlist. Still **planned**: `presence_verify(reason)` returning
-a `PresenceProof`; `keystore_status()` for an honest Security panel; `notify_approval(request)` for
+`10_API_AND_MCP.md §5` specifies the allowlist. Built since ADR-098: the shell's Touch ID commands
+(`presence_probe`, `presence_key_create`, `presence_challenge`, `presence_enrol`, `presence_status`,
+`presence_unenrol`, `src/presence.rs`), which sign a broker challenge through the `credmgr-presence` helper so
+the page never sees a nonce, digest or signature. Still **planned**: `presence_verify(reason)` returning
+a `PresenceProof` to the page (not built: the shell signs the broker's challenge itself and the page never holds a proof);
+`keystore_status()` for an honest Security panel; `notify_approval(request)` for
 approval-on-demand; the LLM detect/connect pair; theme get/set; and `app_integrity()`. The earlier
 design's `open_external(url)` is **withdrawn**, not planned: nothing in the app opens an external
 URL, `tauri-plugin-opener` was removed, and a test fails if it returns. Explicitly **not** exposed,
 then or ever: filesystem, shell, HTTP, process spawn, arbitrary path read or write — Tauri's `fs`,
 `shell`, `http` and `opener` plugins are not compiled in.
 
-### 6.3 Platform keystores and presence — **partial**, and narrower than this corpus says elsewhere
+### 6.3 Platform keystores and presence — **partial**: built on macOS (ADR-098), not on Windows or Linux
 
-`crates/keystore` ships the `PlatformKeystore` trait, the `Capabilities`/`Tier` vocabulary, and
-**one** implementation: `SoftwareKeystore`, Argon2id over an operator passphrase with
-ChaCha20-Poly1305 sealing, plus an HMAC-sealed counter file. That is `16_CROSS_PLATFORM.md §4.4`'s
-universal escrow wrap, and ADR-041 scoped it deliberately as the only tier to build first.
+`crates/keystore` ships the `PlatformKeystore` trait, the `Capabilities`/`Tier` vocabulary, the
+`SoftwareKeystore` (Argon2id over an operator passphrase with ChaCha20-Poly1305 sealing, plus an
+HMAC-sealed counter file — `16_CROSS_PLATFORM.md §4.4`'s universal escrow wrap, which ADR-041 scoped as the first
+tier), and, since ADR-098, a **macOS Secure Enclave layer** (`src/secure_enclave.rs`, `src/presence_client.rs`).
 
-**No hardware backend exists.** `KeystoreId` names `MacosSecureEnclave`, `WindowsHello`,
-`WindowsDpapi`, `LinuxTpm` and `LinuxSecretService`, and all five are enum variants with no
-implementation behind them — grepping `crates/` for Secure Enclave, `LAContext` or any
-platform crypto API returns the enum variant and nothing else. Any statement in this corpus that
-"the macOS keystore path is built" is wrong; the macOS *vault path* is built, the macOS
-*keystore* is not.
+**The macOS layer is `built`.** One Swift helper, `credmgr-presence` (`native/macos/presence`), is the only code
+that touches the Secure Enclave and LocalAuthentication (a helper process rather than FFI, because the workspace
+forbids `unsafe` and CryptoKit's Enclave types are Swift-only). It serves two things, both described in
+`04_CRYPTO_AND_KEYS.md §5.3`: a **presence proof** (the broker issues a single-use challenge, the Enclave key
+signs it after Touch ID, the broker verifies it against an enrolled public key) and an optional **device wrap** of
+the root key (`keys/root.wrap.se`, Touch ID unlock, this Mac only). The key is a non-permanent Enclave key whose
+opaque representation the app stores itself, so it works in an unsigned or ad-hoc-signed binary; Touch ID does
+not wait for an Apple Developer ID. The consequence runs all the way up — `audit.get`, `totp.seed`,
+`node.reparent`, `grant.create`, a widening `node.policy`, `maintenance.rotate_root`,
+`maintenance.doctor --rebuild-registry` and `orphan.reveal` execute when a proof comes with the request, and
+the dispatch arms ask the same `require_presence` check. **Without an enrolled presence key** they are still
+refused with `presence_required`, and an agent or fixture token can never hold a proof.
+`SoftwareKeystore::verify_presence` still returns `PresenceUnavailable`: the software tier cannot attest anyone,
+and that is correct.
 
-`SoftwareKeystore::verify_presence` returns `PresenceUnavailable` rather than succeeding, and
-that is the correct behaviour rather than a gap: a caller that skips the capability check and
-relies on presence for an orphan reveal or a grant must get a hard error, never a free pass.
-The consequence runs all the way up — `maintenance.doctor --rebuild-registry`, `node.reparent`
-and `audit.get`'s full-record path are wired end to end and then refused unconditionally with
-`presence_required`, because no surface in this build can attest presence. When a real
-implementation lands, those dispatch arms do not change; only the hardcoded refusal is removed.
+**Windows and Linux have no hardware backend.** `KeystoreId` still names `WindowsHello`, `WindowsDpapi`,
+`LinuxTpm` and `LinuxSecretService` as enum variants with no implementation behind them (held back by the
+operator, ADR-098 "Not done here"). On those platforms presence cannot be attested and the gated operations stay
+refused.
 
-**The target design, in full.** Each platform will get one implementation behind the same trait,
-and the UI will state the resulting tier in plain words rather than showing a lock icon that
-implies more than is true:
+**The target design for the other platforms.** Each will get one implementation behind the same trait, and the UI
+will state the resulting tier in plain words rather than showing a lock icon that implies more than is true:
 
-- **macOS — `Tier::Hardware`.** A P-256 key generated in the Secure Enclave with
-  `biometryCurrentSet | privateKeyUsage`, non-exportable, wrapping the vault root key; presence
-  via `LocalAuthentication`; counters as a Keychain generic password. Enrolling a new fingerprint
-  will invalidate the key — which is the desired behaviour, and precisely why the passphrase
-  escrow wrap is mandatory on every platform.
+- **macOS — what shipped differs from this document's earlier design.** The earlier plan wrapped the root key
+  under a key with `biometryCurrentSet | privateKeyUsage`. ADR-098 rejected both halves of that: a
+  keychain-permanent Enclave key needs a team entitlement, and `biometryCurrentSet` would let a re-enrolled
+  fingerprint orphan the wrapped root key. The built key uses access control `userPresence` (Touch ID or the
+  device password) and the passphrase wrap stays mandatory.
 - **Windows — `Tier::Hardware` (Hello) or `OsProtected` (DPAPI).** Windows Hello via
   `KeyCredentialManager` preferred, with CNG against the Platform Crypto Provider and DPAPI for
   counters as the fallback.
@@ -723,13 +734,13 @@ rolled-back registry would mean a vault that never opens again.
    writing anything.
 2. **Built.** The CLI flag exists and reaches the broker, and the broker checks that the caller
    holds `Capability::Admin` resolved against Global, and requires the passphrase in the request.
-3. **Refused.** The dispatch arm then returns `presence_required` unconditionally, because
-   §6.3's presence attestation does not exist on any surface in this build. The rebuild logic is
-   therefore reachable only from its own tests today.
+3. **Built since ADR-098 (macOS).** The dispatch arm requires a presence proof (§6.3): a dry run shows the diff,
+   and `apply: true` with a proof writes the registry and then locks the vault so the next unlock loads it from
+   disk. With no presence key enrolled it answers `presence_required` and changes nothing.
 4. **Planned.** Gate 2FA in addition to presence, and a rebuild record appended to the audit log.
 
-Fail-closed with a documented, gated, diff-first recovery path — with the door's last bolt not
-yet fitted, and said so.
+Fail-closed with a documented, gated, diff-first recovery path. On a Mac with a presence key the last bolt is
+fitted; on a vault without one, or on another platform, the door still answers `presence_required`.
 
 ---
 
@@ -886,7 +897,8 @@ placeholder keystore a passphrase-less unlock meets) ·
 `crates/store/src/paths.rs` (§7's entire tree and §2.2's resolution order) ·
 `crates/store/src/atomic.rs` (`0700` directories, `write temp → fsync → rename`) ·
 `crates/store/src/rebuild.rs` (§7a's diff/apply) · `crates/keystore/src/{lib,software}.rs` (the
-trait, the one implementation, and `PresenceUnavailable`) · `crates/cli/src/main.rs` (24
+trait, the software implementation and `PresenceUnavailable`), `crates/keystore/src/{secure_enclave,presence_client}.rs` and
+`native/macos/presence` (the macOS Secure Enclave layer, ADR-098) · `crates/cli/src/main.rs` (24
 top-level subcommands; `cmd_init`, and `cmd_unlock`), `crates/cli/src/fields.rs` and
 `crates/cli/src/transport.rs` · `crates/mcp/src/tools.rs` (15 tools) ·
 `apps/desktop/src-tauri/src/{lib,commands}.rs` (the 56-command allowlist: 53 broker ops and three shell commands) ·

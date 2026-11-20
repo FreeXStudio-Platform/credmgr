@@ -40,6 +40,11 @@ npm run tauri dev      # development window (devCsp is looser: it needs the Vite
 npm run tauri build    # CredMgr.app / .dmg (runs `npm run build` first)
 ```
 
+A bundle carries two files built outside this directory (`tauri.conf.json` `bundle.macOS.files`): the Touch ID helper
+(`v2/target/native/credmgr-presence`) and the broker Start at login runs (`v2/target/release/credmgrd`, ADR-157). Build
+both first: `scripts/release-app.sh` does it for a release; by hand, `native/macos/presence/build.sh target/native` and
+`cargo build --release -p credmgr-brokerd` in `v2/`. `npm run tauri dev` and `--no-bundle` builds need neither.
+
 `@tauri-apps/api`, the CLI and the `tauri` crate (`src-tauri/Cargo.lock`) are all pinned or resolved at 2.12.1. The Tauri CLI
 rejects a version mismatch, so a bump moves the two npm pins here and `cargo update -p tauri --precise <version>` in
 `src-tauri/` together, followed by the whole `src-tauri` suite.

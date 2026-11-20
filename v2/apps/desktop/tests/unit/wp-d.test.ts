@@ -217,7 +217,8 @@ describe("admin actions (src/vault/actions/admin.ts)", () => {
     await admin.runDoctor(m, { apply: true });
     expect(m.refreshed).toEqual([{ graph: true }]);
     await admin.runDoctor(m, { apply: true, rebuildRegistry: true, passphrase: "p-1" });
-    expect(await admin.backupVault(m, "p-2", 30)).toEqual({ path: "backups/x.enc", retain: 30, pruned: 2 });
+    // ADR-165 review N2: a broker that does not say the archive went outside the vault folder (unbound, or older) reads as false.
+    expect(await admin.backupVault(m, "p-2", 30)).toEqual({ path: "backups/x.enc", retain: 30, pruned: 2, outsideVaultFolder: false });
     expect(calls.map((c) => c.cmd)).toEqual(["maintenance_verify", "maintenance_doctor", "maintenance_doctor", "maintenance_doctor", "maintenance_backup"]);
     expect(calls[1].args).toEqual({ apply: false });
     expect(calls[2].args).toEqual({ apply: true });
@@ -276,8 +277,8 @@ describe("admin actions (src/vault/actions/admin.ts)", () => {
 
   it("appVersion asks the shell, and is null with no shell or an unusable answer", async () => {
     expect(await admin.appVersion()).toBeNull(); // no window at all
-    const calls = fakeShell({ "plugin:app|version": "2.0.0-beta.1" });
-    expect(await admin.appVersion()).toBe("2.0.0-beta.1");
+    const calls = fakeShell({ "plugin:app|version": "2.0.0-rc.2" });
+    expect(await admin.appVersion()).toBe("2.0.0-rc.2");
     expect(calls.map((c) => c.cmd)).toEqual(["plugin:app|version"]);
     fakeShell({ "plugin:app|version": 42 });
     expect(await admin.appVersion()).toBeNull();
@@ -408,10 +409,10 @@ describe("settings logic (src/design/logic/settings.js)", () => {
     expect(logic.adm().busy).toBeNull();
   });
 
-  it("the Operations rows are the six that exist (Doctor and Doctor with purge are two rows); the five that do not are gone", () => {
+  it("the Operations rows are the seven that exist (Doctor and Doctor with purge are two rows; Tidy up, ADR-161); the five that do not are gone", () => {
     const logic = logicWith({ shell: false });
     const vals = logic.renderVals();
-    expect(vals.opsRows.map((r: { name: string }) => r.name)).toEqual(["Verify integrity", "Doctor", "Doctor with purge", "Back up vault", "Rotate root key", "Audit report"]);
+    expect(vals.opsRows.map((r: { name: string }) => r.name)).toEqual(["Verify integrity", "Doctor", "Doctor with purge", "Back up vault", "Rotate root key", "Audit report", "Tidy up"]);
   });
 
   it("the donation addresses are exactly the ones in DONATE.md", () => {

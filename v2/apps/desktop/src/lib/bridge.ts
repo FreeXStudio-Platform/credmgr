@@ -34,19 +34,103 @@
  *    where `typeOverridden` / `maskedOverridden` say it is a pin — otherwise every entry
  *    is pinned to what inference said on the day it was saved.
  *
+ * 8. **Every command has a caller in the app, or says why not.** `tests/unit/ui-callers.test.ts` fails when an
+ *    export here invokes a command that nothing under `src/design` or `src/vault` calls, unless its JSDoc carries
+ *    the one marker `@no-ui-caller <reason>` (a command-line-only op, one the shell drives itself, one another
+ *    command covers, or a screen that does not exist yet). It also fails a marker left on a command the app does call.
+ *
  * Four operations are wired but refused broker-side with `presence_required`
  * on every call until a transport can attest presence (ADR-047, F-8):
  * `totpSeed`, `nodeReparent`, `grantCreate`, `auditGet`. Design their screens
  * against that refusal, not against a success body.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as shellInvoke, type InvokeArgs } from "@tauri-apps/api/core";
+
+// ---------------------------------------------------------------------------
+// Confirm before showing secrets (ADR-150): the one retry
+// ---------------------------------------------------------------------------
+
+/** What a `confirmation_required` refusal says, as far as the confirm dialog needs it. Never a value, never a name. */
+export interface ConfirmationAsk {
+  /** The command that was refused (`entry_reveal`, `entry_copy`, `totp_code`, `node_policy`, ...). */
+  command: string;
+  /** The broker operation the broker named, when it named one. */
+  operation: string | null;
+  /** `window`: one confirmation opens the trust window; `everyTime`: it is good for this one request. */
+  mode: "window" | "everyTime" | null;
+  /** The trust window the confirmation opens, in seconds (0 or absent for every-time). */
+  windowSeconds: number | null;
+}
+
+/**
+ * Asks the person to confirm (Touch ID or the vault passphrase, which the handler sends with {@link sessionConfirm}). Resolves
+ * `true` once the broker accepted a confirmation, `false` when the person cancelled. Set by the screens, once.
+ */
+export type ConfirmationHandler = (ask: ConfirmationAsk) => Promise<boolean>;
+
+let confirmationHandler: ConfirmationHandler | null = null;
+/** One dialog at a time: calls refused together (a reveal and a TOTP code, say) wait on the same confirmation. */
+let confirmationInFlight: Promise<boolean> | null = null;
+
+/** Install the screen's confirmation handler. Returns the function that removes it again. */
+export function setConfirmationHandler(handler: ConfirmationHandler | null): () => void {
+  confirmationHandler = handler;
+  return () => {
+    if (confirmationHandler === handler) confirmationHandler = null;
+  };
+}
+
+function askOf(command: string, e: BridgeError): ConfirmationAsk {
+  const d = e.detail ?? {};
+  const mode = d.mode === "window" || d.mode === "everyTime" ? d.mode : null;
+  return {
+    command,
+    operation: typeof d.operation === "string" ? d.operation : null,
+    mode,
+    windowSeconds: typeof d.windowSeconds === "number" ? d.windowSeconds : null,
+  };
+}
+
+/**
+ * Every command goes through here. ADR-150: when the broker answers `confirmation_required` (the owner turned on "Confirm before
+ * showing secrets"), the screen's handler asks the person to confirm, and the SAME command is sent again, exactly once. A
+ * cancelled confirmation rejects with the original refusal marked `detail.cancelled = true`, which the error router shows as a
+ * quiet notice; a second `confirmation_required` (an every-time confirmation another request spent first) is not retried again.
+ * `session_confirm` itself is never retried here, so nothing can loop.
+ */
+const invoke = async <T>(command: string, args?: InvokeArgs): Promise<T> => {
+  try {
+    return await shellInvoke<T>(command, args);
+  } catch (e) {
+    if (!isBridgeError(e) || e.code !== "confirmation_required" || command === "session_confirm" || !confirmationHandler) throw e;
+    const handler = confirmationHandler;
+    if (!confirmationInFlight) {
+      confirmationInFlight = handler(askOf(command, e))
+        .catch(() => false)
+        .finally(() => {
+          confirmationInFlight = null;
+        });
+    }
+    const confirmed = await confirmationInFlight;
+    if (!confirmed) throw { ...e, detail: { ...(e.detail ?? {}), cancelled: true } } satisfies BridgeError;
+    return shellInvoke<T>(command, args);
+  }
+};
 
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
 
-/** Every `"error"` discriminant `credmgrd` can send (`protocol.rs::to_wire`). */
+/**
+ * Every `"error"` discriminant `credmgrd` can send (`protocol.rs::to_wire`). `confirmation_required` (ADR-150): the owner turned on
+ * "Confirm before showing secrets" and this session has no live confirmation; confirm with {@link sessionConfirm} (Touch ID or the
+ * passphrase) and repeat the request. The bridge's own `invoke` does that once by itself when the screens installed a
+ * {@link ConfirmationHandler}. `machine_lock_refused` (ADR-165): the passphrase file is sealed to a device key this Mac does not
+ * hold, or is damaged (`detail.reason`: device_key_missing, device_key_mismatch, device_key_unreadable, sealed_wrap_damaged,
+ * device_key_unwritable, or plain_wrap_while_bound: this Mac recorded the vault as bound but an older plain passphrase file sits on
+ * disk and does not open it); the way in here is the recovery code ({@link vaultRecover}).
+ */
 export type BrokerErrorCode =
   | "node_access_denied"
   | "two_factor_required"
@@ -61,6 +145,7 @@ export type BrokerErrorCode =
   | "entry_exists"
   | "internal"
   | "presence_required"
+  | "presence_failed"
   | "archive_expired"
   | "approval_denied"
   | "rate_limited"
@@ -72,7 +157,9 @@ export type BrokerErrorCode =
   | "vault_inside_git_working_tree"
   | "vault_init_not_pending"
   | "recovery_code_mismatch"
-  | "session_expired";
+  | "session_expired"
+  | "confirmation_required"
+  | "machine_lock_refused";
 
 /** Codes the bridge raises itself, when the broker was never reached or answered nonsense. */
 export type BridgeLocalCode =
@@ -95,10 +182,47 @@ export type BridgeLocalCode =
    * or a field the broker would refuse. The message names an index, never a label or a value.
    */
   | "invalid_fields"
+  /**
+   * `envPreview` could not read the text as a `.env` file: a line the grammar refuses (named by number, never quoted), more than
+   * 500 pairs, or more than 4 MiB.
+   */
+  | "invalid_env"
   /** `appIconSet` was given an id outside {@link APP_ICON_IDS}. Nothing changed. */
   | "unknown_icon"
   /** `appIconSet`: the OS or the window refused the icon. */
-  | "icon_failed";
+  | "icon_failed"
+  /** ADR-098, Touch ID: the user dismissed the prompt. Not an error to shout about. */
+  | "presence_cancelled"
+  /** Touch ID is locked out. The Mac password unlocks it. */
+  | "presence_locked_out"
+  /** No Secure Enclave helper, or no Secure Enclave, on this Mac. */
+  | "presence_unavailable"
+  /** This Mac has no presence key yet. Set Touch ID up in Settings. */
+  | "presence_not_enrolled"
+  /** The helper said no for another reason. */
+  | "presence_error"
+  /** ADR-143, Settings -> Agents: the client or file cannot be edited, the message says why. Nothing was written. */
+  | "agent_refused"
+  /** The client's file changed since the diff was shown. Nothing was written, review it again. */
+  | "agent_changed"
+  /** The write or its read-back failed, the original is kept, and a backup sits beside it. */
+  | "agent_write_failed"
+  /**
+   * ADR-156, start at login: the launch agent could not be written, removed or loaded (no `credmgrd` was found to point it at,
+   * a file write failed, or `launchctl` said no). The message says which. What was on disk before is left as it was.
+   */
+  | "login_agent_failed"
+  /**
+   * ADR-166, Settings > Backup > Restore (the codes of the bundled `credmgr restore --json`). A broker answers on the vault's socket:
+   * quit CredMgr (or stop `credmgrd`) and restore with `credmgr restore` in a terminal. Nothing was read or written.
+   */
+  | "broker_running"
+  /** The folder to restore into is not empty: a restore never merges into, or overwrites, a vault. Nothing was written. */
+  | "restore_target_not_empty"
+  /** A wrong backup passphrase, a damaged archive, a file that cannot be read, or another refusal of the restore. Nothing was written. */
+  | "restore_failed"
+  /** No `credmgr` command-line program was found beside the app or in the install locations. Nothing was run. */
+  | "restore_unavailable";
 
 /** What every command rejects with (`src-tauri/src/error.rs::BridgeError`). */
 export interface BridgeError {
@@ -135,11 +259,24 @@ export interface AuthState {
    * answered, so it is `true` there.
    */
   initialized: boolean;
+  /** ADR-098: unlocking with Touch ID is set up for this vault (reported by `vaultStatus`, absent when not). */
+  touchIdUnlock?: boolean;
   /**
    * How many agent requests are waiting for a person (ADR-090): a bare count from `vault.status`, left out when 0. No names;
    * {@link vaultApprovalGet} says what they are.
    */
   pendingApprovals?: number;
+  /**
+   * ADR-156: how many cross-node anomaly alarms (an agent refused 5 times in 10 minutes for another project) the owner has not
+   * acknowledged yet. A bare count, from `vault.status` only and only to the owner's own login; left out when 0. Reset by
+   * {@link vaultAnomaliesAck}.
+   */
+  anomaliesUnseen?: number;
+  /**
+   * ADR-163: this vault can be opened with its recovery code when the passphrase is forgotten ({@link vaultRecover}), reported by
+   * `vaultStatus` and left out when not. Absent on a vault made before recovery wraps existed: the next passphrase change writes one.
+   */
+  recoveryUnlock?: boolean;
 }
 
 export interface Whoami {
@@ -163,9 +300,14 @@ export interface GraphNode {
    * says the node is hidden from everyone else. Absent otherwise.
    */
   nameHidden?: boolean;
+  /** ADR-140: how much an agent may do here without the owner. Absent from an older broker: read it as `guarded`. */
+  securityLevel?: SecurityLevel;
   /** `null` in every response today — render a sane default, not an error. */
   health: unknown | null;
 }
+
+/** ADR-140. `open`: no approvals. `guarded` (the default): a high or critical value waits for the owner. `sealed`: every value waits, adds wait in the tray, no changes. */
+export type SecurityLevel = "open" | "guarded" | "sealed";
 
 export interface GraphLink {
   source: string;
@@ -178,6 +320,8 @@ export interface GraphLink {
 export interface GraphSnapshot {
   nodes: GraphNode[];
   links: GraphLink[];
+  /** ADR-150: the vault's "Confirm before showing secrets" policy, for the owner's own login. Absent for anyone else and for an older broker (read as off). */
+  revealConfirm?: RevealConfirm;
   /** Renders while locked; `vaultLocked` is how an idle auto-lock is noticed. */
   meta: {
     generatedAt: number;
@@ -187,6 +331,12 @@ export interface GraphSnapshot {
      * else), for a human session that may restore. Absent for an agent; `[]` when nothing is sealed.
      */
     sealed?: SealedNode[];
+    /**
+     * ADR-120: the items in Orphaned by name (`id`, `name`; never a value), for the vault owner's own login session. `entry.list` on
+     * the orphaned node is refused to everyone (R0) and the snapshot leaves that node out, so this is the only place a window learns
+     * what was sealed. Absent for every other caller and for a broker that predates ADR-120.
+     */
+    orphaned?: Array<{ id: string; name: string }>;
   };
 }
 
@@ -219,6 +369,10 @@ export interface EntryListRow {
   rotatedAt: number | null;
   /** Unix seconds the entry expires; `null` if it does not. */
   expiresAt: number | null;
+  /** ADR-121: the other names this entry answers to. Absent when it has none. */
+  aliases?: string[];
+  /** ADR-167: the entry's tags (lower-cased labels). Absent when it has none. */
+  tags?: string[];
 }
 
 export interface EntryList {
@@ -310,6 +464,11 @@ export interface FieldMeta {
   masked: boolean;
   typeOverridden: boolean;
   maskedOverridden: boolean;
+  /**
+   * ADR-111 (issue #40): present and `true` only when this field could be a 2FA seed that is not typed as one. An owner who typed it
+   * (to anything) has answered, so it is absent then. Metadata: it says nothing about the value beyond that one bit.
+   */
+  possibleSeed?: boolean;
 }
 
 /** `entryGet`'s answer: an entry's metadata and its fields' labels — never a value. */
@@ -332,6 +491,10 @@ export interface EntryMeta {
   typeOverridden: boolean;
   sensitivityOverridden: boolean;
   fields: FieldMeta[];
+  /** ADR-121: the other names this entry answers to. Absent when it has none (and when the node hides its names from this caller). */
+  aliases?: string[];
+  /** ADR-167: the entry's tags. Absent when it has none (and when the node hides its names from this caller). */
+  tags?: string[];
 }
 
 /** One revealed field. The value is the plaintext: do not log, cache, or retain it. */
@@ -367,6 +530,9 @@ export interface FieldsChanged {
   fieldIds: string[];
   /** The audit record this change wrote (the broker's envelope `audit`, passed through by the shell for changing ops only; absent when the record could not be written). */
   audit?: string;
+  /** ADR-111: the ids of the fields that could be a 2FA seed but are not typed as one. Absent when there are none. */
+  possibleSeedFields?: string[];
+  warnings?: NameWarning[];
 }
 
 export interface AuditRecord {
@@ -452,8 +618,16 @@ export interface FieldUndone {
 export const vaultStatus = () => invoke<AuthState>("vault_status");
 
 /** Rejects with `two_factor_required` when a gate is enrolled — then call {@link vaultGateVerify}. */
-export const vaultUnlock = (passphrase: string) =>
-  invoke<AuthState>("vault_unlock", { passphrase });
+export const vaultUnlock = (passphrase?: string, method?: "device") =>
+  invoke<AuthState>("vault_unlock", { passphrase, method });
+
+/**
+ * ADR-098: unlock with Touch ID instead of the passphrase. The system shows the fingerprint (or Mac
+ * password) prompt; nothing secret passes through the page. Rejects with `presence_failed` and
+ * `detail.reason` `not_enrolled` when Touch ID unlock was never turned on, or `presence_failed`
+ * with `cancelled` when the prompt was dismissed.
+ */
+export const vaultUnlockWithTouchId = () => vaultUnlock(undefined, "device");
 
 export const vaultGateVerify = (code: string) =>
   invoke<AuthState>("vault_gate_verify", { code });
@@ -464,7 +638,8 @@ export const whoami = () => invoke<Whoami>("whoami");
 
 export const graphSnapshot = () => invoke<GraphSnapshot>("graph_snapshot");
 
-export const entryList = (node: string) => invoke<EntryList>("entry_list", { node });
+/** ADR-167: `tag` narrows the list to the entries carrying it, on this one node. */
+export const entryList = (node: string, tag?: string) => invoke<EntryList>("entry_list", { node, tag });
 
 /**
  * May reject with `approval_pending` — a one-tap approval path, not a failure (ADR-042).
@@ -578,6 +753,8 @@ export interface ApprovalRequest {
   nameHidden?: true;
   /** Only to the owner's login session. */
   cwd?: string | null;
+  /** ADR-164: the agent token that asked, by label and public id (to the owner, and on a locked vault). */
+  agentToken?: { id: string; label: string };
 }
 
 /**
@@ -599,14 +776,20 @@ export const vaultNodeUnlock = (node: string) =>
 // Nodes
 // ---------------------------------------------------------------------------
 
-/** Bare node ids this scope may list — use {@link graphSnapshot} for node objects. */
+/**
+ * Bare node ids this scope may list — use {@link graphSnapshot} for node objects.
+ * @no-ui-caller the app reads its nodes from graph_snapshot, which carries labels, policy and counts; node_list (ids only) serves the CLI and agents.
+ */
 export const nodeList = () => invoke<{ nodes: string[] }>("node_list");
 
 /** `workdirs` optionally binds directories that scope an agent to the node (ADR-066). */
 export const nodeCreate = (id: string, label: string, parentId: string, workdirs?: string[]) =>
   invoke<{ node: string; created: true; audit?: string; warnings?: NameWarning[] }>("node_create", { id, label, parentId, workdirs });
 
-/** Replaces a node's bound directories — absolute, existing, one directory to one node. `[]` clears. */
+/**
+ * Replaces a node's bound directories — absolute, existing, one directory to one node. `[]` clears.
+ * @no-ui-caller no screen yet (rc.2 backlog): a node's work folders are set when it is created (node_create); changing them later is `credmgr node workdir`.
+ */
 export const nodeSetWorkdirs = (node: string, workdirs: string[]) =>
   invoke<{ node: string; workdirs: string[]; audit?: string }>("node_set_workdirs", { node, workdirs });
 
@@ -622,7 +805,31 @@ export interface NodePolicyPatch {
   lockAfterSeconds?: number | null;
   privateNames?: boolean;
   agentAccess?: "read-write" | "read-only" | "none";
+  /** ADR-140. Lowering it (towards `open`) widens what an agent may do and needs presence (Touch ID). */
+  securityLevel?: SecurityLevel;
+  /**
+   * ADR-150, on the global node only (any other node is `malformed_request`), the owner's login only. Turning it on or making it
+   * stricter needs nothing; turning it off or loosening it answers `confirmation_required` unless the session confirmed in the
+   * last 60 s (the bridge confirms and retries once).
+   */
+  revealConfirm?: RevealConfirm;
 }
+
+/**
+ * ADR-150: "Confirm before showing secrets", vault policy held on the global node. `off` is the default (and what an older vault
+ * reads as). `window`: one confirmation (Touch ID or the passphrase) and no more prompts for `windowSeconds`. `everyTime`: each
+ * reveal needs its own. `scope: "high"` asks only for entries whose sensitivity is high or critical.
+ */
+export interface RevealConfirm {
+  mode: "off" | "window" | "everyTime";
+  /** One of {@link REVEAL_CONFIRM_WINDOWS}: 60, 300, 900 or 3600. */
+  windowSeconds: number;
+  scope: "all" | "high";
+}
+
+/** The trust windows the broker accepts, in seconds. */
+export const REVEAL_CONFIRM_WINDOWS = [60, 300, 900, 3600] as const;
+export const REVEAL_CONFIRM_DEFAULT: RevealConfirm = { mode: "off", windowSeconds: 300, scope: "all" };
 
 /**
  * Changes a node's policy (ADR-071). `reason` is mandatory and lands in the audit record.
@@ -633,7 +840,7 @@ export interface NodePolicyPatch {
 export const nodePolicy = (node: string, reason: string, policy: NodePolicyPatch) =>
   invoke<{
     node: string;
-    policy: Required<NodePolicyPatch>;
+    policy: Required<Omit<NodePolicyPatch, "revealConfirm">> & { revealConfirm?: RevealConfirm };
     changed: string[];
     reason: string;
     notEnforced: string[];
@@ -655,6 +862,7 @@ export const notesRead = (node: string) =>
 /**
  * Replaces a node's note (≤ 64 KiB; `""` removes it). `generation` is the manifest generation
  * last read — a mismatch answers `conflict`.
+ * @no-ui-caller writing a note is a command-line action by design (`credmgr notes set`, HELP "notes"); the app shows a node's note read-only.
  */
 export const notesWrite = (node: string, markdown: string, generation: number) =>
   invoke<{ node: string; generation: number; modified: number | null; cleared: boolean; audit?: string }>(
@@ -668,7 +876,10 @@ export const nodeSeal = (node: string) =>
 export const nodeRestore = (node: string) =>
   invoke<{ node: string; restored: true; audit?: string }>("node_restore", { node });
 
-/** Refused with `presence_required` today (F-8). `reason` must be ≥ 8 characters. */
+/**
+ * Refused with `presence_required` today (F-8). `reason` must be ≥ 8 characters.
+ * @no-ui-caller refused with presence_required on every call until a transport can attest presence for it (ADR-047); the CLI's `credmgr node reparent` meets the same refusal.
+ */
 export const nodeReparent = (node: string, newParent: string, reason: string) =>
   invoke<Record<string, unknown>>("node_reparent", { node, newParent, reason });
 
@@ -688,7 +899,10 @@ export const grantCreate = (
   to: GrantTarget,
   scope: Array<"read" | "reveal" | "notes">,
   reason: string,
-) => invoke<Record<string, unknown>>("grant_create", { from, to, scope, reason });
+  direction?: "one-way" | "mutual",
+  expiresAt?: number,
+) =>
+  invoke<Record<string, unknown>>("grant_create", { from, to, scope, reason, direction, expiresAt });
 
 /** In both modes — revocation is safety, not a lever. */
 export const grantRevoke = (id: string) =>
@@ -700,7 +914,7 @@ export const grantRevoke = (id: string) =>
 
 /** What `entryCreate` answers; `pending: true` (and no generation) when the vault is locked — F-1's tray. */
 export type EntryCreated =
-  | { node: string; entry: string; pending: true; fieldCount: number; fieldIds: string[]; audit?: string; warnings?: NameWarning[] }
+  | { node: string; entry: string; pending: true; fieldCount: number; fieldIds: string[]; audit?: string; warnings?: NameWarning[]; possibleSeedFields?: string[] }
   | {
       node: string;
       entry: string;
@@ -710,10 +924,12 @@ export type EntryCreated =
       fieldIds: string[];
       audit?: string;
       warnings?: NameWarning[];
+      /** ADR-111: the ids of the fields that could be a 2FA seed but are not typed as one. Absent when there are none. */
+      possibleSeedFields?: string[];
     };
 
 /** A warning the broker attaches to an accepted name (ADR-084). Anything else it may add in future is ignored by the window. */
-export type NameWarning = "mixed_script_name";
+export type NameWarning = "mixed_script_name" | "possible_totp_seed";
 
 /**
  * Creates an entry (ADR-078): give **`value`** (a one-field entry; `label` names the field,
@@ -759,7 +975,8 @@ export interface EntryCreateItem {
 export const entryCreateBatch = (node: string, entries: EntryCreateItem[]) =>
   invoke<{
     node: string;
-    created: { name: string; entry: string; pending: boolean; fieldCount: number }[];
+    /** `possibleSeedFields` (ADR-111): the ids of this entry's fields that could be a 2FA seed but are not typed as one; absent when none. */
+    created: { name: string; entry: string; pending: boolean; fieldCount: number; possibleSeedFields?: string[] }[];
     complete: boolean;
     failed: { index: number; name: string; error: string } | null;
     total: number;
@@ -768,6 +985,85 @@ export const entryCreateBatch = (node: string, entries: EntryCreateItem[]) =>
     warnings?: NameWarning[];
   }>("entry_create_batch", { node, entries });
 
+/** An existing entry whose name or alias resembles a candidate name (ADR-121). */
+export interface NearName {
+  id: string;
+  name: string;
+  /** Set when it is an alias of that entry that resembles the candidate. */
+  alias?: string;
+  /** `separators`: the same letters with other separators or case. `one-edit`: one letter added, left out, changed or swapped. */
+  reason: "separators" | "one-edit";
+}
+
+/**
+ * Sets the other names one entry answers to (ADR-121): the whole list, at most 8, `[]` clears it. An alias lives in the node's one
+ * name space: it cannot be, canonically, the name or alias of any other entry (`entry_exists`) or the entry's own name. A human
+ * session with the `update` capability; metadata only, no value is read or rewritten. Echoes the node's new generation.
+ */
+export const entryAlias = (node: string, entry: string, generation: number, aliases: string[]) =>
+  invoke<{
+    node: string;
+    entry: string;
+    generation: number;
+    aliases: string[];
+    /** Existing names the new aliases resemble (a warning, never a refusal). Absent when none, and for a node that hides its names. */
+    similar?: NearName[];
+    audit?: string;
+    warnings?: NameWarning[];
+  }>("entry_alias", { node, entry, generation, aliases });
+
+/**
+ * Which entries of a node have a name or alias resembling `name` (ADR-121), and whether `name` is already taken exactly. `entry`
+ * leaves one entry out (the one being aliased). A node whose names are hidden from this caller answers `nameHidden: true`.
+ */
+export const entrySimilar = (node: string, name: string, entry?: string) =>
+  invoke<{ node: string; name?: string; taken?: boolean; nameHidden?: boolean; similar: NearName[] }>("entry_similar", { node, name, entry });
+
+/** One pair of a parsed `.env` file. */
+export interface EnvPair {
+  name: string;
+  value: string;
+}
+
+/** What one pair of an import would become (ADR-122). */
+export type ImportStatus = "new" | "exists" | "duplicate" | "empty" | "invalid";
+
+/**
+ * A parsed `.env` file into one node (ADR-122). `dryRun: true` writes nothing and says, for every pair, what it would become and which
+ * existing names it resembles; without it the `new` pairs are written, each as its own entry with its own audit record. `onConflict`
+ * is `"refuse"` (the default: one conflicting pair and nothing is written) or `"skip"`. No answer carries a value.
+ */
+export const entryImportEnv = (node: string, entries: EnvPair[], dryRun?: boolean, onConflict?: "refuse" | "skip") =>
+  invoke<{
+    node: string;
+    dryRun?: boolean;
+    total: number;
+    counts: Record<ImportStatus, number>;
+    /** Dry run only. */
+    items?: { name: string; status: ImportStatus; similar?: NearName[] }[];
+    /** Write only. */
+    created?: { name: string; entry: string; pending: boolean; fieldCount: number }[];
+    skipped?: { name: string; status: ImportStatus }[];
+    complete?: boolean;
+    failed?: { index: number; name: string; error: string } | null;
+    generation?: number | null;
+    audit?: string;
+    warnings?: NameWarning[];
+  }>("entry_import_env", { node, entries, dryRun, onConflict });
+
+/** What {@link envPreview} read out of a `.env` text. */
+export interface EnvPreview {
+  entries: EnvPair[];
+  /** Names whose value was empty (an `.env.example` placeholder): not importable. */
+  skippedEmpty: string[];
+}
+
+/**
+ * Reads `.env` text into pairs with the same parser `credmgr import-env` uses - **locally**: no broker call, no session, no audit
+ * record. A line the grammar refuses is named by number (`invalid_env`), never quoted. Hand the pairs to {@link entryImportEnv}.
+ */
+export const envPreview = (text: string) => invoke<EnvPreview>("env_preview", { text });
+
 /**
  * Changes an entry (ADR-078). `value` replaces one field's value — the only field, or the one
  * `field` (an id) names; on a several-field entry without `field` the broker refuses. `label`
@@ -775,6 +1071,7 @@ export const entryCreateBatch = (node: string, entries: EntryCreateItem[]) =>
  * fields left out are dropped) and excludes `value` / `label` / `field`. `entryType` /
  * `sensitivity` set or (`"auto"`) clear the entry's pins. Keeps no history; for that, rotate or
  * use the `field*` calls.
+ * @no-ui-caller the app changes a value through field_update, which keeps history and offers Undo; entry_update (no history) is the CLI's `credmgr set`.
  */
 export const entryUpdate = (
   node: string,
@@ -965,7 +1262,9 @@ export const maintenanceDoctor = (
  * array — it was typed as a count until C1 found the mismatch against the real broker).
  */
 export const maintenanceBackup = (passphrase: string, retain?: number) =>
-  invoke<{ path: string; retain: number; pruned: string[] }>("maintenance_backup", {
+  /* ADR-165 review N2: `outsideVaultFolder` - the vault is machine-locked, so the archive (which holds the passphrase file unsealed) was
+     written in CredMgr's state folder, not in the vault folder's backups/. */
+  invoke<{ path: string; retain: number; pruned: string[]; passphraseFileUnsealed?: boolean; outsideVaultFolder?: boolean }>("maintenance_backup", {
     passphrase,
     retain,
   });
@@ -993,6 +1292,11 @@ export type RotateRootResult = {
    * untouched (a tampered audit month, say) — they keep failing verification.
    */
   notResigned: Array<{ kind: string; id: string; reason: string }>;
+  /** ADR-165: whether the new passphrase file is sealed to this Mac's device key (a bound vault stays bound). */
+  machineLocked?: boolean;
+  /** ADR-165: present when this rotation could NOT seal the new passphrase file, so the machine lock is now OFF; why, in plain words. */
+  machineLockRemoved?: string;
+  deviceKeyCreated?: boolean;
 };
 
 /**
@@ -1010,6 +1314,432 @@ export type RotateRootResult = {
 export const maintenanceRotateRoot = (passphrase: string) =>
   invoke<RotateRootResult>("maintenance_rotate_root", { passphrase });
 
+// ---------------------------------------------------------------------------
+// Post-launch quick wins (ADR-156)
+// ---------------------------------------------------------------------------
+
+/** What `vaultSetPassphrase` answers: a root rotation under the new passphrase, so a NEW recovery code, shown once. */
+export type SetPassphraseResult = RotateRootResult & {
+  passphraseChanged: true;
+};
+
+/**
+ * Change the vault passphrase. `passphrase` is the current one (proven first; `wrong_passphrase` changes nothing), `newPassphrase`
+ * the one that wraps the root key from now on. It is a full root rotation: the answer carries a NEW `recoveryCode` (the old one stops
+ * working at once) that must be shown once and never kept. Owner's login; a fresh second factor and Touch ID are asked for when set up.
+ * Like {@link maintenanceRotateRoot}, do not read the vault after it: a rotation whose last step is pending locks the vault.
+ */
+export const vaultSetPassphrase = (passphrase: string, newPassphrase: string) =>
+  invoke<SetPassphraseResult>("vault_set_passphrase", { passphrase, newPassphrase });
+
+/**
+ * What `vaultRecover` answers: the same root rotation as {@link vaultSetPassphrase}, so a NEW recovery code, shown once. `locked` is
+ * `false` when the vault is now open (the shell captured the login token and holds it; the page never sees it) and `true` when the
+ * rotation committed but its last file moves are pending: the vault stays locked and the NEW passphrase opens it.
+ */
+export type RecoverResult = RotateRootResult & {
+  passphraseChanged: true;
+  recovered: true;
+  locked: boolean;
+};
+
+/**
+ * ADR-163, "Forgot passphrase?": open a LOCKED vault with the printed recovery code alone. In the same call the vault is re-keyed under
+ * `newPassphrase` and a NEW recovery code is issued (the used code and the forgotten passphrase stop working at once); show it once and
+ * never keep it. `code` is the vault's second factor (a TOTP code or one of the gate's backup codes) when one is enrolled: without it the
+ * broker answers `two_factor_required`. A wrong recovery code is `recovery_code_mismatch` and counts in the unlock back-off; a vault
+ * with no recovery wrap is `not_found` (see {@link AuthState.recoveryUnlock}). Never offered to agents or over MCP.
+ */
+export const vaultRecover = (recoveryCode: string, newPassphrase: string, code?: string) =>
+  invoke<RecoverResult>("vault_recover", { recoveryCode, newPassphrase, code });
+
+/** The owner has seen the cross-node anomaly alarm (`AuthState.anomaliesUnseen`): resets the count. Owner's login only. */
+export const vaultAnomaliesAck = () => invoke<{ acknowledged: number }>("vault_anomalies_ack");
+
+/** Set an entry's expiry (`expiresAt`, unix seconds) or clear it (`clear: true`): exactly one of the two. Manifest metadata only. */
+export const entrySetExpiry = (node: string, entry: string, generation: number, expiresAt?: number, clear?: boolean) =>
+  invoke<{ node: string; entry: string; generation: number; expiresAt: number | null; audit?: string }>("entry_set_expiry", {
+    node,
+    entry,
+    generation,
+    expiresAt,
+    clear,
+  });
+
+/** One row of {@link entryExpiring}: names and dates, never a value. */
+export interface ExpiringEntry {
+  node: string;
+  id: string;
+  name: string;
+  ref: number;
+  expiresAt: number;
+  rotatedAt: number | null;
+  expired: boolean;
+}
+
+/**
+ * Entries that expire within `days` (the broker's 30 when absent), already expired included, soonest first; one node or every one.
+ * @no-ui-caller no screen yet (rc.2 backlog): each entry's expiry chip and Tidy up's expired and expiring findings cover it in the app; the due list is `credmgr expiring`.
+ */
+export const entryExpiring = (node?: string, days?: number) =>
+  invoke<{ days: number; now: number; entries: ExpiringEntry[] }>("entry_expiring", { node, days });
+
+/** One audit record of {@link entryHistory}: an action and its time, never a value. */
+export interface EntryHistoryRecord {
+  id: string;
+  timestamp: number;
+  actor: string;
+  action: string;
+  decision: string;
+  generation: number | null;
+}
+
+/** What {@link entryHistory} answers. The entry's own times are there only while it `exists`. */
+export interface EntryHistory {
+  node: string;
+  entry: string;
+  records: EntryHistoryRecord[];
+  truncated: boolean;
+  exists: boolean;
+  name?: string;
+  ref?: number;
+  modified?: number;
+  rotatedAt?: number | null;
+  expiresAt?: number | null;
+}
+
+/** One entry's trail, oldest first (the newest `limit` kept), plus its edit, rotation and expiry times. */
+export const entryHistory = (node: string, entry: string, limit?: number) =>
+  invoke<EntryHistory>("entry_history", { node, entry, limit });
+
+// ---------------------------------------------------------------------------
+// Node-scoped agent tokens (ADR-164) — owner's login only; never an agent
+// ---------------------------------------------------------------------------
+
+/** The capabilities an agent token may carry; never `notes` or `admin`. */
+export type AgentTokenCapability = "list" | "read" | "reveal" | "create" | "update";
+
+/** One agent token as {@link agentTokenStatus} lists it: metadata, never a secret. */
+export interface AgentTokenInfo {
+  id: string;
+  label: string;
+  node: string;
+  capabilities: AgentTokenCapability[];
+  /** What it may do now: `capabilities` cut down to what the node gives agents today. */
+  effectiveCapabilities: AgentTokenCapability[];
+  createdAt: number;
+  expiresAt: number;
+  lastUsedAt: number | null;
+  rotatedAt: number | null;
+}
+
+/**
+ * What `agentTokenIssue` and `agentTokenRotate` answer: the metadata ({@link AgentTokenInfo}) and where the new token
+ * went. Like the login (ADR-057), the token itself never reaches the page: the shell puts it on the concealed clipboard,
+ * cleared after `clearAfterSeconds`, and wipes its own copy. If the clipboard could not take it, nobody holds the token,
+ * so the shell revokes it at once (`copied: false`, `revoked` says whether that worked). When a lock also ended the
+ * login the revoke needs, the shell keeps the id and revokes it at the next unlock (`revokePending: true`).
+ */
+export interface AgentTokenIssued {
+  id: string;
+  label: string;
+  node: string;
+  capabilities: AgentTokenCapability[];
+  effectiveCapabilities: AgentTokenCapability[];
+  createdAt: number;
+  expiresAt: number;
+  lastUsedAt: number | null;
+  rotatedAt: number | null;
+  copied: boolean;
+  /** Present when `copied`: seconds until the clipboard clears itself. */
+  clearAfterSeconds?: number;
+  /** Present when not `copied`: whether the shell revoked the uncopied token. */
+  revoked?: boolean;
+  /** Present (true) when the revoke could not run now (a lock ended the login) and will run at the next unlock. */
+  revokePending?: boolean;
+}
+
+/**
+ * A token for exactly one node (`expiresIn` seconds, 60 to 604800, one day when absent). Needs the owner's login, the
+ * vault's second factor where enrolled and Touch ID (the shell asks for the proof itself); `capabilities` must be a
+ * subset of what the node gives agents. The new token goes to the concealed clipboard, never to the page.
+ */
+export const agentTokenIssue = (node: string, label: string, capabilities: AgentTokenCapability[], expiresIn?: number) =>
+  invoke<AgentTokenIssued>("agent_token_issue", { node, label, capabilities, expiresIn });
+
+/** The live agent tokens (one node's when `node` is given), with the broker's bounds. Metadata only. */
+export const agentTokenStatus = (node?: string) =>
+  invoke<{ tokens: AgentTokenInfo[]; max: number; defaultExpiresIn: number; maxExpiresIn: number }>("agent_token_status", { node });
+
+/** A new secret and expiry for a token; the old secret stops working. Same gate as {@link agentTokenIssue}. */
+export const agentTokenRotate = (id: string, expiresIn?: number) =>
+  invoke<AgentTokenIssued>("agent_token_rotate", { id, expiresIn });
+
+/** End a token now. No Touch ID: revoking only removes access. */
+export const agentTokenRevoke = (id: string) =>
+  invoke<{ revoked: true; id: string; label: string; node: string }>("agent_token_revoke", { id });
+
+/** Names and aliases on one node that contain `term` (case-insensitive), only those carrying `tag` when given (ADR-167). Never values. */
+export const entrySearch = (node: string, term: string, tag?: string) =>
+  invoke<{ node: string; results: Array<{ id: string; name: string; alias?: string }> }>("entry_search", { node, term, tag });
+
+/** Which entry a vault-global short reference names; `not_found` for one the caller could not list. */
+export const entryGetByRef = (reference: number) =>
+  invoke<{ node: string; entry: string; name: string; ref: number }>("entry_get_by_ref", { reference });
+
+/** What {@link entryMove} answers (ADR-158): where the entry is now and what did not travel with it. Never a value. */
+export interface EntryMoved {
+  /** The destination: the node the entry is in now. */
+  node: string;
+  /** The entry's id and its vault-global short reference, both kept by the move. */
+  entry: string;
+  ref: number;
+  name: string;
+  /** The node it came from. */
+  from: string;
+  /** The source node's generation after the move; `toGeneration` is the destination's, which the next change to the moved entry echoes. */
+  generation: number;
+  toGeneration: number;
+  /** Grants on this entry, revoked by the move (a grant names its node, so it cannot follow). */
+  grantsRevoked: string[];
+  /** Earlier values kept for Undo in the old node: dropped by the move. */
+  historyDropped: number;
+  /** Present only when the move is done but a staging file could not be removed (the next unlock removes it). */
+  cleanupWarning?: string;
+  audit?: string;
+}
+
+/**
+ * Move one entry to another node (ADR-158): re-sealed to the destination's key in one crash-safe step, keeping its id, reference, name,
+ * aliases and expiry. Grants on the entry are revoked and its Undo history is dropped. The owner's login only, `Admin` on both nodes,
+ * a fresh second factor and Touch ID on every call; a stale `generation` (the source's) is `conflict`, a taken name `entry_exists`.
+ */
+export const entryMove = (node: string, entry: string, to: string, generation: number, reason?: string) =>
+  invoke<EntryMoved>("entry_move", { node, entry, to, generation, reason });
+
+/** One entry as a tidy-up finding names it (ADR-161): ids, ref, name, its node's generation as the scan read it. Never a value. */
+export interface DoctorEntry {
+  node: string;
+  nodeLabel: string | null;
+  entry: string;
+  ref: number;
+  name: string;
+  generation: number;
+}
+
+/** What a finding proposes. `op` is `"entry.move"` only for a move the app can apply, with `move` holding that call's params. */
+export interface DoctorProposal {
+  action: "move_to_parent" | "move_to_project" | "share" | "merge" | "remove_copies" | "rename_or_merge";
+  op: "entry.move" | null;
+  to?: string;
+  toLabel?: string | null;
+  move?: { node: string; entry: string; to: string; generation: number };
+  keep?: { node: string; entry: string; name: string };
+  options?: string[];
+}
+
+/** The kinds a report carries, in the order the app shows them. */
+export type DoctorKind = "duplicate_value" | "misfiled" | "similar_names" | "weak" | "mistyped" | "expired" | "expiring" | "stale";
+
+/** One finding of {@link vaultDoctorScan}. Which optional keys are present depends on `kind`. */
+export interface DoctorFinding {
+  kind: DoctorKind;
+  entries: DoctorEntry[];
+  /** duplicate_value: `exact`, or `probable` (equal once trimmed and a URL's host lowercased). */
+  match?: "exact" | "probable";
+  /** similar_names. */
+  similarity?: "separators" | "one_edit";
+  sameNode?: boolean;
+  /** weak, mistyped, and a JWT's expiry: the field (its id and label; never its value). */
+  field?: string;
+  fieldLabel?: string;
+  reasons?: string[];
+  reason?: "otpauth_uri" | "live_key_in_test" | "test_key_in_live";
+  /** expired / expiring: the date, from the manifest or from a JWT's own `exp`. */
+  expiresAt?: number;
+  source?: "manifest" | "jwt";
+  /** stale: when it last changed, and whether that was a rotation. */
+  lastChanged?: number;
+  basis?: "rotated" | "modified";
+  proposal?: DoctorProposal;
+}
+
+/** What {@link vaultDoctorScan} answers. */
+export interface DoctorReport {
+  now: number;
+  staleDays: number;
+  expiringDays: number;
+  nodesScanned: number;
+  entriesScanned: number;
+  valuesChecked: number;
+  /** Nodes not read (`what: "all"`) or read by name only (`what: "values"`), and why. */
+  skipped: { node: string; nodeLabel: string; reason: "locked" | "second_factor" | "not_listed"; what: "all" | "values" }[];
+  /** The scan stopped at its entry, time or findings limit. */
+  truncated: boolean;
+  counts: Record<DoctorKind, number>;
+  findings: DoctorFinding[];
+}
+
+/**
+ * The doctor's tidy-up scan (ADR-161, phase 1): read-only, the owner's login only. Every finding names entries and nodes and says why;
+ * none carries a value, a digest or a part of one. A move proposal carries the exact `entry.move` params, applied one by one through the
+ * entry inspector's Move dialog (which asks for its own second factor and Touch ID).
+ */
+export const vaultDoctorScan = (staleDays?: number, expiringDays?: number) =>
+  invoke<DoctorReport>("vault_doctor_scan", { staleDays, expiringDays });
+
+/** One move of a doctor plan, exactly as the scan's proposal carried it (`DoctorProposal.move`). */
+export type DoctorMove = { node: string; entry: string; to: string; generation: number };
+
+/** What {@link vaultDoctorApply} answers (ADR-169). Never a value. */
+export interface DoctorApplied {
+  /** Every move of the plan was applied. */
+  complete: boolean;
+  /** The moves applied, in plan order: each is what {@link entryMove} answers, plus its `index` in the plan. */
+  applied: (EntryMoved & { index: number })[];
+  /** Where the plan stopped, when a move after the first one failed (a failure at the first move is the call's error, and nothing moved). */
+  stopped?: { index: number; node: string; entry: string; to: string; code: string; message: string | null };
+  /** How many moves of the plan were not applied. */
+  notApplied: number;
+  audit?: string;
+}
+
+/**
+ * Apply every move of one doctor plan in one request (ADR-169). `moves` is the exact list the scan showed and the person confirmed;
+ * the broker re-checks every step against the vault as it is, asks for one fresh second factor and one Touch ID check for the whole plan
+ * (the proof signs the whole list), then moves each entry through `entry.move`'s crash-safe commit, stopping at the first that fails.
+ * The owner's login only; a stale generation is `conflict` and a taken name `entry_exists`, both before anything moves.
+ */
+export const vaultDoctorApply = (moves: DoctorMove[], reason?: string) =>
+  invoke<DoctorApplied>("vault_doctor_apply", { moves, reason });
+
+/**
+ * Replace one entry's tags (ADR-167): the whole set, `[]` clears it. The broker normalises each tag (trimmed, lower-cased, inner spaces
+ * to `-`; letters, digits and `- _ . : /`; at most 32 characters, at most 16 tags) and answers what it stored. The owner's sessions;
+ * metadata only. Echoes the node's new generation.
+ */
+export const entryTagSet = (node: string, entry: string, generation: number, tags: string[]) =>
+  invoke<{ node: string; entry: string; generation: number; tags: string[]; audit?: string }>("entry_tag_set", {
+    node,
+    entry,
+    generation,
+    tags,
+  });
+
+/** One entry of a merge suggestion (ADR-168). Never a value. */
+export interface MergeEntry {
+  entry: string;
+  ref: number;
+  name: string;
+}
+
+/** One merge suggestion (ADR-168): entries of one node that look like one thing. `key` addresses it for dismiss and auto. */
+export interface MergeSuggestion {
+  key: string;
+  kind: "identical" | "shared_value" | "similar_names";
+  reasons: Array<"same_values" | "shared_value" | "similar_names">;
+  /** Every entry holds the same values: `merge.auto` may merge it. */
+  identical: boolean;
+  /** The entry proposed to keep (the oldest). */
+  keep: string;
+  entries: MergeEntry[];
+  dismissed?: boolean;
+}
+
+/** What {@link mergeSuggestions} answers (ADR-168). */
+export interface MergeSuggestions {
+  node: string;
+  generation: number;
+  /** `false` when the node's own second factor is not open: compared by name only. */
+  valuesCompared: boolean;
+  truncated: boolean;
+  dismissedCount: number;
+  suggestions: MergeSuggestion[];
+}
+
+/** One merged group (ADR-168): each dropped entry with the audit id that undoes it. Never a value. */
+export interface MergePart {
+  keep: string;
+  merged: Array<{ entry: string; name: string; undo: string | null }>;
+  aliasesAdded: string[];
+  tagsAdded: string[];
+  key?: string;
+}
+
+/** What `merge_apply` and `merge_auto` answer (ADR-168): the group, the node and its new generation. */
+export interface MergeResult {
+  node: string;
+  keep: string;
+  merged: Array<{ entry: string; name: string; undo: string | null }>;
+  aliasesAdded: string[];
+  tagsAdded: string[];
+  generation: number;
+  key?: string;
+  audit?: string;
+}
+
+/** Merge suggestions inside one node (ADR-168). The owner's login only; read-only. */
+export const mergeSuggestions = (node: string, includeDismissed?: boolean) =>
+  invoke<MergeSuggestions>("merge_suggestions", { node, includeDismissed });
+
+/**
+ * Keep one entry and fold the others into it (ADR-168): their names become its aliases, their tags join its tags, and they are removed
+ * (each undoable for 7 days with {@link entryUndo} and the `undo` id). A fresh second factor (`two_factor_required` otherwise); a stale
+ * `generation` is `conflict`; a dropped entry with its own grant is `malformed_request`.
+ */
+export const mergeApply = (node: string, keep: string, drop: string[], generation: number) =>
+  invoke<MergeResult>("merge_apply", { node, keep, drop, generation });
+
+/**
+ * Merge one suggestion, only when its values are all identical (ADR-168). A fresh second factor.
+ * @no-ui-caller no screen yet (ADR-168): the app offers Merge and Dismiss in Tidy up; this one is the command line's `credmgr merge auto`.
+ */
+export const mergeAuto = (node: string, key: string, generation: number) =>
+  invoke<MergeResult>("merge_auto", { node, key, generation });
+
+/**
+ * Every open identical suggestion (ADR-168): a dry run unless `apply` is `true` (then `generation` and a fresh second factor).
+ * @no-ui-caller no screen yet (ADR-168): the app offers Merge and Dismiss in Tidy up; this one is the command line's `credmgr merge auto-all`.
+ */
+export const mergeAutoAll = (node: string, apply?: boolean, generation?: number) =>
+  invoke<{
+    node: string;
+    dryRun: boolean;
+    planned: MergeSuggestion[];
+    merged?: MergePart[];
+    skipped: Array<{ key: string; reason: string; entries: MergeEntry[] }>;
+    generation: number;
+    audit?: string;
+  }>("merge_auto_all", { node, apply, generation });
+
+/** Remember that a suggestion was rejected (ADR-168): it is not suggested again until undismissed or restored. */
+export const mergeDismiss = (node: string, key: string) =>
+  invoke<{ node: string; key: string; dismissed: true; generation: number; audit?: string }>("merge_dismiss", { node, key });
+
+/**
+ * Forget one dismissal (ADR-168).
+ * @no-ui-caller no screen yet (ADR-168): the app offers Merge and Dismiss in Tidy up; this one is the command line's `credmgr merge undismiss`.
+ */
+export const mergeUndismiss = (node: string, key: string) =>
+  invoke<{ node: string; key: string; restored: boolean; generation: number; audit?: string }>("merge_undismiss", { node, key });
+
+/**
+ * What the node remembers as dismissed (ADR-168), newest first; `name` is `null` for an entry no longer in the node.
+ * @no-ui-caller no screen yet (ADR-168): the app offers Merge and Dismiss in Tidy up; this one is the command line's `credmgr merge dismissed`.
+ */
+export const mergeDismissedList = (node: string) =>
+  invoke<{ node: string; dismissed: Array<{ key: string; entries: Array<{ entry: string; name: string | null }>; dismissedAt: number }> }>(
+    "merge_dismissed_list",
+    { node },
+  );
+
+/**
+ * Forget every dismissal on the node (ADR-168).
+ * @no-ui-caller no screen yet (ADR-168): the app offers Merge and Dismiss in Tidy up; this one is the command line's `credmgr merge restore-all`.
+ */
+export const mergeRestoreAll = (node: string) =>
+  invoke<{ node: string; restored: number; generation: number; audit?: string }>("merge_restore_all", { node });
+
 /** What `utilGenerate` answers (ADR-087). */
 export type GeneratedPassword = {
   /** Made in the broker. Show it masked; it enters a field only through the broker, never the clipboard unmasked. */
@@ -1023,14 +1753,16 @@ export type GeneratedPassword = {
 
 /**
  * Makes a password in the broker, never in page JavaScript. Every option is optional: `length` 8-128
- * (default 20), `symbols` (default on), `pronounceable` (default off). Needs `create` or `update`.
+ * (default 20), `symbols` (default on), `pronounceable` (default off), `hex` (default off; lower-case hex,
+ * refused with `pronounceable` or `symbols: true`). Needs `create` or `update`.
  * Not an MCP tool.
  */
 export const utilGenerate = (
   length?: number,
   symbols?: boolean,
   pronounceable?: boolean,
-) => invoke<GeneratedPassword>("util_generate", { length, symbols, pronounceable });
+  hex?: boolean,
+) => invoke<GeneratedPassword>("util_generate", { length, symbols, pronounceable, hex });
 
 // ---------------------------------------------------------------------------
 // The shell's own commands and events
@@ -1154,6 +1886,93 @@ export interface IconReceipt {
  */
 export const appIconSet = (icon: AppIconId) => invoke<IconReceipt>("app_icon_set", { icon });
 
+// ─────────────────────────────── The switchboard (ADR-155) ───────────────────────────────
+
+/** One setting as `settings.list` / `settings.get` describe it (`credmgr_core::settings`). */
+export interface SettingView {
+  id: string;
+  scope: "vault" | "node";
+  group: string;
+  title: string;
+  purpose: string;
+  ui: string;
+  stored: string;
+  values: string;
+  default: unknown;
+  value: unknown;
+  risk: "security" | "cosmetic";
+  /** The rule for this caller: `direct`, `direct when stricter; approval when weaker`, or `read only`. */
+  you: string;
+  recentChanges?: SettingChangeRecord[];
+}
+
+/** One applied change (`global.policy.settingsHistory`). */
+export interface SettingChangeRecord {
+  id: string;
+  setting: string;
+  node?: string;
+  from: unknown;
+  to: unknown;
+  by: string;
+  at: number;
+  request?: string;
+  reason: string;
+  reverts?: string;
+}
+
+/** What `settings.set` / `settings.revert` answer. */
+export interface SettingSetResult {
+  applied: boolean;
+  change: "same" | "cosmetic" | "strengthens" | "weakens";
+  changeId?: string;
+  id: string;
+  from?: unknown;
+  to?: unknown;
+  value?: unknown;
+  /** `pending` when an agent's weakening change waits for the owner. */
+  state?: "pending";
+  request?: string;
+  expiresIn?: number;
+}
+
+/** An agent's request as `settings.request_get` / `settings.request_list` describe it. */
+export interface SettingRequestView {
+  request: string;
+  id: string;
+  node: string | null;
+  from: unknown;
+  to: unknown;
+  reason: string;
+  state: "pending" | "approved" | "denied" | "expired";
+  expiresIn: number;
+  requestedAt: number;
+  changeId: string | null;
+  cwd?: string | null;
+  /** ADR-164: the agent token that asked, by label and public id; to the owner only. */
+  agentToken?: { id: string; label: string };
+}
+
+export const settingsList = (node?: string) =>
+  invoke<{ caller: string; node: string | null; settings: SettingView[]; note: string; kb: string }>("settings_list", { node });
+export const settingsGet = (id: string, node?: string) => invoke<SettingView>("settings_get", { id, node });
+export const settingsSet = (id: string, value: unknown, reason: string, node?: string) =>
+  invoke<SettingSetResult>("settings_set", { id, value, reason, node });
+/**
+ * @no-ui-caller no screen yet (rc.2 backlog): the switchboard shows each setting and its history; a revert is `credmgr settings revert` or the MCP tool credmgr_settings_revert.
+ */
+export const settingsRevert = (change: string, reason?: string) => invoke<SettingSetResult>("settings_revert", { change, reason });
+/**
+ * @no-ui-caller the app lists waiting setting requests with settings_request_list, which carries each request whole; settings_request_get serves the CLI and MCP.
+ */
+export const settingsRequestGet = (request: string) => invoke<SettingRequestView>("settings_request_get", { request });
+export const settingsRequestList = () => invoke<{ requests: SettingRequestView[] }>("settings_request_list", {});
+export const settingsRequestDecide = (request: string, approve: boolean) =>
+  invoke<{ request: string; state: string; applied: boolean; changeId?: string }>("settings_request_decide", { request, approve });
+/**
+ * @no-ui-caller the settings knowledge base is for AI clients (MCP credmgr_settings_kb) and `credmgr settings kb`; the app's own Help is generated from the same source.
+ */
+export const settingsKb = () => invoke<{ markdown: string; format: string }>("settings_kb", {});
+
 /** What `captureProtectionSet` answers. */
 export interface CaptureReceipt {
   /** The window is now hidden from screen capture and screen sharing, as the shell set it. The developer override `CREDMGR_CONTENT_PROTECTION=off` wins, so this can be `false` after asking for `true`. */
@@ -1169,6 +1988,17 @@ export interface CaptureReceipt {
  * `false`; turning it off must first be confirmed in the app, because the window then appears in screenshots, recordings and screen shares.
  */
 export const captureProtectionSet = (enabled: boolean) => invoke<CaptureReceipt>("capture_protection_set", { enabled });
+
+/** What `windowState` answers. */
+export interface WindowState {
+  /** The window is in the Dock. */
+  minimized: boolean;
+  /** The window is shown (false when it or the whole app is hidden). A window covered by another, or on a display that is asleep, is still visible. */
+  visible: boolean;
+}
+
+/** Whether the window is minimised or hidden, or only out of sight. Not a broker op, no login, no vault data. */
+export const windowState = () => invoke<WindowState>("window_state");
 
 /**
  * Events the shell pushes to the page, for `listen()` from `@tauri-apps/api/event`
@@ -1209,3 +2039,390 @@ export const homeDir = (): Promise<string> => shellHomeDir();
 // Imports are hoisted: they sit with the two wrappers they serve so this section stays one self-contained, append-only block.
 import { getVersion as shellGetVersion } from "@tauri-apps/api/app";
 import { homeDir as shellHomeDir } from "@tauri-apps/api/path";
+
+// ---------------------------------------------------------------------------
+// Touch ID, presence and sealed entries (ADR-098)
+// ---------------------------------------------------------------------------
+
+/** What this Mac can do for Touch ID. Local to the shell; never prompts. */
+export interface PresenceProbe {
+  secureEnclave: boolean;
+  /** `touchid`, `faceid`, `other` or `none`. */
+  biometry: string;
+  /** A device password is set, so the prompt can fall back to it. */
+  passcode: boolean;
+  /** This Mac already holds a presence key. */
+  keyOnThisMac: boolean;
+}
+export const presenceProbe = () => invoke<PresenceProbe>("presence_probe");
+
+/** Create this Mac's Secure Enclave key (no prompt); answers its public half (base64) for {@link presenceEnrol}. */
+export const presenceKeyCreate = () => invoke<string>("presence_key_create");
+
+export interface PresenceStatus {
+  helper: boolean;
+  secureEnclave: boolean;
+  biometry: string;
+  passcode: boolean;
+  enrolled: Array<{ id: string; label: string; createdAt: number }>;
+  /** Unlocking this vault with Touch ID is set up. */
+  touchIdUnlock: boolean;
+}
+export const presenceStatus = () => invoke<PresenceStatus>("presence_status");
+
+/**
+ * ADR-150: confirm it is the owner before a secret is shown again. With `passphrase`, the vault passphrase (`wrong_passphrase`
+ * counts in the unlock back-off, then `rate_limited`); without it, Touch ID: the broker answers `presence_required` and the shell
+ * shows the prompt and attaches the proof itself. When no presence key is enrolled that `presence_required` reaches the caller,
+ * which then asks for the passphrase. Opens the session's trust window (`expiresIn` seconds; one request in every-time mode).
+ */
+export const sessionConfirm = (passphrase?: string) =>
+  invoke<{ confirmed: true; method: "passphrase" | "presence"; expiresIn: number }>("session_confirm", { passphrase });
+
+/** Ask the broker for a presence challenge. The shell does this itself when a request needs presence.
+ *  `possession: true` (ADR-148) asks for the challenge a key being enrolled signs; the shell does that too.
+ * @no-ui-caller the shell asks for a presence challenge itself when the broker wants Touch ID (presence.rs); the page never needs one.
+ */
+export const presenceChallenge = (op: string, params?: Record<string, unknown>, possession?: boolean) =>
+  invoke<{ nonce: string; digest: string; expiresIn: number; reason: string }>("presence_challenge", {
+    op,
+    params,
+    possession,
+  });
+
+/** Enrol this Mac's presence key. The first needs a fresh second factor (when one is on); later ones need Touch ID. */
+export const presenceEnrol = (publicKey: string, label?: string) =>
+  invoke<{ id: string; label: string; createdAt: number }>("presence_enrol", { publicKey, label });
+
+export const presenceUnenrol = (id: string) => invoke<{ removed: boolean }>("presence_unenrol", { id });
+
+/** Turn on unlocking with Touch ID (the vault must be open). */
+export const deviceEnrol = () => invoke<{ touchIdUnlock: true }>("device_enrol");
+export const deviceRemove = () => invoke<{ touchIdUnlock: false }>("device_remove");
+
+// ---------------------------------------------------------------------------
+// Machine lock (ADR-165): the passphrase wrap sealed to a device key file on this Mac
+// ---------------------------------------------------------------------------
+
+/**
+ * What `keystore.status` answers (owner session only; agents are refused). `bound`: the passphrase wrap on disk is sealed, which
+ * is the only place "bound" lives. `tier`: `"file"` (a 0600 key file outside the vault folder) or `"off"`; never the Secure
+ * Enclave (`secureEnclave` is always false in this version). `opensHere`: the sealed wrap names the device key this Mac holds.
+ * `protects` / `doesNotProtect`: the plain words the screens show, from the broker so they cannot drift.
+ */
+export interface KeystoreStatus {
+  bound: boolean;
+  tier: "file" | "off";
+  secureEnclave: false;
+  opensHere: boolean;
+  sealedKeyId: string | null;
+  damaged: boolean;
+  deviceKeyPresent: boolean;
+  deviceKeyId: string | null;
+  deviceKeyUnreadable: boolean;
+  /** The key file's mode lets others read it (the broker narrows it to 0600 the next time it reads it). */
+  deviceKeyModeOpen?: boolean;
+  /** The key file belongs to another user than its folder's. */
+  deviceKeyForeignOwner?: boolean;
+  recoveryUnlock: boolean;
+  /** This Mac recorded the vault as bound (review P0-1). */
+  markedBound?: boolean;
+  /** Recorded as bound, yet the passphrase file on disk is plain: a bind was interrupted, or an old plain file was put back. */
+  plainWhileBound?: boolean;
+  /** Projects still on a key from before the lock was turned on (bind again to replace them). */
+  preBindNodes?: string[];
+  /** ADR-165 M5: this Mac's bind record names this vault folder under another vault id (`vault.id` edited or removed, or the folder put back to an older copy). Reported, never repaired. */
+  recordDetached?: boolean;
+  /** A plain-words warning to show beside the row when any of the three above is set (`null` otherwise). */
+  warning?: string | null;
+  protects: string;
+  doesNotProtect: string;
+}
+
+/**
+ * What `keystore.bind`'s `prepare` answers (review N1): the status, `changed: false` (nothing durable was written), and the NEW recovery
+ * code the commit will make the only one that works (`newRecoveryCode`, shown once, never kept), which the commit takes typed back within
+ * `expiresIn` seconds. A vault already bound answers `already: true`, no code, and the projects the commit will re-key (`nodesToRekey`).
+ */
+export type KeystorePrepared = KeystoreStatus & {
+  phase: "prepare";
+  changed: false;
+  already: boolean;
+  newRecoveryCode: string | null;
+  expiresIn: number;
+  nodesToRekey?: string[];
+};
+
+/**
+ * What `keystore.bind`'s `commit` / `cancel` and `keystore.unbind` answer: the new status, whether anything changed, and (bind) whether a
+ * key was made. A commit that changed something is a root rotation with every project re-keyed (review P0-1); the code it made live is
+ * the one typed back, so it is not sent again. It carries `completionPending` / `meta.vaultLocked` as {@link RotateRootResult} does.
+ */
+export type KeystoreChange = KeystoreStatus & {
+  changed: boolean;
+  phase?: "commit" | "cancel";
+  deviceKeyCreated?: boolean;
+  nodesRekeyed?: string[];
+  rekeyFailed?: Array<{ node: string; reason: string }>;
+  /** The sealed-entries ("orphan") key pair was replaced in the same rotation. */
+  orphanKeyReplaced?: boolean;
+  /** The rotation's own answer (without its `recoveryCode`: the owner typed it back). */
+  rotation?: Omit<RotateRootResult, "recoveryCode">;
+  completionPending?: boolean;
+};
+
+export const keystoreStatus = () => invoke<KeystoreStatus>("keystore_status");
+/**
+ * Seal the passphrase wrap to this Mac, phase one (review N1): needs an open vault, the vault `passphrase` and the CURRENT `recoveryCode`
+ * (the way back on a new Mac; a wrong one is `recovery_code_mismatch` and counts in the unlock back-off). Neither is kept. Changes
+ * nothing; answers the NEW code in `newRecoveryCode`.
+ */
+/**
+ * The one `keystore_bind` call, every phase (the drift guards want one call site per command, with its wire keys).
+ * @no-ui-caller the app calls it only through keystoreBindPrepare, keystoreBindCommit and keystoreBindCancel just below (Settings > Security > Machine lock).
+ */
+export const keystoreBind = (phase: "prepare" | "commit" | "cancel", passphrase?: string, recoveryCode?: string) =>
+  invoke<KeystorePrepared | KeystoreChange>("keystore_bind", { phase, passphrase, recoveryCode });
+export const keystoreBindPrepare = (passphrase: string, recoveryCode: string) =>
+  keystoreBind("prepare", passphrase, recoveryCode) as Promise<KeystorePrepared>;
+/**
+ * Phase two: the new code typed back (omitted for a vault that was already bound). Only now is the lock turned on. A code that is not the
+ * one shown is `recovery_code_mismatch` (not counted; the prepared bind still waits); a missing, expired or overtaken one is
+ * `malformed_request`, and the person starts again.
+ */
+export const keystoreBindCommit = (newRecoveryCode?: string) =>
+  keystoreBind("commit", undefined, newRecoveryCode || undefined) as Promise<KeystoreChange>;
+/** Forget a prepared bind (the dialog was closed). Nothing durable was changed by it. */
+export const keystoreBindCancel = () => keystoreBind("cancel") as Promise<KeystoreChange>;
+/**
+ * Turn the machine lock off. Needs a fresh second factor where one is on (`two_factor_required`: verify with
+ * {@link vaultGateVerify} and repeat), Touch ID where a presence key is enrolled (the shell attaches the proof itself), and the vault
+ * `passphrase` where neither is set up (without it the broker answers `malformed`, naming `params.passphrase`).
+ */
+export const keystoreUnbind = (passphrase?: string) => invoke<KeystoreChange>("keystore_unbind", passphrase ? { passphrase } : {});
+
+// ---------------------------------------------------------------------------
+// Start at login (ADR-156): the shell's own, local commands - no broker op
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the launch agent that starts `credmgrd` at login is in place (macOS only; elsewhere every call rejects with
+ * `platform_unsupported`). `installed`: `~/Library/LaunchAgents/com.credmgr.brokerd.plist` exists; `current`: it is exactly what
+ * {@link loginAgentInstall} would write now; `loaded`: launchd has it in this user's `gui/<uid>` domain; `daemon`: the absolute path
+ * of the `credmgrd` it would start (`null` when none was found).
+ */
+export interface LoginAgentStatus {
+  installed: boolean;
+  current: boolean;
+  loaded: boolean;
+  daemon: string | null;
+}
+export const loginAgentStatus = () => invoke<LoginAgentStatus>("login_agent_status");
+
+/**
+ * Write the launch agent (pointing at the bundled `credmgrd` by absolute path) and load it into this user's launchd domain, which
+ * starts the broker now and at every login. Never root. Idempotent: an agent already in place and loaded is left alone.
+ * Rejects with `login_agent_failed` when no `credmgrd` was found or launchd said no.
+ */
+export const loginAgentInstall = () => invoke<LoginAgentStatus>("login_agent_install");
+
+/** Unload the launch agent (which stops the broker it started, and so locks the vault) and remove its file. Idempotent. */
+export const loginAgentUninstall = () => invoke<LoginAgentStatus>("login_agent_uninstall");
+
+// ---------------------------------------------------------------------------
+// Restore from a backup (ADR-166): the shell's own, local command - no broker op
+// ---------------------------------------------------------------------------
+
+/** What {@link backupRestore} wrote. `counter`: the generation counter was `restored` (an older backup), an existing one `keptExisting`, a one-time restore marker was written (`acceptMarker`, ADR-148 amendment), or `notInArchive`. */
+export interface RestoreDone {
+  target: string;
+  stateDir: string;
+  files: number;
+  bytes: number;
+  counter: "restored" | "keptExisting" | "notInArchive" | "acceptMarker" | (string & {});
+  /** `false` for an archive older than the complete format: no notes, sealed nodes, removed entries or history in it. */
+  complete: boolean;
+}
+
+/**
+ * Restore a backup archive (`archive`, a file path) into an empty folder (`target`; left out, the vault's own folder, which must then be
+ * empty). The shell runs the bundled `credmgr restore --json` with the passphrase on its stdin, so the app and the terminal share one
+ * restore and one set of refusals: `broker_running` while a broker answers on the vault's socket (which is always, while this window is
+ * unlocked), `restore_target_not_empty`, `restore_failed`, `restore_unavailable`. Local: no broker op, no session, no audit record.
+ */
+export const backupRestore = (archive: string, passphrase: string, target?: string) =>
+  invoke<RestoreDone>("backup_restore", { archive, passphrase, target });
+
+/**
+ * The sealed ("orphaned") entries: names only.
+ * @no-ui-caller the app reads sealed entries through entry_list on the orphaned node (bridge-source.ts) and opens them with orphan_reveal; orphan_list serves `credmgr orphan ls`.
+ */
+export const orphanList = () =>
+  invoke<{ entries: Array<{ entry: string; name: string; ref: number; type: string; modified: number }> }>(
+    "orphan_list",
+  );
+
+/** Read one sealed entry. Costs a fresh second factor and a Touch ID check every time. */
+export const orphanReveal = (entry: string, fieldIds?: string[]) =>
+  invoke<EntryReveal>("orphan_reveal", { entry, fieldIds });
+
+// ---------------------------------------------------------------------------
+// Agents: Settings -> Agents (ADR-141, ADR-142, ADR-143). Local to the shell; no broker call.
+// ---------------------------------------------------------------------------
+
+/** One agent client on this Mac. `state`: `not_found`, `ready` (present, not wired), `connected`, `other_entry` (a different credmgr entry is there), `unreadable`. */
+export interface AgentClientRow {
+  client: "claude-code" | "claude-desktop" | "cursor" | "vscode" | "windsurf";
+  label: string;
+  path: string;
+  state: "not_found" | "ready" | "connected" | "other_entry" | "unreadable";
+  /** Why it is unreadable, when it is. */
+  detail: string | null;
+  /** CredMgr may offer to write this client's file. False for Claude Code (its file is live state): it shows a command instead. */
+  writable: boolean;
+  container: string;
+}
+export interface AgentDetect {
+  /** The `credmgr` binary a snippet carries, and whether it was found on this Mac. */
+  binary: string;
+  binaryFound: boolean;
+  clients: AgentClientRow[];
+  claudeCodeCommand: string;
+}
+export const agentDetect = () => invoke<AgentDetect>("agent_detect");
+
+/** The text to copy for a client (`generic` for any other). For Claude Code `command` is the one-line alternative. */
+export const agentSnippet = (client: string) =>
+  invoke<{ client: string; snippet: string; command: string | null }>("agent_snippet", { client });
+
+export interface AgentPlan {
+  client: string;
+  label: string;
+  action: "connect" | "disconnect";
+  path: string;
+  exists: boolean;
+  /** Nothing to do: already connected (or not connected). */
+  unchanged: boolean;
+  diff: Array<{ kind: " " | "+" | "-"; text: string }>;
+  /** The copy taken before the write, e.g. `mcp.json.credmgr-backup-<time>`; null when the file does not exist yet. */
+  backupName: string | null;
+  /** Pass to {@link agentApply}: it writes only if the file is still what the diff showed. */
+  token: string;
+}
+/** What connecting would change. Writes nothing. */
+export const agentPlan = (client: string, action: "connect" | "disconnect") =>
+  invoke<AgentPlan>("agent_plan", { client, action });
+
+/** Write the planned change, from the button in the diff dialog only. Backs the file up first and reads it back. */
+export const agentApply = (client: string, action: "connect" | "disconnect", token: string) =>
+  invoke<{ written: boolean; path: string; backup?: string | null; restart?: string }>("agent_apply", {
+    client,
+    action,
+    token,
+  });
+
+/** The Vault Protocol prompt (`format: "prompt"`) or the text of CREDMGR.md (`"md"`), for a node. Names and structure only. */
+export const agentPrompt = (node: string, reachable: string[], level: SecurityLevel, format: "prompt" | "md") =>
+  invoke<{ text: string; format: string }>("agent_prompt", { node, reachable, level, format });
+
+// -- 2.0.0 broker features (ADR-130…134) ---------------------------------------------------------
+
+/**
+ * Replace a node's key and re-seal everything sealed to the old one. Costs a fresh second factor and Touch ID.
+ * @no-ui-caller no screen yet (rc.2 backlog): a new key for a node is `credmgr node rekey` (ADR-130).
+ */
+export const nodeRekey = (node: string) =>
+  invoke<{ node: string; publicKey: string; entries: number; note: boolean; history: number; removed: number }>(
+    "node_rekey",
+    { node },
+  );
+
+/** The word `orphan_destroy` wants in `confirm`: the person says they mean it. */
+export const DESTROY_CONFIRM_WORD = "destroy-sealed-entries";
+
+/**
+ * Permanently destroy sealed entries and the archives behind them. `count` is the number of entries the
+ * person was shown (the broker compares it); `entries` names ids, absent means every sealed entry. Costs a
+ * fresh second factor and Touch ID. Cannot be undone.
+ * @no-ui-caller permanent deletion stays a deliberate command-line step by design (`credmgr orphan destroy` with the count shown and a typed confirmation word, HELP "orphan-destroy").
+ */
+export const orphanDestroy = (confirm: string, count: number, entries?: string[]) =>
+  invoke<{ destroyed: number; sealsForgotten: number; archivesRemoved: number }>("orphan_destroy", {
+    confirm,
+    count,
+    entries,
+  });
+
+/**
+ * Entries whose field VALUES contain `term`: node, id and name only - never a value. Needs `reveal`; rate limited.
+ * @no-ui-caller no screen yet (rc.2 backlog): a search of values needs the reveal capability and is rate limited; `credmgr search --content`.
+ */
+export const searchContent = (term: string, node?: string) =>
+  invoke<{ results: Array<{ node: string; id: string; name: string }>; truncated: boolean }>("search_content", {
+    term,
+    node,
+  });
+
+/**
+ * An age-encrypted archive of a node, built inside the broker (base64). Give a passphrase (12+ characters)
+ * or age recipients. Costs a fresh second factor and Touch ID. 2FA seeds are left out and counted.
+ * @no-ui-caller no screen yet (rc.2 backlog): the archive comes back as base64 and the app has no save-to-file path (no file plugin, ADR-166 §7); `credmgr node export`.
+ */
+export const nodeExport = (node: string, passphrase?: string, recipients?: string[]) =>
+  invoke<{ node: string; format: "age-v1"; entries: number; omittedSeeds: number; archive: string }>(
+    "node_export",
+    { node, passphrase, recipients },
+  );
+
+// -- A node's own second factor (ADR-135) ----------------------------------------------------
+
+/**
+ * Begin giving a project a second factor of its own. Not for `global` (use the vault's own `vaultGateEnroll*`).
+ * @no-ui-caller no screen yet (rc.2 backlog): a project's own second factor (ADR-135) is set up with `credmgr node gate enroll`.
+ */
+export const nodeGateEnrollBegin = (node: string) =>
+  invoke<{ node: string; otpauthUri: string }>("node_gate_enroll_begin", { node });
+
+/**
+ * Confirm it with one valid code; the project's own ten recovery codes come back once.
+ * @no-ui-caller no screen yet (rc.2 backlog): a project's own second factor (ADR-135) is set up with `credmgr node gate enroll`.
+ */
+export const nodeGateEnrollConfirm = (node: string, code: string) =>
+  invoke<{ node: string; recoveryCodes: string[] }>("node_gate_enroll_confirm", { node, code });
+
+/**
+ * Step up for one project: its own code opens that project (and no other) for five minutes.
+ * @no-ui-caller no screen yet (rc.2 backlog): stepping up with a project's own second factor (ADR-135) is `credmgr node gate verify`.
+ */
+export const nodeGateVerify = (node: string, code: string) =>
+  invoke<{ node: string; elevated: true; expiresIn: number }>("node_gate_verify", { node, code });
+
+/**
+ * Remove a project's own second factor. With neither optional it needs its fresh code and Touch ID; with
+ * the vault `passphrase` and the root `recoveryCode` together it is the last door for a lost authenticator.
+ * @no-ui-caller no screen yet (rc.2 backlog): removing a project's own second factor (ADR-135) is `credmgr node gate remove`.
+ */
+export const nodeGateRemove = (node: string, passphrase?: string, recoveryCode?: string) =>
+  invoke<{ node: string; removed: boolean }>("node_gate_remove", { node, passphrase, recoveryCode });
+
+export interface AuditReport {
+  from: number;
+  to: number;
+  node: string | null;
+  records: number;
+  decisions: { allow: number; deny: number; other: number };
+  byAction: Array<{ action: string; count: number; allow: number; deny: number }>;
+  byActor: Array<{ actor: string; count: number; allow: number; deny: number }>;
+  byNode: Array<{ node: string; count: number; allow: number; deny: number }>;
+  denials: {
+    total: number;
+    reasons: Array<{ action: string; reason: string; count: number }>;
+    recent: Array<{ id: string; timestamp: number; actor: string; action: string; node: string | null; reason: string }>;
+  };
+  presence: { uses: number; byOp: Array<{ op: string; count: number }>; refused: number };
+  chain: { months: string[]; verified: boolean };
+}
+
+/** A summary of the audit log for `[from, to)` (unix seconds). No values, no entry names. */
+export const auditReport = (from: number, to: number, node?: string) =>
+  invoke<AuditReport>("audit_report", { from, to, node });

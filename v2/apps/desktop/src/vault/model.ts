@@ -14,7 +14,7 @@
  */
 import { errorCode, isSessionEnded } from "./errors";
 import type { LockResult } from "./source";
-import type { AuthLite, ModelSource } from "./source";
+import type { AuthLite, ModelSource, RecoverOutcome } from "./source";
 import { emptyView, type DEntry, type DEntryDetail, type DNode, type DPending, type DSealed, type DView, type ModelStatus, type RefreshSpec, type UnreadableCode } from "./types";
 
 export interface ModelOptions {
@@ -95,6 +95,12 @@ export class VaultModel {
   status: ModelStatus = "starting";
   /** How many agent requests were waiting for a person when the last `boot()` asked (ADR-090). A hint for the Lock screen's first look, never a view of them. */
   pendingApprovals = 0;
+  /** ADR-098: the last `boot()` heard that Touch ID unlock is set up, so the Lock screen offers it. */
+  touchIdUnlock = false;
+  /** ADR-156: cross-node anomaly alarms the owner has not acknowledged, as the last `vault.status` said (boot and the liveness check). A count only. */
+  anomaliesUnseen = 0;
+  /** ADR-163: the last `boot()` heard that this vault can be opened with its recovery code, so the Lock screen offers "Forgot passphrase?". */
+  recoveryUnlock = false;
   /** True iff the last login went through the second-factor step (a confirmed gate always makes unlock ask for it). */
   gateConfirmed = false;
 
@@ -121,6 +127,10 @@ export class VaultModel {
   readonly #details = new Map<string, DEntryDetail>();
   /** Bumped every time the held values are wiped (window hidden, node changed, entry closed, lock), so a screen can tell "my value was dropped" from "I never asked". */
   #wipes = 0;
+  /** Presence-gated requests THIS page started that have not settled (ADR-149): the user is at the Touch ID sensor, and the system sheet takes focus. */
+  #presenceInFlight = 0;
+  /** Until when (model clock) a `blurred` event is still read as the sheet's focus hand-back, after the last presence-gated request settled. */
+  #presenceGraceUntil = 0;
   /** The tail of the reads that publish a view.  They run one at a time, each starting from the view the one before it left. */
   #queue: Promise<unknown> = Promise.resolve();
 
@@ -187,6 +197,9 @@ export class VaultModel {
     // not just the status.  (boot() runs again from Retry and from a screen that lost the broker; the model it finds may still
     // hold the session that was just lost.)
     this.pendingApprovals = auth.pendingApprovals ?? 0;
+    this.touchIdUnlock = auth.touchIdUnlock === true;
+    this.anomaliesUnseen = auth.anomaliesUnseen ?? 0;
+    this.recoveryUnlock = auth.recoveryUnlock === true;
     if (!auth.initialized) this.clear("uninitialized");
     else if (auth.locked || !auth.authenticated) this.clear("locked");
     else {
@@ -216,11 +229,49 @@ export class VaultModel {
     await this.#opened();
   }
 
+  /**
+   * ADR-098: unlock with Touch ID.  Resolves when the vault is open and loaded.  Rejects with the bridge's error: a
+   * dismissed prompt is `presence_cancelled`, a vault with no Touch ID unlock is `presence_failed` (reason `not_enrolled`),
+   * and `two_factor_required` still asks for the code.
+   */
+  async unlockWithTouchId(): Promise<void> {
+    try {
+      if (!this.source.unlockWithTouchId) throw { source: "bridge", code: "presence_unavailable", message: "This source has no Touch ID." };
+      await this.source.unlockWithTouchId();
+    } catch (e) {
+      if (errorCode(e) === "two_factor_required") this.gateConfirmed = true;
+      throw e;
+    }
+    this.gateConfirmed = false;
+    await this.#opened();
+  }
+
   /** Second-factor step after `two_factor_required`.  Resolves when the vault is open and loaded. */
   async gateVerify(code: string): Promise<void> {
     await this.source.gateVerify(code);
     this.gateConfirmed = true;
     await this.#opened();
+  }
+
+  /**
+   * ADR-163, "Forgot passphrase?": the recovery code opens the locked vault, `newPassphrase` replaces the forgotten one and a NEW
+   * recovery code comes back (once: the caller shows it and drops it).  Resolves with the vault open and loaded, unless
+   * `completionPending` (the rotation committed but its last file moves wait for the next unlock): then the model stays locked and the
+   * NEW passphrase opens it.  Rejects with the bridge's error: `two_factor_required` (ask for the factor, call again with it),
+   * `recovery_code_mismatch`, `gate_verification_failed`, `rate_limited`, `not_found` (no recovery wrap on this vault).
+   */
+  async recoverWithCode(recoveryCode: string, newPassphrase: string, secondFactor?: string): Promise<RecoverOutcome> {
+    if (!this.source.recoverWithCode) throw { source: "bridge", code: "not_wired", message: "This source cannot open a vault with its recovery code." };
+    let r: RecoverOutcome;
+    try {
+      r = await this.source.recoverWithCode(recoveryCode, newPassphrase, secondFactor);
+    } catch (e) {
+      if (errorCode(e) === "two_factor_required") this.gateConfirmed = true;
+      throw e;
+    }
+    this.gateConfirmed = !!secondFactor;
+    if (!r.completionPending) await this.#opened();
+    return r;
   }
 
   async #opened(): Promise<void> {
@@ -265,6 +316,7 @@ export class VaultModel {
     this.#wipes++;
     this.#epoch++; // every read still in flight belongs to the login that just ended
     this.#revealing.clear();
+    this.anomaliesUnseen = 0; // a count for the owner's login: it goes with the login, and the next one asks again
     if (this.options.clearViewOnLock) {
       this.#setView(emptyView());
       this.generation = {};
@@ -294,6 +346,15 @@ export class VaultModel {
     }
     if (this.status !== "unlocked") return; // the user locked, or another call noticed, while this one was in flight
     if (auth.locked || !auth.authenticated) this.clear();
+    else this.setAnomaliesUnseen(auth.anomaliesUnseen ?? 0);
+  }
+
+  /** ADR-156: publish a new unseen-alarm count (from a status answer, or 0 once the owner acknowledged). Emits only on a change. */
+  setAnomaliesUnseen(n: number): void {
+    const next = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+    if (next === this.anomaliesUnseen) return;
+    this.anomaliesUnseen = next;
+    this.#emit();
   }
 
   // ─────────────────────────────── reads ───────────────────────────────
@@ -545,6 +606,44 @@ export class VaultModel {
 
   // ─────────────────────────────── plaintext ───────────────────────────────
 
+  /** How long after a presence-gated request settles a `blurred` event is still absorbed (the focus-return ordering of the system sheet). */
+  static readonly PRESENCE_GRACE_MS = 1500;
+
+  /** How many presence-gated requests this page has in flight right now (ADR-149). */
+  get presenceInFlight(): number {
+    return this.#presenceInFlight;
+  }
+
+  /**
+   * Run a presence-gated call (`totp.seed`, `orphan.reveal`: the shell shows the Touch ID sheet).  While it runs, and for
+   * {@link PRESENCE_GRACE_MS} after it settles, {@link windowInactive} does not wipe on `blurred`.  Counter decremented in `finally`.
+   */
+  async withPresence<T>(call: () => Promise<T>): Promise<T> {
+    this.#presenceInFlight++;
+    try {
+      return await call();
+    } finally {
+      this.#presenceInFlight--;
+      this.#presenceGraceUntil = this.options.now() + VaultModel.PRESENCE_GRACE_MS;
+    }
+  }
+
+  /** True when a `blurred` event should be absorbed: a presence-gated request of this page is in flight or only just settled. */
+  presenceShielded(): boolean {
+    return this.#presenceInFlight > 0 || this.options.now() < this.#presenceGraceUntil;
+  }
+
+  /**
+   * The shell reported the window inactive (ADR-149).  Wipes every revealed value and returns `true`, except for reason `blurred` while a
+   * presence-gated request of this page is in flight (or just settled): then nothing is wiped and it returns `false`.  `minimized`,
+   * `hidden` and any unknown reason always wipe; lock is a separate path (`clear()`) and always wipes.
+   */
+  windowInactive(reason: unknown): boolean {
+    if (reason === "blurred" && this.presenceShielded()) return false;
+    this.wipeSecrets();
+    return true;
+  }
+
   /**
    * Fetch one field's value into the private store for `windowMs` (default {@link ModelOptions.revealWindowMs}).
    * `field` is the field's id (`f_...`), or its position for the example data.
@@ -553,7 +652,10 @@ export class VaultModel {
    * dropped on arrival, never parked in memory.  (Use the boolean, or `plain()`, before telling the user a value is showing.)
    */
   async reveal(node: string, entry: string, field: FieldKey = 0, windowMs = this.options.revealWindowMs): Promise<boolean> {
-    return (await this.holdFetched(node, entry, field, () => this.source.reveal(node, entry, field), (value) => ({ value, windowMs }))).held;
+    const fetch = () => this.source.reveal(node, entry, field);
+    // the orphaned node's reveal is presence-gated (ADR-098): the Touch ID sheet takes focus while it is in flight (ADR-149)
+    const gated = node === (this.orphanNodeId ?? "orphan");
+    return (await this.holdFetched(node, entry, field, gated ? () => this.withPresence(fetch) : fetch, (value) => ({ value, windowMs }))).held;
   }
 
   /**

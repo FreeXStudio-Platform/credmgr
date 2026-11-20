@@ -1,8 +1,8 @@
 # Homebrew formula (prepared, not published)
 
 `credmgr.rb` is a **template** for a formula in a Homebrew tap. It installs the prebuilt, **unsigned**
-tarball that `scripts/release.sh` produces and a maintainer attaches to a GitHub Release (`credmgr` and
-`credmgrd`, the SBOMs, the docs). It builds nothing, and nothing here creates a repository, a tag or a
+tarball that `scripts/release.sh` produces and a maintainer attaches to a GitHub Release (`credmgr`,
+`credmgrd`, the `credmgr-presence` Touch ID helper, the SBOMs, the docs). It builds nothing, and nothing here creates a repository, a tag or a
 release: the tap does not exist yet.
 
 ## Status

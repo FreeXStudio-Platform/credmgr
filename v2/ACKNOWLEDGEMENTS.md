@@ -29,6 +29,8 @@ CredMgr stands on other people's work.
 - **[force-graph](https://github.com/vasturiano/force-graph)** — Vasco Asturiano (MIT). The
   canvas graph engine behind the V2 node view.
 - **[d3-force](https://github.com/d3/d3-force)** — Mike Bostock, under force-graph.
+- **[jsQR](https://github.com/cozmo/jsQR)** — Cosmo Wolfe (Apache-2.0). Reads an authenticator
+  QR-code image in the V2 Add entry dialog, on the device, with no network.
 - **[Inter](https://rsms.me/inter/)** — Rasmus Andersson (SIL OFL 1.1).
 - **[JetBrains Mono](https://www.jetbrains.com/lp/mono/)** — JetBrains (SIL OFL 1.1). The
   vault speaks in monospace, and this is the voice.

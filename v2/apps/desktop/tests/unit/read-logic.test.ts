@@ -102,7 +102,7 @@ describe("search answers that arrive out of order", () => {
     logic.state = { ...logic.state, searchQ: "abc" }; // the user types on
     const second = logic.runSearch("abc");
     await Promise.all([first, second]);
-    expect(logic.state.searchHits).toEqual({ q: "abc", rows: late });
+    expect(logic.state.searchHits).toEqual({ q: "abc", rows: late, ref: null }); // not a number, so no reference was looked up
   });
 
   it("a failed search for a term the user has already left is not shown", async () => {

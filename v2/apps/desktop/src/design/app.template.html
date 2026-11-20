@@ -7,6 +7,7 @@
 <sc-include src="./screens/S17-firstrun.html"></sc-include>
 
 <sc-if value="{{isApp}}" hint-placeholder-val="{{true}}">
+<sc-include src="./screens/dlg-confirm.html"></sc-include>
 <div class="cm-shell" data-screen-label="S1 Main">
 <sc-include src="./screens/S1-header.html"></sc-include>
 <sc-include src="./screens/S20-banner.html"></sc-include>
@@ -23,6 +24,11 @@
 <sc-include src="./screens/S6-add-entry.html"></sc-include>
 
 <sc-include src="./screens/dlg-field.html"></sc-include>
+
+<sc-include src="./screens/dlg-names.html"></sc-include>
+<sc-include src="./screens/dlg-expiry.html"></sc-include>
+<sc-include src="./screens/dlg-move.html"></sc-include>
+<sc-include src="./screens/dlg-lifecycle.html"></sc-include>
 
 <sc-include src="./screens/S20-tray.html"></sc-include>
 
@@ -44,10 +50,16 @@
 
 <sc-include src="./screens/S19-games.html"></sc-include>
 
+<sc-include src="./screens/dlg-agent.html"></sc-include>
+<sc-include src="./screens/dlg-agent-token.html"></sc-include>
+
 <sc-include src="./screens/S12-settings.html"></sc-include>
 
 <sc-include src="./screens/S14-ops.html"></sc-include>
+<sc-include src="./screens/S22-tidy.html"></sc-include>
 </sc-if>
+
+<sc-include src="./screens/dlg-restore.html"></sc-include>
 
 <sc-include src="./screens/notice.html"></sc-include>
 </div>

@@ -39,7 +39,7 @@ test("1. a login revoked from outside is found at the next call: the Lock screen
   await expect(app.screen("S5 Entry detail")).toBeVisible(); // the app has not been told: there is no push channel
   await expect(page.locator(".k-field-value").first()).toHaveText(value); // and still shows what it fetched while the login was good
 
-  await page.getByRole("button", { name: "hide", exact: true }).click(); // local: no call
+  await page.getByRole("button", { name: /^hide(, re-masks in \d+ seconds)?$/ }).click(); // local: no call
   await page.getByRole("button", { name: "reveal", exact: true }).click(); // a call: the broker answers it with a refusal
   await expect(app.screen("S16 Lock screen")).toBeVisible(KDF);
   await expect(lockNote(app)).toHaveText("Your session ended. Unlock to continue.");
@@ -165,7 +165,9 @@ test("6. the daemon is not running when the app starts: broker-unreachable with 
   await app.open();
   await expect(app.screen("S16 Broker unreachable")).toBeVisible();
   await expect(page.getByText("credmgr cannot reach its broker")).toBeVisible();
-  expect(app.commands()).toEqual(["vault_status"]); // the one question, and nothing after it
+  // the one broker question, and nothing after it.  login_agent_status is the shell's own question (ADR-156: Start at login is offered on this
+  // screen); it never reaches the broker, so it is not counted.
+  expect(app.commands().filter((c) => c !== "login_agent_status")).toEqual(["vault_status"]);
   await expect(passInput(app)).toHaveCount(0);
   expect((app.shim.answers[0] as any).error).toMatchObject({ source: "transport", code: "broker_unreachable" });
 

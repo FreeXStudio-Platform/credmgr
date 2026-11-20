@@ -19,7 +19,8 @@ use desktop_lib::fields_preview::{preview, FIELD_INPUT_KEYS};
 use serde_json::{json, Value};
 
 /// The only `credmgr_core` modules this crate may name.
-const ALLOWED_CORE_MODULES: &[&str] = &["parser", "fields", "inference"];
+/// `dotenv` is the pure `.env` text parser behind `env_preview` (ADR-122): text in, pairs out, no key and no I/O.
+const ALLOWED_CORE_MODULES: &[&str] = &["parser", "fields", "inference", "agentcfg", "dotenv"];
 
 fn source_files() -> Vec<(String, String)> {
     fn walk(dir: &Path, out: &mut Vec<(String, String)>) {

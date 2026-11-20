@@ -138,6 +138,8 @@ fn start_fixture_broker() -> Fixture {
         expires_at: None,
         rotated_at: None,
         has_totp: false,
+        aliases: Vec::new(),
+        tags: Vec::new(),
     });
     state.set_manifest("acme", manifest);
     let sealed = envelope::seal(b"s3cr3t-deploy-token", &acme_pub, "acme", entry_id).unwrap();
@@ -1919,8 +1921,9 @@ fn help_documents_every_new_command_and_policy_flag() {
         "credmgr notes show <id>",
         "credmgr notes set <id> [--file <path>]",
         "credmgr notes clear <id>",
-        "credmgr generate [--length <n>] [--no-symbols] [--pronounceable] [--json]",
-        "credmgr approve <request> [--deny] [--code <n>]",
+        "credmgr generate [--length <n>] [--no-symbols] [--pronounceable | --hex] [--copy | --json]",
+        "credmgr approve <request> [--deny] [--code-on-argv <n>]",
+        "credmgr gate verify [--code-on-argv <n>]",
         "credmgr approvals [<request>] [--json]",
         "--purge-expired-seals",
         "values are never printed",
@@ -2084,9 +2087,9 @@ fn approve_reads_the_passphrase_from_stdin_never_sends_the_token_and_explains_it
     let out = run(
         &fx,
         &fx.acme_workdir,
-        &["approve", "rq_nothing", "--code", "000000"],
+        &["approve", "rq_nothing"],
         Some(&owner),
-        Some(format!("{PASSPHRASE}\n").as_bytes()),
+        Some(format!("{PASSPHRASE}\n000000\n").as_bytes()),
     );
     assert!(!out.ok, "{}", out.all());
     assert!(out.stderr.contains("locked"), "{}", out.stderr);

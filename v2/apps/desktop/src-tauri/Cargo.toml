@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "2.0.0-beta.1"
+version = "2.0.0-rc.2"
 description = "CredMgr desktop shell: a Tauri 2 window and the bridge to the credmgrd broker"
 authors = ["CredMgr contributors"]
 license-file = "../../../LICENSE"
@@ -16,6 +16,12 @@ edition = "2021"
 name = "desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# ADR-162: the Mac App Store edition. Group-container vault path (src/vault_paths.rs) and the SMAppService
+# login agent (src/login_agent.rs). Built only by `scripts/release-app.sh --mas`; the default build is the
+# Developer ID edition and never compiles either.
+mas = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -23,6 +29,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# ADR-098: the Secure Enclave helper speaks base64 (src/presence.rs).
+base64 = "0.22"
 # Wipes the one plaintext copy the shell holds while it moves a revealed secret
 # from the broker's answer to the pasteboard (src/clipboard.rs, src/transport.rs).
 zeroize = "1"
@@ -32,7 +40,7 @@ zeroize = "1"
 # `parser`, `fields` and `inference` are used** (a test reads this crate's source
 # and fails on any other `credmgr_core::` path): the shell holds no key and
 # decrypts nothing (ADR-001), and linking the crate must not change that.
-credmgr-core = { path = "../../../crates/core", version = "2.0.0-beta.1" }
+credmgr-core = { path = "../../../crates/core", version = "2.0.0-rc.2" }
 
 # macOS only: the concealed pasteboard (C2) and the sleep / screen-lock
 # observers (C1) have no Tauri API, so they call AppKit directly. Every feature
@@ -53,11 +61,25 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
     "block2",
+    "NSBundle",
     "NSData",
     "NSDistributedNotificationCenter",
+    # ADR-162: the error SMAppService's register/unregister return (src/login_agent.rs, `mas` feature).
+    "NSError",
     "NSNotification",
     "NSOperation",
     "NSString",
+] }
+# ADR-173: one user notification for an agent request that waits. The same objc2 family as the crates above and
+# already in Cargo.lock; `default-features = false` and the named framework classes only. No network.
+objc2-user-notifications = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "UNUserNotificationCenter",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationResponse",
+    "UNNotificationTrigger",
 ] }
 
 # Integration tests only. `tempfile` gives each test its own directory to put

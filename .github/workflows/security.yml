@@ -97,6 +97,23 @@ jobs:
       - uses: dtolnay/rust-toolchain@d2e383c7f7a2470b3f766fe5611d0bc4ffe2fd71 # 1.78.0
       - run: cargo test -p credmgr-brokerd --test isolation --locked
 
+  # The airlock (17_AIRLOCK_AND_LLM.md §1, A-1 and A-2; ADR-156): the built credmgrd carries no
+  # socket type, HTTP or TLS code and links no TLS/HTTP library (A-1), and the REAL broker on a
+  # throwaway vault holds no internet socket of any kind, just started and after init, unlock and
+  # an entry round trip (A-2). The script first proves its detector sees a known listener. Same
+  # trigger exemption as the endpoint matrix below.
+  v2-airlock:
+    name: v2 — airlock (A-1 binary scan, A-2 no internet socket)
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults: { run: { working-directory: v2 } }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@d2e383c7f7a2470b3f766fe5611d0bc4ffe2fd71 # 1.78.0
+      - run: cargo build -p credmgr-brokerd --bin credmgrd --locked
+      - run: bash scripts/airlock-check.sh target/debug/credmgrd
+
   # The endpoint matrix (v2/scripts/endpoint-matrix.py): the REAL credmgrd against a throwaway vault
   # in a private temp directory, every broker op called over the real Unix socket and asserted
   # against its documented success shape or documented refusal (R8/R0 denials, presence_required,
@@ -142,9 +159,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
       # The real-broker bridge tests drive a built credmgrd (tests/real_broker.rs); they refuse to skip silently.
-      - name: build the broker the bridge tests drive
+      - name: build the broker and the CLI the bridge tests drive (the restore test runs the bundled credmgr, ADR-166)
         working-directory: v2
-        run: cargo +1.94.1 build -p credmgr-brokerd --locked
+        run: cargo +1.94.1 build -p credmgr-brokerd -p credmgr-cli --locked
       - run: cargo test --locked
 
   semgrep:

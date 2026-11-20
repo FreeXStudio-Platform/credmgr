@@ -8,7 +8,8 @@
 //! undocumented API that drifts from the first. The two exceptions are
 //! narrow and both are about *removing*, never adding:
 //!
-//! * the session token is stripped out of unlock responses ([`crate::session`]);
+//! * the session token is stripped out of unlock responses, `vault.recover`'s
+//!   included ([`crate::session`]);
 //! * the auth commands return [`AuthState`] instead of the raw body, so the
 //!   webview learns *whether it is authenticated* without being told the
 //!   credential that makes it so.
@@ -36,6 +37,7 @@ use tauri::State;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::clipboard::Clipboard;
+use crate::env_preview;
 use crate::error::BridgeError;
 use crate::fields_preview;
 use crate::session::Session;
@@ -60,6 +62,22 @@ pub struct AuthState {
     /// the page's copy when it is 0, so the common answer is unchanged.
     #[serde(skip_serializing_if = "is_zero")]
     pub pending_approvals: u32,
+    /// ADR-098: unlocking with Touch ID is set up for this vault (`vault.status`), left out when not.
+    #[serde(skip_serializing_if = "is_false")]
+    pub touch_id_unlock: bool,
+    /// ADR-156: the cross-node anomaly alarms the owner has not acknowledged (a bare count, from
+    /// `vault.status` only, which carries it to the owner's own login only); left out when 0.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub anomalies_unseen: u32,
+    /// ADR-163: this vault can be opened with its recovery code when the passphrase is forgotten
+    /// (`vault.status`: the recovery wrap exists), so the Lock screen offers "Forgot passphrase?";
+    /// left out when not.
+    #[serde(skip_serializing_if = "is_false")]
+    pub recovery_unlock: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -95,7 +113,43 @@ pub async fn dispatch_at(
     let token = session.token();
 
     let outcome = tauri::async_runtime::spawn_blocking(move || {
-        transport::call_audited(&socket, op, token.as_deref(), params)
+        // ADR-148 §P2-4: enrolling a presence key proves this Mac holds it — the key signs a broker nonce
+        // (Touch ID appears) before the enrolment is sent. The webview passes only the public key and label.
+        let params = if op == "presence.enrol"
+            && params.get("possession").is_none()
+            && crate::presence::ready()
+        {
+            let (challenge, _) = transport::call_audited(
+                &socket,
+                "presence.challenge",
+                token.as_deref(),
+                json!({ "op": op, "params": params, "possession": true }),
+            )?;
+            crate::presence::attach_possession(&challenge, &params)?
+        } else {
+            params
+        };
+        let first = transport::call_audited(&socket, op, token.as_deref(), params.clone());
+        match first {
+            // ADR-098: the op needs the user's finger. Ask the broker for a challenge, let the Secure
+            // Enclave sign it (Touch ID appears), and send the request again with the proof. The
+            // webview sees none of it: only the final answer, or why the proof could not be made.
+            Err(e)
+                if e.code == "presence_required"
+                    && op != "presence.challenge"
+                    && crate::presence::ready() =>
+            {
+                let (challenge, _) = transport::call_audited(
+                    &socket,
+                    "presence.challenge",
+                    token.as_deref(),
+                    json!({ "op": op, "params": params }),
+                )?;
+                let proved = crate::presence::attach_proof(&challenge, &params)?;
+                transport::call_audited(&socket, op, token.as_deref(), proved)
+            }
+            other => other,
+        }
     })
     .await
     .map_err(|e| {
@@ -127,11 +181,23 @@ pub async fn dispatch_at(
 pub const AUDIT_PASSTHROUGH: &[&str] = &[
     "entry.create",
     "entry.create_batch",
+    "entry.alias",
+    "entry.import_env",
     "entry.update",
     "entry.rotate",
     "entry.remove",
     "entry.restore",
     "entry.undo",
+    "entry.set_expiry",
+    "entry.move",
+    "entry.tag_set",
+    "merge.apply",
+    "merge.auto",
+    "merge.auto_all",
+    "merge.dismiss",
+    "merge.undismiss",
+    "merge.restore_all",
+    "vault.doctor_apply",
     "field.add",
     "field.update",
     "field.remove",
@@ -140,6 +206,9 @@ pub const AUDIT_PASSTHROUGH: &[&str] = &[
     "node.create",
     "node.update",
     "node.policy",
+    "settings.set",
+    "settings.revert",
+    "settings.request_decide",
     "node.set_workdirs",
     "node.reparent",
     "node.seal",
@@ -180,6 +249,15 @@ fn auth_state(session: &Session, value: &Value) -> AuthState {
         authenticated: session.is_authenticated(),
         initialized: initialized_from(value),
         pending_approvals: pending_from(value),
+        touch_id_unlock: value
+            .get("touchIdUnlock")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        anomalies_unseen: count_from(value, "anomaliesUnseen"),
+        recovery_unlock: value
+            .get("recoveryUnlock")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     }
 }
 
@@ -187,8 +265,14 @@ fn auth_state(session: &Session, value: &Value) -> AuthState {
 /// that predates the field, and every response that is not `vault.status`,
 /// has nothing waiting as far as this bridge can tell.
 fn pending_from(value: &Value) -> u32 {
+    count_from(value, "pendingApprovals")
+}
+
+/// A bare count member of an auth response, defaulting to 0 when absent or not a
+/// whole number (`pendingApprovals`, ADR-090; `anomaliesUnseen`, ADR-156).
+fn count_from(value: &Value, key: &str) -> u32 {
     value
-        .get("pendingApprovals")
+        .get(key)
         .and_then(Value::as_u64)
         .map_or(0, |n| u32::try_from(n).unwrap_or(u32::MAX))
 }
@@ -220,14 +304,35 @@ pub async fn vault_unlock_at(
     socket: PathBuf,
     passphrase: String,
 ) -> Result<AuthState, BridgeError> {
+    vault_unlock_with_at(session, socket, Some(passphrase), None).await
+}
+
+/// [`vault_unlock_at`] with the unlock method open: a passphrase, or `method: "device"` for Touch ID.
+pub async fn vault_unlock_with_at(
+    session: &Session,
+    socket: PathBuf,
+    passphrase: Option<String>,
+    method: Option<String>,
+) -> Result<AuthState, BridgeError> {
+    // ADR-098: `method: "device"` opens the vault with Touch ID; the broker asks the system for the
+    // fingerprint itself, so nothing secret travels. Otherwise the passphrase, as ever.
+    let mut params = Map::new();
+    if let Some(p) = &passphrase {
+        params.insert("passphrase".into(), Value::String(p.clone()));
+    }
+    if let Some(m) = &method {
+        params.insert("method".into(), Value::String(m.clone()));
+    }
     let mut value = dispatch_at(
         session,
-        socket,
+        socket.clone(),
         "vault.unlock",
-        json!({ "passphrase": passphrase }),
+        Value::Object(params),
     )
     .await?;
-    session.capture_token(&mut value);
+    if session.capture_token(&mut value) {
+        revoke_unheld_agent_tokens(session, socket).await;
+    }
     Ok(auth_state(session, &value))
 }
 
@@ -238,13 +343,37 @@ pub async fn vault_gate_verify_at(
 ) -> Result<AuthState, BridgeError> {
     let mut value = dispatch_at(
         session,
-        socket,
+        socket.clone(),
         "vault.gate_verify",
         json!({ "code": code }),
     )
     .await?;
-    session.capture_token(&mut value);
+    if session.capture_token(&mut value) {
+        revoke_unheld_agent_tokens(session, socket).await;
+    }
     Ok(auth_state(session, &value))
+}
+
+/// ADR-163: open a locked vault with the recovery code alone, set the new passphrase and get a NEW
+/// recovery code, in one broker call. The broker mints the login token as `vault.unlock` does; it is
+/// captured here and never returned. The rest of the answer goes back as the broker gave it — the new
+/// `recoveryCode` among it, which the Lock screen shows once and does not keep.
+pub async fn vault_recover_at(
+    session: &Session,
+    socket: PathBuf,
+    recovery_code: String,
+    new_passphrase: String,
+    code: Option<String>,
+) -> Result<Value, BridgeError> {
+    let mut params = Map::new();
+    params.insert("recoveryCode".into(), Value::String(recovery_code));
+    params.insert("newPassphrase".into(), Value::String(new_passphrase));
+    if let Some(c) = code {
+        params.insert("code".into(), Value::String(c));
+    }
+    let mut value = dispatch_at(session, socket, "vault.recover", Value::Object(params)).await?;
+    session.capture_token(&mut value);
+    Ok(value)
 }
 
 pub async fn vault_lock_at(session: &Session, socket: PathBuf) -> Result<AuthState, BridgeError> {
@@ -259,7 +388,308 @@ pub async fn vault_lock_at(session: &Session, socket: PathBuf) -> Result<AuthSta
         authenticated: false,
         initialized: initialized_from(&value),
         pending_approvals: 0,
+        touch_id_unlock: false,
+        anomalies_unseen: 0,
+        recovery_unlock: false,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Node-scoped agent tokens (ADR-164) — the two answers that carry a bearer
+// ---------------------------------------------------------------------------
+//
+// `agent.token_issue` and `agent.token_rotate` answer the new bearer (`cma_…`) once. Like the
+// login a `vault.unlock` answers (ADR-057), it never reaches the webview: the shell takes `token`
+// out of the answer, writes it to the concealed, self-clearing clipboard (as `entry_copy` writes a
+// value), wipes its own copy, and answers the metadata with `copied` and `clearAfterSeconds`. If
+// the clipboard cannot take it, nobody holds the token, so the shell revokes it at once and says so
+// (`copied: false`, `revoked`). The usual reason is a lock mid-call, which also ended the login a
+// revoke needs (review P2-4): then the id is queued on the session and revoked by the next login
+// (`revokePending: true`). The same goes for an answer the shell cannot read but that names a
+// token. The Touch ID proof is the ordinary presence retry in `dispatch_at`.
+
+/// An agent token's public id: `a_` and 16 lower-case hex digits.
+fn is_agent_public_id(id: &str) -> bool {
+    id.len() == 18
+        && id.starts_with("a_")
+        && id[2..]
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// Revoke a minted token nobody holds. `Some(true)` revoked (or already gone), `Some(false)` queued for the next
+/// login, `None` when the answer named no token to revoke.
+async fn revoke_unheld(session: &Session, socket: PathBuf, id: Option<&Value>) -> Option<bool> {
+    let id = id
+        .and_then(Value::as_str)
+        .filter(|i| is_agent_public_id(i))?;
+    match dispatch_at(session, socket, "agent.token_revoke", json!({ "id": id })).await {
+        Ok(_) => Some(true),
+        Err(e) if e.code == "not_found" => Some(true),
+        Err(_) => {
+            session.queue_agent_revoke(id.to_string());
+            Some(false)
+        }
+    }
+}
+
+/// ADR-164 review P2-4: after a login is captured, revoke the agent tokens an earlier lock left unheld. Best effort:
+/// one that cannot be revoked now stays queued; one the broker no longer has (a restart ended it) is dropped.
+async fn revoke_unheld_agent_tokens(session: &Session, socket: PathBuf) {
+    for id in session.take_agent_revokes() {
+        match dispatch_at(
+            session,
+            socket.clone(),
+            "agent.token_revoke",
+            json!({ "id": id }),
+        )
+        .await
+        {
+            Ok(_) => {}
+            Err(e) if e.code == "not_found" => {}
+            Err(_) => session.queue_agent_revoke(id),
+        }
+    }
+}
+
+/// Take the bearer out of an issue or rotate answer and hand it to the clipboard only.
+async fn hand_agent_token_to_clipboard(
+    session: &Session,
+    clipboard: &Clipboard,
+    ticket: crate::clipboard::CopyTicket,
+    socket: PathBuf,
+    mut value: Value,
+) -> Result<Value, BridgeError> {
+    let Some(object) = value.as_object_mut() else {
+        scrub(&mut value);
+        return Err(BridgeError::protocol(
+            "the agent token answer was not an object; nothing was copied",
+        ));
+    };
+    let token = match object.remove("token") {
+        Some(Value::String(text)) => Zeroizing::new(text),
+        other => {
+            // An answer the shell cannot use, but it may name a token that was minted: revoke it (review P2-4).
+            if let Some(mut other) = other {
+                scrub(&mut other);
+            }
+            let id = object.get("id").cloned();
+            scrub(&mut value);
+            let revoked = revoke_unheld(session, socket, id.as_ref()).await;
+            let what = match revoked {
+                Some(true) => "; the token it named was revoked",
+                Some(false) => "; the token it named will be revoked at the next unlock",
+                None => "",
+            };
+            return Err(BridgeError::protocol(format!(
+                "the agent token answer carried no text token; nothing was copied{what}"
+            )));
+        }
+    };
+    object.remove("shownOnce");
+    let copied = clipboard.copy_secret_for(ticket, &token);
+    drop(token);
+    match copied {
+        Ok(()) => {
+            object.insert("copied".into(), Value::Bool(true));
+            object.insert("clearAfterSeconds".into(), json!(clipboard.ttl().as_secs()));
+        }
+        Err(_) => {
+            // Nobody holds the secret now; a live token no one has is only a risk.
+            let id = object.get("id").cloned();
+            let revoked = revoke_unheld(session, socket, id.as_ref()).await;
+            let object = value
+                .as_object_mut()
+                .expect("checked to be an object above");
+            object.insert("copied".into(), Value::Bool(false));
+            object.insert("revoked".into(), Value::Bool(revoked == Some(true)));
+            if revoked == Some(false) {
+                object.insert("revokePending".into(), Value::Bool(true));
+            }
+        }
+    }
+    Ok(value)
+}
+
+/// Socket-injected core of [`agent_token_issue`].
+pub async fn agent_token_issue_at(
+    session: &Session,
+    clipboard: &Clipboard,
+    socket: PathBuf,
+    node: String,
+    label: String,
+    capabilities: Vec<String>,
+    expires_in: Option<i64>,
+) -> Result<Value, BridgeError> {
+    let mut params = Map::new();
+    put(&mut params, "node", &node)?;
+    put(&mut params, "label", &label)?;
+    put(&mut params, "capabilities", &capabilities)?;
+    put(&mut params, "expiresIn", &expires_in)?;
+    let ticket = clipboard.ticket();
+    let value = dispatch_at(
+        session,
+        socket.clone(),
+        "agent.token_issue",
+        Value::Object(params),
+    )
+    .await?;
+    hand_agent_token_to_clipboard(session, clipboard, ticket, socket, value).await
+}
+
+/// Socket-injected core of [`agent_token_rotate`].
+pub async fn agent_token_rotate_at(
+    session: &Session,
+    clipboard: &Clipboard,
+    socket: PathBuf,
+    id: String,
+    expires_in: Option<i64>,
+) -> Result<Value, BridgeError> {
+    let mut params = Map::new();
+    put(&mut params, "id", &id)?;
+    put(&mut params, "expiresIn", &expires_in)?;
+    let ticket = clipboard.ticket();
+    let value = dispatch_at(
+        session,
+        socket.clone(),
+        "agent.token_rotate",
+        Value::Object(params),
+    )
+    .await?;
+    hand_agent_token_to_clipboard(session, clipboard, ticket, socket, value).await
+}
+
+/// A token for exactly one node, a subset of what that node gives agents, with a mandatory expiry
+/// (`expiresIn` seconds; one day when absent). Owner's login, the vault's second factor where
+/// enrolled, and Touch ID. The new token goes to the concealed clipboard, never to the webview.
+#[tauri::command]
+pub async fn agent_token_issue(
+    session: State<'_, Session>,
+    clipboard: State<'_, Clipboard>,
+    node: String,
+    label: String,
+    capabilities: Vec<String>,
+    expires_in: Option<i64>,
+) -> Result<Value, BridgeError> {
+    agent_token_issue_at(
+        &session,
+        &clipboard,
+        socket()?,
+        node,
+        label,
+        capabilities,
+        expires_in,
+    )
+    .await
+}
+
+/// A new secret and expiry for an existing token; the old secret stops working. Same gate and same
+/// hand-over as [`agent_token_issue`].
+#[tauri::command]
+pub async fn agent_token_rotate(
+    session: State<'_, Session>,
+    clipboard: State<'_, Clipboard>,
+    id: String,
+    expires_in: Option<i64>,
+) -> Result<Value, BridgeError> {
+    agent_token_rotate_at(&session, &clipboard, socket()?, id, expires_in).await
+}
+
+// ---------------------------------------------------------------------------
+// Touch ID (ADR-098)
+// ---------------------------------------------------------------------------
+
+/// What this Mac can do for Touch ID: Secure Enclave, biometry kind, device password, and whether this
+/// Mac already holds a presence key. Local; never prompts.
+#[tauri::command]
+pub async fn presence_probe() -> Result<Value, BridgeError> {
+    tauri::async_runtime::spawn_blocking(crate::presence::probe)
+        .await
+        .map_err(|e| {
+            BridgeError::bridge("worker_failed", format!("the probe did not complete: {e}"))
+        })?
+}
+
+// ---------------------------------------------------------------------------
+// Agents (ADR-143): Settings -> Agents. Local, no broker call.
+// ---------------------------------------------------------------------------
+
+/// Which agent clients are on this Mac, whether CredMgr is wired into each, and the `credmgr`
+/// binary path a snippet would carry. Reads config files; writes nothing.
+#[tauri::command]
+pub async fn agent_detect() -> Result<Value, BridgeError> {
+    tauri::async_runtime::spawn_blocking(crate::agents::detect)
+        .await
+        .map_err(|e| {
+            BridgeError::bridge(
+                "worker_failed",
+                format!("the detection did not complete: {e}"),
+            )
+        })?
+}
+
+/// The snippet to copy for a client (`generic` for any other).
+#[tauri::command]
+pub async fn agent_snippet(client: String) -> Result<Value, BridgeError> {
+    tauri::async_runtime::spawn_blocking(move || crate::agents::snippet(&client))
+        .await
+        .map_err(|e| {
+            BridgeError::bridge(
+                "worker_failed",
+                format!("the snippet did not complete: {e}"),
+            )
+        })?
+}
+
+/// What connecting (or disconnecting) a client would change: the file, a diff and a token. Writes nothing.
+#[tauri::command]
+pub async fn agent_plan(client: String, action: String) -> Result<Value, BridgeError> {
+    tauri::async_runtime::spawn_blocking(move || crate::agents::plan(&client, &action))
+        .await
+        .map_err(|e| {
+            BridgeError::bridge("worker_failed", format!("the plan did not complete: {e}"))
+        })?
+}
+
+/// Write the change `agent_plan` showed, only if the file is still what it showed. The page calls this
+/// only from the button in the diff dialog.
+#[tauri::command]
+pub async fn agent_apply(
+    client: String,
+    action: String,
+    token: String,
+) -> Result<Value, BridgeError> {
+    tauri::async_runtime::spawn_blocking(move || crate::agents::apply(&client, &action, &token))
+        .await
+        .map_err(|e| {
+            BridgeError::bridge("worker_failed", format!("the write did not complete: {e}"))
+        })?
+}
+
+/// The Vault Protocol prompt (`format` `prompt`) or the text of `CREDMGR.md` (`md`) for a node:
+/// names and structure from what the page already shows, never a value.
+#[tauri::command]
+pub fn agent_prompt(
+    node: String,
+    reachable: Vec<String>,
+    level: String,
+    format: String,
+) -> Result<Value, BridgeError> {
+    crate::agents::prompt(&node, reachable, &level, &format)
+}
+
+/// Create this Mac's presence key if there is none (never prompts) and answer its public half
+/// (base64), which the screen then passes to `presence_enrol`.
+#[tauri::command]
+pub async fn presence_key_create() -> Result<String, BridgeError> {
+    tauri::async_runtime::spawn_blocking(crate::presence::ensure_key)
+        .await
+        .map_err(|e| {
+            BridgeError::bridge(
+                "worker_failed",
+                format!("the key step did not complete: {e}"),
+            )
+        })?
 }
 
 // ---------------------------------------------------------------------------
@@ -290,9 +720,10 @@ pub async fn vault_status(session: State<'_, Session>) -> Result<AuthState, Brid
 #[tauri::command]
 pub async fn vault_unlock(
     session: State<'_, Session>,
-    passphrase: String,
+    passphrase: Option<String>,
+    method: Option<String>,
 ) -> Result<AuthState, BridgeError> {
-    vault_unlock_at(&session, socket()?, passphrase).await
+    vault_unlock_with_at(&session, socket()?, passphrase, method).await
 }
 
 /// `07_TWO_FACTOR.md §3` step 3 — completes an unlock that returned
@@ -303,6 +734,21 @@ pub async fn vault_gate_verify(
     code: String,
 ) -> Result<AuthState, BridgeError> {
     vault_gate_verify_at(&session, socket()?, code).await
+}
+
+/// ADR-163 — "Forgot passphrase?" on the Lock screen: the recovery code opens the vault, the new
+/// passphrase replaces the forgotten one, and the answer carries a new recovery code (shown once).
+/// `code` is the vault's second factor when one is enrolled (asked for after `two_factor_required`).
+/// Mints the session token on success, captured here and never returned. The same caveat about the
+/// IPC copies of the strings as [`vault_unlock`] applies.
+#[tauri::command]
+pub async fn vault_recover(
+    session: State<'_, Session>,
+    recovery_code: String,
+    new_passphrase: String,
+    code: Option<String>,
+) -> Result<Value, BridgeError> {
+    vault_recover_at(&session, socket()?, recovery_code, new_passphrase, code).await
 }
 
 /// Locks the vault. The broker revokes every session token as it does so
@@ -345,9 +791,19 @@ pub async fn graph_snapshot(session: State<'_, Session>) -> Result<Value, Bridge
 /// caller's last-seen value and the broker answers `conflict` if it has moved
 /// on (F-9's optimistic concurrency). A UI that discards it here cannot
 /// perform a first update at all, so it is passed straight through.
+///
+/// ADR-167: `tag` narrows the list to the entries carrying that tag, on this one node (sent only when given).
 #[tauri::command]
-pub async fn entry_list(session: State<'_, Session>, node: String) -> Result<Value, BridgeError> {
-    dispatch_at(&session, socket()?, "entry.list", json!({ "node": node })).await
+pub async fn entry_list(
+    session: State<'_, Session>,
+    node: String,
+    tag: Option<String>,
+) -> Result<Value, BridgeError> {
+    let mut params = json!({ "node": node });
+    if let Some(tag) = tag {
+        params["tag"] = Value::String(tag);
+    }
+    dispatch_at(&session, socket()?, "entry.list", params).await
 }
 
 /// Decrypts one entry. The plaintext is in the response — this is the one
@@ -608,6 +1064,87 @@ pub fn capture_protection_set<R: tauri::Runtime>(
     Ok(crate::shell::set_capture_protection(&window, enabled))
 }
 
+/// Whether the window is minimised or hidden (`shell::window_state`). The page asks before it locks on `visibilitychange`, so a
+/// window that is only covered, or that sits on another display that went dark, does not lock the vault. Carries no vault data.
+#[tauri::command]
+pub fn window_state<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+) -> Result<crate::shell::WindowState, BridgeError> {
+    Ok(crate::shell::window_state(&window))
+}
+
+/// `env_preview` - a `.env` text read into name/value pairs (ADR-122), with the parser
+/// `credmgr import-env` runs ([`crate::env_preview`]). Local: no broker, no socket, no session, no
+/// audit record. The pairs go on to `entry_import_env`.
+#[tauri::command]
+pub fn env_preview(text: String) -> Result<env_preview::EnvPreview, BridgeError> {
+    env_preview::preview(&text)
+}
+
+// ---------------------------------------------------------------------------
+// Start at login (ADR-156). Local, no broker call: see `login_agent`.
+// ---------------------------------------------------------------------------
+
+async fn login_agent_run(
+    f: fn() -> Result<crate::login_agent::LoginAgentStatus, BridgeError>,
+) -> Result<crate::login_agent::LoginAgentStatus, BridgeError> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| {
+        BridgeError::bridge(
+            "worker_failed",
+            format!("the launch agent step did not complete: {e}"),
+        )
+    })?
+}
+
+/// Whether the launch agent that starts `credmgrd` at login is in place and loaded. macOS only.
+#[tauri::command]
+pub async fn login_agent_status() -> Result<crate::login_agent::LoginAgentStatus, BridgeError> {
+    login_agent_run(crate::login_agent::status).await
+}
+
+/// Write the launch agent (the bundled `credmgrd` by absolute path) and load it into this user's
+/// `gui/<uid>` domain, which starts the broker now and at every login. Never root; idempotent.
+#[tauri::command]
+pub async fn login_agent_install() -> Result<crate::login_agent::LoginAgentStatus, BridgeError> {
+    login_agent_run(crate::login_agent::install).await
+}
+
+/// Unload the launch agent (stopping the broker it started) and remove its file. Idempotent.
+#[tauri::command]
+pub async fn login_agent_uninstall() -> Result<crate::login_agent::LoginAgentStatus, BridgeError> {
+    login_agent_run(crate::login_agent::uninstall).await
+}
+
+// ---------------------------------------------------------------------------
+// Settings > Backup > Restore from a backup (ADR-166). Local, no broker call:
+// the bundled `credmgr restore --json` does it (see `restore`), and refuses
+// while a broker answers on the vault's socket.
+// ---------------------------------------------------------------------------
+
+/// Restore a backup archive into an empty folder (`target`, or the vault's own folder when it is
+/// empty). The passphrase goes to the `credmgr` child's stdin, never its argv, and this copy is
+/// wiped. Refused with `broker_running` while a broker answers, `restore_target_not_empty` for a
+/// used folder, `restore_failed` for a wrong passphrase or a damaged archive, and
+/// `restore_unavailable` when no `credmgr` program can be found.
+#[tauri::command]
+pub async fn backup_restore(
+    archive: String,
+    passphrase: String,
+    target: Option<String>,
+) -> Result<crate::restore::RestoreDone, BridgeError> {
+    let passphrase = Zeroizing::new(passphrase);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::restore::restore(archive, passphrase, target)
+    })
+    .await
+    .map_err(|e| {
+        BridgeError::bridge(
+            "worker_failed",
+            format!("the restore did not complete: {e}"),
+        )
+    })?
+}
+
 /// A command the shell offers that is **not** one-to-one with a broker op, so
 /// it cannot live in [`bridged`] (whose rows `tests/drift_guards.rs` holds to
 /// "command = op with dots as underscores"). Described as data for the same
@@ -639,6 +1176,21 @@ pub const SHELL_COMMANDS: &[ShellCommand] = &[
         wraps_op: None,
         op_params: &[],
     },
+    // ADR-098, Touch ID. What this Mac can do - local, never prompts.
+    ShellCommand {
+        command: "presence_probe",
+        args: &[],
+        wraps_op: None,
+        op_params: &[],
+    },
+    // Create this Mac's Secure Enclave presence key (no prompt) and answer its public half, for
+    // `presence_enrol`. Local - no broker op.
+    ShellCommand {
+        command: "presence_key_create",
+        args: &[],
+        wraps_op: None,
+        op_params: &[],
+    },
     ShellCommand {
         command: "app_icon_set",
         args: &["icon"],
@@ -652,10 +1204,81 @@ pub const SHELL_COMMANDS: &[ShellCommand] = &[
         wraps_op: None,
         op_params: &[],
     },
+    // Is the window minimised or hidden, or only out of sight? Local - no broker op.
+    ShellCommand {
+        command: "window_state",
+        args: &[],
+        wraps_op: None,
+        op_params: &[],
+    },
+    // ADR-143, Settings -> Agents. All local - no broker op.
+    ShellCommand {
+        command: "agent_detect",
+        args: &[],
+        wraps_op: None,
+        op_params: &[],
+    },
+    ShellCommand {
+        command: "agent_snippet",
+        args: &["client"],
+        wraps_op: None,
+        op_params: &[],
+    },
+    ShellCommand {
+        command: "agent_plan",
+        args: &["client", "action"],
+        wraps_op: None,
+        op_params: &[],
+    },
+    ShellCommand {
+        command: "agent_apply",
+        args: &["client", "action", "token"],
+        wraps_op: None,
+        op_params: &[],
+    },
+    ShellCommand {
+        command: "agent_prompt",
+        args: &["node", "reachable", "level", "format"],
+        wraps_op: None,
+        op_params: &[],
+    },
     // ADR-078: the bulk-paste preview. Local - no broker op.
     ShellCommand {
         command: "fields_preview",
         args: &["text", "fields", "split"],
+        wraps_op: None,
+        op_params: &[],
+    },
+    // ADR-122: a `.env` text read into pairs. Local - no broker op.
+    ShellCommand {
+        command: "env_preview",
+        args: &["text"],
+        wraps_op: None,
+        op_params: &[],
+    },
+    // ADR-156: start the broker at login (a launchd user agent). macOS only. Local - no broker op.
+    ShellCommand {
+        command: "login_agent_status",
+        args: &[],
+        wraps_op: None,
+        op_params: &[],
+    },
+    ShellCommand {
+        command: "login_agent_install",
+        args: &[],
+        wraps_op: None,
+        op_params: &[],
+    },
+    ShellCommand {
+        command: "login_agent_uninstall",
+        args: &[],
+        wraps_op: None,
+        op_params: &[],
+    },
+    // ADR-166: restore a backup through the bundled `credmgr restore --json`. Local - no broker op.
+    ShellCommand {
+        command: "backup_restore",
+        args: &["archive", "passphrase", "target"],
         wraps_op: None,
         op_params: &[],
     },
@@ -691,10 +1314,29 @@ pub struct BridgedOp {
     pub args: &'static [&'static str],
 }
 
-/// The eight commands above, which predate the table below and carry
-/// hand-written behaviour (token capture, [`AuthState`]) the table cannot
-/// express.
+/// The commands above that carry hand-written behaviour the table cannot
+/// express: token capture and [`AuthState`] for the eight that predate the
+/// table (ADR-057) and for `vault_recover` (ADR-163), which captures the login
+/// token its answer carries; and for the two agent-token commands (ADR-164)
+/// the hand-over of a bearer to the concealed clipboard instead of the webview.
 pub const HAND_WRITTEN: &[BridgedOp] = &[
+    BridgedOp {
+        command: "agent_token_issue",
+        op: "agent.token_issue",
+        params: &[
+            ("node", true),
+            ("label", true),
+            ("capabilities", true),
+            ("expiresIn", false),
+        ],
+        args: &["node", "label", "capabilities", "expires_in"],
+    },
+    BridgedOp {
+        command: "agent_token_rotate",
+        op: "agent.token_rotate",
+        params: &[("id", true), ("expiresIn", false)],
+        args: &["id", "expires_in"],
+    },
     BridgedOp {
         command: "vault_status",
         op: "vault.status",
@@ -704,14 +1346,24 @@ pub const HAND_WRITTEN: &[BridgedOp] = &[
     BridgedOp {
         command: "vault_unlock",
         op: "vault.unlock",
-        params: &[("passphrase", true)],
-        args: &["passphrase"],
+        params: &[("passphrase", false), ("method", false)],
+        args: &["passphrase", "method"],
     },
     BridgedOp {
         command: "vault_gate_verify",
         op: "vault.gate_verify",
         params: &[("code", true)],
         args: &["code"],
+    },
+    BridgedOp {
+        command: "vault_recover",
+        op: "vault.recover",
+        params: &[
+            ("recoveryCode", true),
+            ("newPassphrase", true),
+            ("code", false),
+        ],
+        args: &["recovery_code", "new_passphrase", "code"],
     },
     BridgedOp {
         command: "vault_lock",
@@ -734,8 +1386,8 @@ pub const HAND_WRITTEN: &[BridgedOp] = &[
     BridgedOp {
         command: "entry_list",
         op: "entry.list",
-        params: &[("node", true)],
-        args: &["node"],
+        params: &[("node", true), ("tag", false)],
+        args: &["node", "tag"],
     },
     BridgedOp {
         command: "entry_reveal",
@@ -982,6 +1634,53 @@ bridge_ops! {
         policy: Value => "policy",
     }
 
+    // -- The switchboard (ADR-155) — Settings reads and writes through it ----
+
+    /// Every setting (`credmgr_core::settings::SETTINGS`) with its value, default, risk and the caller's rule; a
+    /// project's settings too when `node` is given.
+    settings_list / settings_list_at => "settings.list" {
+        node: Option<String> => "node" [optional],
+    }
+
+    /// One setting in full, with its recent recorded changes.
+    settings_get / settings_get_at => "settings.get" {
+        id: String => "id",
+        node: Option<String> => "node" [optional],
+    }
+
+    /// Changes a setting. The owner's change follows the rules the app always had (Touch ID to widen a project's reach,
+    /// a fresh confirmation to loosen "confirm before showing secrets"); the answer carries the change id.
+    settings_set / settings_set_at => "settings.set" {
+        id: String => "id",
+        value: Value => "value",
+        reason: String => "reason",
+        node: Option<String> => "node" [optional],
+    }
+
+    /// Puts back the value a recorded change replaced.
+    settings_revert / settings_revert_at => "settings.revert" {
+        change: String => "change",
+        reason: Option<String> => "reason" [optional],
+    }
+
+    /// One waiting or decided agent request.
+    settings_request_get / settings_request_get_at => "settings.request_get" {
+        request: String => "request",
+    }
+
+    /// Every agent request (owner only).
+    settings_request_list / settings_request_list_at => "settings.request_list" {}
+
+    /// Approve or deny an agent's request (owner only). Approving a weakening change needs a fresh confirmation
+    /// (`confirmation_required` until `session.confirm`).
+    settings_request_decide / settings_request_decide_at => "settings.request_decide" {
+        request: String => "request",
+        approve: bool => "approve",
+    }
+
+    /// The LLM knowledge base, as Markdown.
+    settings_kb / settings_kb_at => "settings.kb" {}
+
     // -- Notes (ADR-072) — the inspector's Notes section --------------------
 
     /// Reads a node's note — `{markdown, modified}`, `markdown: ""` when there
@@ -1038,6 +1737,8 @@ bridge_ops! {
         to: Value => "to",
         scope: Vec<String> => "scope",
         reason: String => "reason",
+        direction: Option<String> => "direction" [optional],
+        expires_at: Option<u64> => "expiresAt" [optional],
     }
 
     /// Revokes grant `id`. In both modes — revocation is safety, not a lever.
@@ -1285,11 +1986,327 @@ bridge_ops! {
         passphrase: String => "passphrase",
     }
 
+    // -- Post-launch quick wins (ADR-156) ------------------------------------
+
+    /// Change the vault passphrase: the current one proves it is the owner, the new one wraps the
+    /// root key. A full root rotation, so the answer carries a NEW `recoveryCode` once (the old code
+    /// stops working) — the screen shows it and must not keep it. Owner's login; the vault's second
+    /// factor and an enrolled Touch ID key are asked for as for any vault-wide change.
+    vault_set_passphrase / vault_set_passphrase_at => "vault.set_passphrase" {
+        passphrase: String => "passphrase",
+        new_passphrase: String => "newPassphrase",
+    }
+
+    /// The owner has seen the cross-node alarm (`vault.status`'s `anomaliesUnseen`); resets it.
+    vault_anomalies_ack / vault_anomalies_ack_at => "vault.anomalies_ack" {}
+
+    /// Set an entry's expiry (`expires_at`, unix seconds) or clear it (`clear: true`) — exactly one.
+    /// Manifest metadata only.
+    entry_set_expiry / entry_set_expiry_at => "entry.set_expiry" {
+        node: String => "node",
+        entry: String => "entry",
+        generation: u64 => "generation",
+        expires_at: Option<i64> => "expiresAt" [optional],
+        clear: Option<bool> => "clear" [optional],
+    }
+
+    /// Entries expiring within `days` (30 when absent), one node or all; names and dates only.
+    entry_expiring / entry_expiring_at => "entry.expiring" {
+        node: Option<String> => "node" [optional],
+        days: Option<u64> => "days" [optional],
+    }
+
+    /// One entry's audit trail (actions and times, never a value), plus its edit/rotation/expiry times.
+    entry_history / entry_history_at => "entry.history" {
+        node: String => "node",
+        entry: String => "entry",
+        limit: Option<u64> => "limit" [optional],
+    }
+
+    /// Names and aliases on one node that contain `term`.
+    entry_search / entry_search_at => "entry.search" {
+        node: String => "node",
+        term: String => "term",
+        // ADR-167: only the entries carrying this tag.
+        tag: Option<String> => "tag" [optional],
+    }
+
+    /// Which entry a vault-global short reference names.
+    entry_get_by_ref / entry_get_by_ref_at => "entry.get_by_ref" {
+        reference: u64 => "reference",
+    }
+
+    // -- ADR-158 ---------------------------------------------------------------
+
+    /// Move an entry to another node, re-encrypted to that node's key. `generation` is the source node's
+    /// (F-9). The owner's login only; costs a fresh second factor and a Touch ID check every time, which
+    /// this shell attaches when the broker answers `presence_required`. Answers `{node, entry, ref, name,
+    /// from, generation, toGeneration, grantsRevoked, historyDropped}` - `node` is where the entry is now,
+    /// `generation` the source's new one, `toGeneration` the destination's. Never a value.
+    entry_move / entry_move_at => "entry.move" {
+        node: String => "node",
+        entry: String => "entry",
+        to: String => "to",
+        generation: u64 => "generation",
+        reason: Option<String> => "reason" [optional],
+    }
+
+    // -- ADR-161 ---------------------------------------------------------------
+
+    /// The doctor's tidy-up scan, phase 1: findings grouped by kind (shared values, near-identical names,
+    /// misfiled, weak, mistyped, expired, expiring, stale), each with a proposal; a move proposal carries the
+    /// exact `entry.move` params. Read-only, never a value, digest or fragment of one. The owner's login only.
+    vault_doctor_scan / vault_doctor_scan_at => "vault.doctor_scan" {
+        stale_days: Option<u64> => "staleDays" [optional],
+        expiring_days: Option<u64> => "expiringDays" [optional],
+    }
+
+    // -- Node-scoped agent tokens (ADR-164) ----------------------------------
+    //
+    // Owner's login only; the broker refuses all four to any agent. `issue` and `rotate` are
+    // hand-written (above the table): their answer carries a bearer secret, which the shell puts on
+    // the concealed clipboard and never hands to the webview. `status` is metadata only.
+
+    /// The live agent tokens, metadata only (never a secret); one node's when `node` is given.
+    agent_token_status / agent_token_status_at => "agent.token_status" {
+        node: Option<String> => "node" [optional],
+    }
+
+    /// End a token: its next request is refused. No proof (it only removes access).
+    agent_token_revoke / agent_token_revoke_at => "agent.token_revoke" {
+        id: String => "id",
+    }
+
+    // -- ADR-167: tags -----------------------------------------------------------
+
+    /// Replace one entry's tags (`[]` clears): normalised by the broker (lower-cased, inner spaces to `-`),
+    /// at most 16. Metadata only; the owner's sessions. Echoes the node's new generation and the stored tags.
+    entry_tag_set / entry_tag_set_at => "entry.tag_set" {
+        node: String => "node",
+        entry: String => "entry",
+        generation: u64 => "generation",
+        tags: Value => "tags",
+    }
+
+    // -- ADR-168: merge suggestions and merges inside one node -------------------
+
+    /// Groups of entries in one node that look like one thing (identical values, a shared value, names
+    /// alike). Names and ids only; values are compared inside the broker and never leave it.
+    merge_suggestions / merge_suggestions_at => "merge.suggestions" {
+        node: String => "node",
+        include_dismissed: Option<bool> => "includeDismissed" [optional],
+    }
+
+    /// Keep one entry and fold the others into it: their names become its aliases, their tags join its
+    /// tags, and they are removed (each undoable for 7 days with `entry_undo`). A fresh second factor.
+    merge_apply / merge_apply_at => "merge.apply" {
+        node: String => "node",
+        keep: String => "keep",
+        drop: Value => "drop",
+        generation: u64 => "generation",
+    }
+
+    /// Merge one suggestion, only when its entries' values are all identical. A fresh second factor.
+    merge_auto / merge_auto_at => "merge.auto" {
+        node: String => "node",
+        key: String => "key",
+        generation: u64 => "generation",
+    }
+
+    /// Every open identical suggestion: a dry run unless `apply` is `true` (then `generation` and a fresh
+    /// second factor).
+    merge_auto_all / merge_auto_all_at => "merge.auto_all" {
+        node: String => "node",
+        apply: Option<bool> => "apply" [optional],
+        generation: Option<u64> => "generation" [optional],
+    }
+
+    /// Remember that a suggestion was rejected: it is not suggested again until undismissed or restored.
+    merge_dismiss / merge_dismiss_at => "merge.dismiss" {
+        node: String => "node",
+        key: String => "key",
+    }
+
+    /// Forget one dismissal.
+    merge_undismiss / merge_undismiss_at => "merge.undismiss" {
+        node: String => "node",
+        key: String => "key",
+    }
+
+    /// What the node remembers as dismissed, with the names of the entries still in it.
+    merge_dismissed_list / merge_dismissed_list_at => "merge.dismissed_list" {
+        node: String => "node",
+    }
+
+    /// Forget every dismissal on the node.
+    merge_restore_all / merge_restore_all_at => "merge.restore_all" {
+        node: String => "node",
+    }
+
+    // -- ADR-169 ---------------------------------------------------------------
+
+    /// Apply every move of one doctor plan in one request. `moves` is the exact list the scan showed and the
+    /// person confirmed: `[{node, entry, to, generation}]`, `generation` each source's from the scan. The
+    /// owner's login only; one fresh second factor and one Touch ID check for the whole plan (the shell
+    /// attaches the proof when the broker answers `presence_required`; it signs the whole list). Stops at the
+    /// first move that fails: `{complete, applied: [entry.move's answer + index], stopped?, notApplied}`.
+    /// Never a value.
+    vault_doctor_apply / vault_doctor_apply_at => "vault.doctor_apply" {
+        moves: Value => "moves",
+        reason: Option<String> => "reason" [optional],
+    }
+
+    // -- Touch ID and sealed entries (ADR-098) -------------------------------
+
+    /// Ask the broker for a presence challenge for an op. Nothing here is secret (a nonce and the digest
+    /// to sign) and nothing the page holds can sign it; the shell itself uses the same op when a request
+    /// comes back `presence_required`.
+    presence_challenge / presence_challenge_at => "presence.challenge" {
+        op: String => "op",
+        params: Option<Value> => "params" [optional],
+        // ADR-148: `true` asks for the proof-of-possession challenge of `presence.enrol`.
+        possession: Option<bool> => "possession" [optional],
+    }
+
+    /// ADR-150: confirm it is the owner before the broker shows saved secrets again. With `passphrase`,
+    /// the vault passphrase (a wrong one counts in the unlock back-off); without it, a Touch ID proof,
+    /// which this shell attaches itself when the broker answers `presence_required`. Opens the
+    /// session's trust window: `{confirmed, method, expiresIn}`. The passphrase is never logged or kept.
+    session_confirm / session_confirm_at => "session.confirm" {
+        passphrase: Option<String> => "passphrase" [optional],
+    }
+
+    /// What is set up: the enrolled presence keys, whether Touch ID unlock is on, and what this Mac can do.
+    presence_status / presence_status_at => "presence.status" {}
+
+    /// Enrol a presence key's public half (base64, from `presence_key_create`) under a label. The first
+    /// key needs only the owner and a fresh second factor; later ones need a Touch ID proof.
+    presence_enrol / presence_enrol_at => "presence.enrol" {
+        public_key: String => "publicKey",
+        label: Option<String> => "label" [optional],
+    }
+
+    /// Remove an enrolled presence key by id. With a key enrolled this needs a proof, which the shell
+    /// supplies (Touch ID appears).
+    presence_unenrol / presence_unenrol_at => "presence.unenrol" {
+        id: String => "id",
+    }
+
+    /// Turn on unlocking this vault with Touch ID (needs the vault open and a fresh second factor).
+    device_enrol / device_enrol_at => "device.enrol" {}
+
+    /// Turn Touch ID unlock off.
+    device_remove / device_remove_at => "device.remove" {}
+
+    /// ADR-165: the machine lock's honest state (owner only; never an agent).
+    keystore_status / keystore_status_at => "keystore.status" {}
+
+    /// ADR-165: seal the passphrase unlock to this Mac's device key, in two phases (review N1). `phase:
+    /// "prepare"` sends the vault passphrase and the CURRENT recovery code (both prove it is the owner; a wrong
+    /// one counts in the unlock back-off) and answers a NEW `newRecoveryCode` once, changing nothing; the screen
+    /// shows it and must not keep it. `phase: "commit"` sends that new code typed back, and only then is the
+    /// root key rotated and every node re-keyed (the old code stops working). `phase: "cancel"` forgets a
+    /// prepared bind. No value is logged or kept.
+    keystore_bind / keystore_bind_at => "keystore.bind" {
+        phase: String => "phase",
+        passphrase: Option<String> => "passphrase" [optional],
+        recovery_code: Option<String> => "recoveryCode" [optional],
+    }
+
+    /// ADR-165: turn the machine lock off. With a presence key enrolled this needs a proof, which the shell
+    /// supplies (Touch ID appears); with a second factor on, a fresh one; with neither, the vault
+    /// passphrase (`passphrase`, which counts in the unlock back-off).
+    keystore_unbind / keystore_unbind_at => "keystore.unbind" {
+        passphrase: Option<String> => "passphrase" [optional],
+    }
+
+    /// The sealed ("orphaned") entries - names only.
+    orphan_list / orphan_list_at => "orphan.list" {}
+
+    /// Read one sealed entry. Costs a fresh second factor and a Touch ID check every time.
+    orphan_reveal / orphan_reveal_at => "orphan.reveal" {
+        entry: String => "entry",
+        field_ids: Option<Vec<String>> => "fieldIds" [optional],
+    }
+
+    // -- 2.0.0 broker features (ADR-130…134) -----------------------------------
+
+    /// Replace a node's keypair and re-seal everything sealed to the old one (ADR-130). Costs a fresh
+    /// second factor and a Touch ID check; one at a time. Answers `{node, publicKey, entries, note,
+    /// history, removed}`.
+    node_rekey / node_rekey_at => "node.rekey" {
+        node: String => "node",
+    }
+
+    /// Permanently destroy sealed entries and the archives behind them (ADR-131). `confirm` is the fixed
+    /// word `destroy-sealed-entries`; `count` is the number of entries the person was shown and the broker
+    /// compares it. `entries` names ids; absent means every sealed entry. Costs a fresh second factor and a
+    /// Touch ID check. Cannot be undone.
+    orphan_destroy / orphan_destroy_at => "orphan.destroy" {
+        confirm: String => "confirm",
+        count: u64 => "count",
+        entries: Option<Vec<String>> => "entries" [optional],
+    }
+
+    /// Entries whose field VALUES contain `term` (ADR-132): `{results: [{node, id, name}], truncated}` -
+    /// never a value. Needs `reveal`; 12 searches a minute; a private node is never searched for an agent.
+    search_content / search_content_at => "search.content" {
+        term: String => "term",
+        node: Option<String> => "node" [optional],
+    }
+
+    /// An age-encrypted archive of a node (ADR-133), built inside the broker: `{archive (base64),
+    /// entries, omittedSeeds, format}`. Exactly one of `passphrase` or `recipients`. Costs a fresh second
+    /// factor and a Touch ID check. The shell writes the file; the page never holds the plaintext.
+    node_export / node_export_at => "node.export" {
+        node: String => "node",
+        passphrase: Option<String> => "passphrase" [optional],
+        recipients: Option<Vec<String>> => "recipients" [optional],
+    }
+
+    /// A summary of the audit log for `[from, to)` (unix seconds): counts by action, actor and node,
+    /// denials, presence uses, and whether the hash chain verifies (ADR-134). No values, no names.
+    audit_report / audit_report_at => "audit.report" {
+        from: u64 => "from",
+        to: u64 => "to",
+        node: Option<String> => "node" [optional],
+    }
+
+    // -- A node's own second factor (ADR-135) ---------------------------------
+
+    /// Begin giving a project a second factor of its own: `{node, otpauthUri}`. Replacing one in force
+    /// needs that factor's code, fresh. Owner login only; not for `global` (the vault's own gate has
+    /// `vault_gate_*`).
+    node_gate_enroll_begin / node_gate_enroll_begin_at => "node.gate_enroll_begin" {
+        node: String => "node",
+    }
+
+    /// Confirm it with one valid `code`: `{node, recoveryCodes}`, once - ten codes of this node's own.
+    node_gate_enroll_confirm / node_gate_enroll_confirm_at => "node.gate_enroll_confirm" {
+        node: String => "node",
+        code: String => "code",
+    }
+
+    /// Step up for one node: its own code, fresh for five minutes, opening that node and no other.
+    node_gate_verify / node_gate_verify_at => "node.gate_verify" {
+        node: String => "node",
+        code: String => "code",
+    }
+
+    /// Remove a project's own second factor: with its fresh code and Touch ID (send neither optional), or
+    /// the last door - `passphrase` and the root `recoveryCode` together - when the authenticator is lost.
+    node_gate_remove / node_gate_remove_at => "node.gate_remove" {
+        node: String => "node",
+        passphrase: Option<String> => "passphrase" [optional],
+        recovery_code: Option<String> => "recoveryCode" [optional],
+    }
+
     // -- Generator (ADR-087) -------------------------------------------------
 
     /// Makes a password in the broker — never in page JavaScript. `length`
-    /// (8-128, default 20), `symbols` (default on) and `pronounceable` (default
-    /// off) are all optional. Answers `{value, length, symbols, pronounceable,
+    /// (8-128, default 20), `symbols` (default on), `pronounceable` (default
+    /// off) and `hex` (default off; lower-case hex, never with `pronounceable`
+    /// or `symbols: true`) are all optional. Answers `{value, length, symbols, pronounceable,
     /// entropyBits}`; the value reaches a field only through `field_add`,
     /// `field_update` or `entry_create`, and is shown masked. Needs `create` or
     /// `update`; not an MCP tool.
@@ -1297,6 +2314,37 @@ bridge_ops! {
         length: Option<u64> => "length" [optional],
         symbols: Option<bool> => "symbols" [optional],
         pronounceable: Option<bool> => "pronounceable" [optional],
+        hex: Option<bool> => "hex" [optional],
+    }
+
+    // -- Aliases, near-duplicate names, .env import (ADR-121, ADR-122) -------
+
+    /// Sets the other names one entry answers to: the whole list, at most 8, `[]`
+    /// clears it. Metadata only; a human session with `update`. Not an MCP tool.
+    entry_alias / entry_alias_at => "entry.alias" {
+        node: String => "node",
+        entry: String => "entry",
+        generation: u64 => "generation",
+        aliases: Value => "aliases",
+    }
+
+    /// Which entries of a node have a name or alias resembling `name`, and whether
+    /// `name` is already taken. `entry` leaves one entry out.
+    entry_similar / entry_similar_at => "entry.similar" {
+        node: String => "node",
+        name: String => "name",
+        entry: Option<String> => "entry" [optional],
+    }
+
+    /// A parsed `.env` file (name/value pairs the client read, 1-500) into one node.
+    /// `dry_run` (sent as `dryRun`) lists what each pair would become and writes nothing;
+    /// `on_conflict` (sent as `onConflict`) is `"refuse"` (default) or `"skip"`. Each
+    /// pair becomes its own entry with its own audit record. No answer carries a value.
+    entry_import_env / entry_import_env_at => "entry.import_env" {
+        node: String => "node",
+        entries: Value => "entries",
+        dry_run: Option<bool> => "dryRun" [optional],
+        on_conflict: Option<String> => "onConflict" [optional],
     }
 }
 
@@ -1307,15 +2355,15 @@ mod tests {
     #[test]
     fn the_bridge_names_one_command_per_distinct_op() {
         let all: Vec<&BridgedOp> = bridged().collect();
-        assert_eq!(all.len(), 55, "HAND_WRITTEN (8) + TABLE (47)");
+        assert_eq!(all.len(), 111, "HAND_WRITTEN (11) + TABLE (100)");
         let mut ops: Vec<&str> = all.iter().map(|b| b.op).collect();
         ops.sort_unstable();
         ops.dedup();
-        assert_eq!(ops.len(), 55, "no op is bridged twice");
+        assert_eq!(ops.len(), 111, "no op is bridged twice");
         let mut commands: Vec<&str> = all.iter().map(|b| b.command).collect();
         commands.sort_unstable();
         commands.dedup();
-        assert_eq!(commands.len(), 55, "no command name is used twice");
+        assert_eq!(commands.len(), 111, "no command name is used twice");
     }
 
     #[test]
@@ -1410,10 +2458,10 @@ mod tests {
     }
 
     #[test]
-    fn the_shell_commands_are_five_and_their_arguments_are_single_words() {
+    fn the_shell_commands_are_seventeen_and_their_arguments_are_single_words() {
         // A single-word snake_case argument is its own camelCase `invoke()` key,
         // so `bridge.ts` and the Rust signature read the same.
-        assert_eq!(SHELL_COMMANDS.len(), 5);
+        assert_eq!(SHELL_COMMANDS.len(), 18);
         for s in SHELL_COMMANDS {
             for arg in s.args {
                 assert!(!arg.contains('_'), "{}: {arg}", s.command);
@@ -1589,6 +2637,9 @@ mod tests {
             authenticated: true,
             initialized: true,
             pending_approvals: 0,
+            touch_id_unlock: false,
+            anomalies_unseen: 0,
+            recovery_unlock: false,
         })
         .unwrap();
         assert_eq!(
@@ -1602,6 +2653,9 @@ mod tests {
             authenticated: false,
             initialized: true,
             pending_approvals: 2,
+            touch_id_unlock: false,
+            anomalies_unseen: 0,
+            recovery_unlock: false,
         })
         .unwrap();
         assert_eq!(
@@ -1615,5 +2669,26 @@ mod tests {
         assert_eq!(pending_from(&json!({})), 0);
         assert_eq!(pending_from(&json!({ "pendingApprovals": "3" })), 0);
         assert_eq!(pending_from(&json!({ "pendingApprovals": 3 })), 3);
+    }
+
+    #[test]
+    fn the_anomaly_count_reaches_the_page_only_when_there_is_one() {
+        // ADR-156: `vault.status` carries `anomaliesUnseen` to the owner's login only; the page's
+        // copy carries it on, and leaves it out at 0 (or when the broker did not send it).
+        let s = Session::new();
+        let with = auth_state(&s, &json!({ "locked": false, "anomaliesUnseen": 3 }));
+        assert_eq!(with.anomalies_unseen, 3);
+        assert!(serde_json::to_string(&with)
+            .unwrap()
+            .contains(r#""anomaliesUnseen":3"#));
+        for absent in [
+            json!({ "locked": false }),
+            json!({ "anomaliesUnseen": "2" }),
+            json!({ "anomaliesUnseen": 0 }),
+        ] {
+            let a = auth_state(&s, &absent);
+            assert_eq!(a.anomalies_unseen, 0);
+            assert!(!serde_json::to_string(&a).unwrap().contains("anomalies"));
+        }
     }
 }

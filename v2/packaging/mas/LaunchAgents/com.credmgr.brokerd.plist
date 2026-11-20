@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- ADR-162: the Mac App Store edition's broker agent. Copied into CredMgr.app/Contents/Library/LaunchAgents by
+     tauri.mas.conf.json and registered with SMAppService only when the user turns on Settings > Security >
+     Start at login (src-tauri/src/login_agent.rs). BundleProgram is relative to the bundle: the agent can only
+     ever start the credmgrd sealed inside this app. No log paths (a sandboxed agent writes nowhere outside its
+     container), no user or group key (a per-user agent, never root). Same lifecycle as crates/brokerd/packaging. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.credmgr.brokerd</string>
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/credmgrd</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
