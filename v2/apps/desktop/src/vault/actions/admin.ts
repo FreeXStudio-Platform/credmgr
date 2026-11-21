@@ -67,10 +67,16 @@ const scrubProblem = (p: Problem): Problem => ({ node: typeof p?.node === "strin
  * On success the grant list is read again (the graph's dashed edges come from it).  `scope` holds only `read`, `reveal`,
  * `notes`; `reason` is at least 8 characters.
  */
-export async function createGrant(m: VaultModel, from: string, to: live.GrantTarget, scope: Array<"read" | "reveal" | "notes">, reason: string): Promise<Written<Awaited<ReturnType<typeof live.grantCreate>>>> {
-  const r = await live.grantCreate(from, to, scope, reason);
+export async function createGrant(m: VaultModel, from: string, to: live.GrantTarget, scope: Array<"read" | "reveal" | "notes">, reason: string, expiresAt?: number): Promise<Written<Awaited<ReturnType<typeof live.grantCreate>>>> {
+  // ADR-174 (6): a single-entry grant must expire, at most 90 days ahead; without a choice it is offered 30 days.  A node grant
+  // expires only when asked.  The broker decides (a later or missing expiry is refused there, not here).
+  const expiry = expiresAt ?? (to.kind === "entry" ? Math.floor(Date.now() / 1000) + ENTRY_GRANT_DEFAULT_DAYS * 86_400 : undefined);
+  const r = expiry === undefined ? await live.grantCreate(from, to, scope, reason) : await live.grantCreate(from, to, scope, reason, undefined, expiry);
   return thenReread(m, r, { grants: true });
 }
+
+/** The expiry offered to a single-entry grant when none is chosen (ADR-174 (6); the broker allows 90 days at most). */
+export const ENTRY_GRANT_DEFAULT_DAYS = 30;
 
 // ─────────────────────────────── agent tokens (ADR-164) ───────────────────────────────
 // The owner's login only.  Issue and rotate never hand the page the secret: the shell puts it on the concealed clipboard

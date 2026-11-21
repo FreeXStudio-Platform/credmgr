@@ -7,7 +7,8 @@
 //! holds byte-for-byte to the committed file.
 //!
 //! **Safety tiers (ADR-155).** [`classify`] says whether a change is cosmetic, makes the vault stricter, or weakens it.
-//! A cosmetic or strengthening change from an agent applies at once; a weakening change from an agent becomes a request
+//! An agent changes only the settings of its own node (the vault's only when its scope is Global), holding `update` there
+//! (ADR-155 amendment); there, a cosmetic or strengthening change applies at once and a weakening change becomes a request
 //! the owner approves on their own device after a fresh confirmation (Touch ID or passphrase). A person's own change
 //! follows the rules the app already had. Every applied change is recorded with its previous value and can be reverted.
 //!
@@ -602,6 +603,7 @@ pub static MCP_TOOL_NAMES: &[&str] = &[
     "credmgr_search",
     "credmgr_get",
     "credmgr_get_metadata",
+    "credmgr_notes_read",
     "credmgr_create",
     "credmgr_update",
     "credmgr_rotate",
@@ -661,16 +663,19 @@ pub fn kb_markdown() -> String {
     o.push_str("| `credmgr_settings_request` | `credmgr settings requests` / `approve <id>` / `deny <id>` | An agent polls its waiting request; the owner lists and decides them. |\n");
     o.push_str("| `credmgr_kb` | `credmgr kb` | This file. |\n\n");
     o.push_str("### Safety tiers\n\n");
-    o.push_str("- **Cosmetic** changes (appearance, layout) apply at once, for an agent too.\n");
-    o.push_str("- **Strengthening** changes (a stricter level, a shorter lock, protection on) apply at once, for an agent too.\n");
+    o.push_str("- **Who may change what.** The owner changes any setting. An agent changes only the settings of **its own node**: its own project's, and the vault-wide ones (`app.*`, `vault.*`) only when its scope is Global. It needs read-write access there (`node.agentAccess: read-write`, or an agent token that carries `update`); otherwise `credmgr_settings_set` answers `capability_not_held`. An agent in a project set to `agentAccess: none` cannot read the settings either. `settings.list` says, per setting, what **you** may do.\n");
+    o.push_str("- **Cosmetic** changes (appearance, layout) apply at once, for an agent on its own node too.\n");
+    o.push_str("- **Strengthening** changes (a stricter level, a shorter lock, protection on) apply at once, for an agent on its own node too.\n");
     o.push_str("- **Weakening** changes (a longer or no auto-lock, a looser reveal policy, a lower security level, more agent access, protection off) from an agent become a **request**: `credmgr_settings_set` answers `state: \"pending\"` with a `request` id. The owner approves it on their own device after a fresh Touch ID or passphrase confirmation; the change then applies and is recorded. Poll with `credmgr_settings_request`. A request expires after 10 minutes.\n");
     o.push_str(
-        "- An agent sees and changes project settings only for projects in its own scope.\n",
+        "- An agent sees project settings only for projects in its own scope, and never asks for more agent access for its own project (`node.agentAccess`): that request is refused, not queued; the owner changes it.\n",
     );
     o.push_str("- Not on the switchboard (owner-only operations, unchanged): unlocking, Touch ID enrolment, second-factor enrolment, grants, creating or sealing projects, rotating the root key, deleting orphans, backups and exports.\n\n");
     o.push_str("### Examples\n\n");
+    o.push_str("```json\n{\"tool\": \"credmgr_settings_set\", \"arguments\": {\"id\": \"node.lockAfterSeconds\", \"node\": \"acme\", \"value\": 900, \"reason\": \"user wants acme to lock after 15 minutes\"}}\n```\n");
+    o.push_str("→ `{\"applied\": true, \"change\": \"strengthens\", \"changeId\": \"sc-…\"}` (from an agent scoped to acme with read-write access)\n\n");
     o.push_str("```json\n{\"tool\": \"credmgr_settings_set\", \"arguments\": {\"id\": \"app.theme\", \"value\": \"dark\", \"reason\": \"user asked for dark mode\"}}\n```\n");
-    o.push_str("→ `{\"applied\": true, \"change\": \"cosmetic\", \"changeId\": \"sc-…\"}`\n\n");
+    o.push_str("→ from an agent scoped to a project: `capability_not_held` — a vault setting is Global's; tell the user to change it in CredMgr (Settings) or with their own login (`credmgr settings set app.theme '\"dark\"' --reason …`).\n\n");
     o.push_str("```json\n{\"tool\": \"credmgr_settings_set\", \"arguments\": {\"id\": \"node.securityLevel\", \"node\": \"acme\", \"value\": \"open\", \"reason\": \"user wants no approvals on acme\"}}\n```\n");
     o.push_str("→ `{\"applied\": false, \"state\": \"pending\", \"request\": \"sr-…\", \"change\": \"weakens\"}` — tell the user to approve it in CredMgr.\n\n");
     o.push_str("```sh\ncredmgr settings set app.autoLockMins 5 --reason \"lock sooner\"\ncredmgr settings list --node acme\n```\n\n");

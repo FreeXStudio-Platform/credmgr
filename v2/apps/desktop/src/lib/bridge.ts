@@ -39,10 +39,10 @@
  *    the one marker `@no-ui-caller <reason>` (a command-line-only op, one the shell drives itself, one another
  *    command covers, or a screen that does not exist yet). It also fails a marker left on a command the app does call.
  *
- * Four operations are wired but refused broker-side with `presence_required`
- * on every call until a transport can attest presence (ADR-047, F-8):
- * `totpSeed`, `nodeReparent`, `grantCreate`, `auditGet`. Design their screens
- * against that refusal, not against a success body.
+ * Presence-gated operations (`totpSeed`, `nodeReparent`, `grantCreate`, `auditGet`
+ * and the others ADR-098 lists) first answer `presence_required`; the shell then
+ * asks for Touch ID itself (`src-tauri/src/presence.rs`) and repeats the request
+ * with the proof. Without an enrolled presence key the refusal stands.
  */
 
 import { invoke as shellInvoke, type InvokeArgs } from "@tauri-apps/api/core";
@@ -877,8 +877,8 @@ export const nodeRestore = (node: string) =>
   invoke<{ node: string; restored: true; audit?: string }>("node_restore", { node });
 
 /**
- * Refused with `presence_required` today (F-8). `reason` must be ≥ 8 characters.
- * @no-ui-caller refused with presence_required on every call until a transport can attest presence for it (ADR-047); the CLI's `credmgr node reparent` meets the same refusal.
+ * Needs a Touch ID proof (F-8, ADR-098), which the shell attaches itself on `presence_required`. `reason` must be ≥ 8 characters.
+ * @no-ui-caller no screen yet: moving a node under another parent is `credmgr node reparent` (Touch ID, ADR-098).
  */
 export const nodeReparent = (node: string, newParent: string, reason: string) =>
   invoke<Record<string, unknown>>("node_reparent", { node, newParent, reason });
@@ -1297,6 +1297,10 @@ export type RotateRootResult = {
   /** ADR-165: present when this rotation could NOT seal the new passphrase file, so the machine lock is now OFF; why, in plain words. */
   machineLockRemoved?: string;
   deviceKeyCreated?: boolean;
+  /** ADR-165 N5 / ADR-174: the live projects given a new key in this rotation (sorted ids). */
+  nodesRekeyed?: string[];
+  /** ADR-165 N5 / ADR-174: envelopes re-sealed to the new keys, the sealed copies of removed projects included. */
+  filesResealed?: number;
 };
 
 /**
@@ -1901,7 +1905,9 @@ export interface SettingView {
   default: unknown;
   value: unknown;
   risk: "security" | "cosmetic";
-  /** The rule for this caller: `direct`, `direct when stricter; approval when weaker`, or `read only`. */
+  /** The rule for this caller: `direct`, `direct when stricter; approval when weaker`, `direct when stricter; never
+   *  weaker (the owner's)` (an agent's own `node.agentAccess`), or `read only` (ADR-155 amendment: an agent changes only
+   *  its own node's settings). The app's own login always reads `direct`. */
   you: string;
   recentChanges?: SettingChangeRecord[];
 }
@@ -2133,6 +2139,14 @@ export interface KeystoreStatus {
   preBindNodes?: string[];
   /** ADR-165 M5: this Mac's bind record names this vault folder under another vault id (`vault.id` edited or removed, or the folder put back to an older copy). Reported, never repaired. */
   recordDetached?: boolean;
+  /** ADR-174 O-2: the device key file carries Time Machine's exclusion (`null`: no key file, or not macOS). */
+  deviceKeyTimeMachineExcluded?: boolean | null;
+  /** ADR-174 O-2: a Time Machine backup of the folder is covered: the wrap is sealed to a key made already excluded (never in a backup). */
+  deviceKeyTimeMachineCovered?: boolean;
+  /** ADR-174 O-3: the sync service the vault folder sits in ("iCloud Drive", "Dropbox", ...), or `null`. Bind refuses such a folder. */
+  syncedFolder?: string | null;
+  /** ADR-174 O-5: what each step of turning the lock on asks for beyond the passphrase and the recovery codes (Touch ID, a fresh second factor, or nothing more). */
+  bindProof?: "presence" | "secondFactor" | "none";
   /** A plain-words warning to show beside the row when any of the three above is set (`null` otherwise). */
   warning?: string | null;
   protects: string;

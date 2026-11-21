@@ -555,11 +555,12 @@ fn a_token_whose_node_left_the_registry_is_dead_even_when_the_id_comes_back() {
 #[test]
 fn the_owner_sees_which_agent_token_asked_for_an_approval_or_a_setting_change() {
     let (_v, state, owner, key, entry) = setup();
+    // `update`: the switchboard lets an agent change only settings of its own node, holding `update` there (Q-1).
     let issued = issue(
         &state,
         &owner,
         &key,
-        issue_params("acme", &["list", "read", "reveal"]),
+        issue_params("acme", &["list", "read", "reveal", "update"]),
     );
     let token = bearer(&issued);
     let id = issued["id"].as_str().unwrap().to_string();
@@ -609,13 +610,24 @@ fn the_owner_sees_which_agent_token_asked_for_an_approval_or_a_setting_change() 
         other => panic!("{other:?}"),
     }
 
-    // A weakening setting change from the token waits for the owner, who sees the token's name.
+    // A vault setting is Global's: a token confined to acme may not change it (ADR-155 amendment, Q-1).
+    assert!(matches!(
+        with_token(
+            &state,
+            &bearer(&rotated),
+            NOW,
+            "settings.set",
+            json!({ "id": "app.autoLockMins", "value": 0, "reason": "trust me" }),
+        ),
+        Err(OpError::CapabilityNotHeld { .. })
+    ));
+    // A weakening change to its own node's setting waits for the owner, who sees the token's name.
     let r = with_token(
         &state,
         &bearer(&rotated),
         NOW,
         "settings.set",
-        json!({ "id": "app.autoLockMins", "value": 0, "reason": "trust me" }),
+        json!({ "id": "node.requireTwoFactor", "node": "acme", "value": "never", "reason": "trust me" }),
     )
     .unwrap();
     assert_eq!(r["state"], "pending");

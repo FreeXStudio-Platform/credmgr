@@ -683,3 +683,119 @@ fn an_entry_grant_reads_and_codes_its_own_entry_only() {
         ops::dispatch(&state, &b, NOW, "entry.list", &json!({ "node": "a" })).expect("entry.list");
     assert_eq!(list["ids"], json!([totp]));
 }
+
+// ---------------------------------------------------------------------------
+// ADR-174 (5): "Creating a sharing grant needs your authenticator code as well as Touch ID."
+
+fn node_grant() -> serde_json::Value {
+    json!({
+        "from": "b",
+        "to": { "kind": "node", "nodeId": "a" },
+        "scope": ["read"],
+        "reason": "b's build reads a's config",
+    })
+}
+
+#[test]
+fn with_a_second_factor_enrolled_a_grant_needs_a_fresh_code_before_the_proof() {
+    let (_v, state, owner, key, [granted, _, _]) = real_vault();
+    let totp = f1_support::enrol_gate(&state, &owner);
+    // Long after the enrolment: the confirmation's window, if any, is over.
+    let later = NOW + 3600;
+    let proved = |params: serde_json::Value| {
+        f1_support::with_proof(&state, &owner, &key, later, "grant.create", params)
+    };
+    let mut entry = entry_grant(&granted, &["reveal"]);
+    entry["expiresAt"] = json!(later + 3600);
+    for params in [node_grant(), entry] {
+        // Without a fresh code: two_factor_required, with or without a proof, and nothing stored.
+        for ask in [params.clone(), proved(params.clone())] {
+            let r = ops::dispatch(&state, &owner, later, "grant.create", &ask);
+            assert!(matches!(r, Err(OpError::TwoFactorRequired { .. })), "{r:?}");
+        }
+        assert!(state.registry.read().unwrap().grants.is_empty());
+    }
+    // The code is asked first: a request without a proof answers two_factor_required, not presence_required,
+    // so nobody is asked for a finger the broker will refuse anyway. With the code given, the proof is next.
+    f1_support::step_up(&state, &owner, &totp, later);
+    let r = ops::dispatch(&state, &owner, later, "grant.create", &node_grant());
+    assert!(matches!(r, Err(OpError::PresenceRequired { .. })), "{r:?}");
+    ops::dispatch(&state, &owner, later, "grant.create", &proved(node_grant()))
+        .expect("a fresh code and a proof create the grant");
+    assert_eq!(state.registry.read().unwrap().grants.len(), 1);
+    // The window ends: the next grant asks again.
+    let much_later = later + 3600;
+    let mut entry = entry_grant(&granted, &["reveal"]);
+    entry["expiresAt"] = json!(much_later + 3600);
+    let ask = f1_support::with_proof(&state, &owner, &key, much_later, "grant.create", entry);
+    let r = ops::dispatch(&state, &owner, much_later, "grant.create", &ask);
+    assert!(matches!(r, Err(OpError::TwoFactorRequired { .. })), "{r:?}");
+    assert_eq!(state.registry.read().unwrap().grants.len(), 1);
+}
+
+#[test]
+fn without_a_second_factor_enrolled_a_grant_needs_the_proof_alone() {
+    let (_v, state, owner, key, _) = real_vault();
+    let r = ops::dispatch(&state, &owner, NOW, "grant.create", &node_grant());
+    assert!(matches!(r, Err(OpError::PresenceRequired { .. })), "{r:?}");
+    create_grant(&state, &owner, &key, node_grant()).expect("no gate: the proof is enough");
+}
+
+// ---------------------------------------------------------------------------
+// ADR-174 (6): "Single-entry sharing grants must have an expiry, at most 90 days."
+
+#[test]
+fn an_entry_grant_must_expire_within_90_days_and_a_node_grant_need_not() {
+    let (_v, state, owner, key, [granted, _, _]) = real_vault();
+    const DAY: i64 = 86_400;
+    let with_expiry = |expires: serde_json::Value| {
+        let mut p = entry_grant(&granted, &["reveal"]);
+        p["expiresAt"] = expires;
+        p
+    };
+    let mut missing = entry_grant(&granted, &["reveal"]);
+    missing.as_object_mut().unwrap().remove("expiresAt");
+    for (params, why) in [
+        (missing, "no expiresAt"),
+        (with_expiry(json!(null)), "expiresAt null"),
+        (
+            with_expiry(json!(NOW + 90 * DAY + 1)),
+            "a second over 90 days",
+        ),
+        (with_expiry(json!(NOW + 365 * DAY)), "a year"),
+    ] {
+        // Refused before the proof, and with one: a malformed request, saying what to do.
+        for ask in [
+            params.clone(),
+            f1_support::with_proof(&state, &owner, &key, NOW, "grant.create", params.clone()),
+        ] {
+            let r = ops::dispatch(&state, &owner, NOW, "grant.create", &ask);
+            match &r {
+                Err(OpError::Malformed(m)) => {
+                    assert!(m.contains("entry-level grant"), "{why}: {m}")
+                }
+                other => panic!("{why}: {other:?}"),
+            }
+        }
+    }
+    assert!(state.registry.read().unwrap().grants.is_empty());
+    // Exactly 90 days is allowed.
+    let g = create_grant(&state, &owner, &key, with_expiry(json!(NOW + 90 * DAY)))
+        .expect("90 days is the limit, not past it");
+    assert_eq!(g["expiresAt"], json!(NOW + 90 * DAY));
+    // A node grant may still be open-ended, or last longer than 90 days.
+    let g =
+        create_grant(&state, &owner, &key, node_grant()).expect("a node grant without an expiry");
+    assert!(g["expiresAt"].is_null());
+    ops::dispatch(
+        &state,
+        &owner,
+        NOW,
+        "grant.revoke",
+        &json!({ "id": g["id"] }),
+    )
+    .unwrap();
+    let mut long = node_grant();
+    long["expiresAt"] = json!(NOW + 365 * DAY);
+    create_grant(&state, &owner, &key, long).expect("a node grant for a year");
+}

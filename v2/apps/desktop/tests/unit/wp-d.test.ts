@@ -162,6 +162,26 @@ describe("admin actions (src/vault/actions/admin.ts)", () => {
     expect(m2.refreshed).toEqual([]);
   });
 
+  it("createGrant offers a single-entry grant 30 days when no expiry is chosen, and sends a chosen one as it is (ADR-174)", async () => {
+    const before = Math.floor(Date.now() / 1000);
+    const calls = fakeShell({ grant_create: { created: true } });
+    const to = { kind: "entry" as const, nodeId: "atlas", entryId: "e-a1" };
+    await admin.createGrant(fakeModel(), "beacon", to, ["reveal"], "a good reason");
+    const sent = (calls[0].args as { expiresAt: number }).expiresAt;
+    expect(sent).toBeGreaterThanOrEqual(before + admin.ENTRY_GRANT_DEFAULT_DAYS * 86_400);
+    expect(sent).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + admin.ENTRY_GRANT_DEFAULT_DAYS * 86_400);
+    expect(admin.ENTRY_GRANT_DEFAULT_DAYS).toBe(30);
+
+    const calls2 = fakeShell({ grant_create: { created: true } });
+    await admin.createGrant(fakeModel(), "beacon", to, ["reveal"], "a good reason", 1_900_000_000);
+    expect((calls2[0].args as { expiresAt: number }).expiresAt).toBe(1_900_000_000);
+
+    // A node grant still expires only when asked.
+    const calls3 = fakeShell({ grant_create: { created: true } });
+    await admin.createGrant(fakeModel(), "beacon", { kind: "node", nodeId: "atlas" }, ["read"], "a good reason");
+    expect((calls3[0].args as { expiresAt?: number }).expiresAt).toBeUndefined();
+  });
+
   it("revokeGrant sends grant_revoke with the id and then refreshes the grants", async () => {
     const m = fakeModel();
     const calls = fakeShell({ grant_revoke: { id: "g1", revoked: true } });

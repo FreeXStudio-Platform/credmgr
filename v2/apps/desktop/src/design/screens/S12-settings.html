@@ -28,11 +28,16 @@
       <div class="t-body-sm">The passphrase file is sealed with a device key kept on this Mac, outside the vault folder, and the root key and every project key are replaced. A copy of the vault folder made <strong>from now on</strong> (a synced folder, a copied directory, a USB disk) then does not open on another computer with the passphrase alone.</div>
       <div class="t-body-sm" data-machine-lock-before="1"><strong>Copies made before now</strong> still open with the passphrase, and still show what they held then. Nothing written after this is readable in them.</div>
       <div class="t-body-sm" data-machine-lock-replaced="1"><strong>If you replace this Mac</strong>, or the key file is lost, the passphrase will not open the vault there. Open it with your recovery code instead ("Forgot passphrase? Use recovery code" on the Lock screen); that also locks it to the new Mac. Another Mac sharing this vault folder needs the recovery code too. Turning this on gives you a <strong>new</strong> recovery code: the one you type below stops working. You are shown the new one and asked to type it back <strong>before</strong> anything changes.</div>
-      <div class="t-caption">This does not protect a stolen or unlocked Mac, Time Machine, a whole-disk image or Migration Assistant (they carry the device key with the folder), or CredMgr backups (while the lock is on they are kept outside the vault folder, in CredMgr's state folder; they open with their backup passphrase and the vault passphrase). The device key is a file your user account can read, not a key sealed in the Secure Enclave.</div>
+      <div class="t-caption">The device key is kept out of Time Machine, so a Time Machine backup of the vault folder opens elsewhere only with the recovery code of its day. This does not protect a stolen or unlocked Mac, a whole-disk image or Migration Assistant (they carry the device key with the folder), or CredMgr backups (while the lock is on they are kept outside the vault folder, in CredMgr's state folder; they open with their backup passphrase and the vault passphrase). The device key is a file your user account can read, not a key sealed in the Secure Enclave.</div>
       <div class="t-mono-label">vault passphrase</div>
       <input type="password" data-machine-lock-secret="1" data-machine-lock-pass="1" aria-label="vault passphrase" autoComplete="off" onChange="{{onMachineLockPass}}" onKeyDown="{{machineLockKey}}" style="font-family:var(--f-mono)" placeholder="passphrase">
       <div class="t-mono-label">current recovery code</div>
       <input type="password" data-machine-lock-secret="1" data-machine-lock-code="1" aria-label="current recovery code" autoComplete="off" onChange="{{onMachineLockCode}}" onKeyDown="{{machineLockKey}}" style="font-family:var(--f-mono)" placeholder="recovery code">
+      <div class="t-caption" data-machine-lock-proof="1">{{machineLockProofNote}}</div>
+      <sc-if value="{{machineLockFactorShow}}" hint-placeholder-val="{{false}}">
+        <div class="t-mono-label">authenticator code</div>
+        <input type="text" inputMode="numeric" data-machine-lock-secret="1" data-machine-lock-factor="1" aria-label="authenticator code" autoComplete="one-time-code" onChange="{{onMachineLockFactor}}" onKeyDown="{{machineLockKey}}" style="font-family:var(--f-mono)" placeholder="6 digits">
+      </sc-if>
     </sc-if>
     <sc-if value="{{machineLockConfirmStep}}" hint-placeholder-val="{{false}}">
       <div class="t-body-sm" data-machine-lock-confirm-step="1"><strong>Nothing has changed yet.</strong> Turning the lock on makes this the vault's recovery code: the code you just typed stops working, and this one is the only way to open the vault on another Mac or after this Mac's device key is lost. Write it down now, somewhere safe, away from this computer.</div>
@@ -40,6 +45,10 @@
       <div data-machine-lock-new-code="1" style="font-family:var(--f-mono);font-size:var(--fs-md);user-select:all;word-break:break-all;color:var(--bone)">{{machineLockNewCode}}</div>
       <div class="t-mono-label">type the new recovery code back</div>
       <input type="text" data-machine-lock-secret="1" data-machine-lock-retype="1" aria-label="new recovery code, typed back" autoComplete="off" spellcheck="false" onChange="{{onMachineLockRetype}}" onKeyDown="{{machineLockKey}}" style="font-family:var(--f-mono)" placeholder="new recovery code">
+      <sc-if value="{{machineLockFactorAgainShow}}" hint-placeholder-val="{{false}}">
+        <div class="t-mono-label">a fresh authenticator code</div>
+        <input type="text" inputMode="numeric" data-machine-lock-secret="1" data-machine-lock-factor="1" aria-label="a fresh authenticator code" autoComplete="one-time-code" onChange="{{onMachineLockFactor}}" onKeyDown="{{machineLockKey}}" style="font-family:var(--f-mono)" placeholder="6 digits">
+      </sc-if>
       <div class="t-caption">Cancel, or closing this, changes nothing: your current recovery code keeps working.</div>
     </sc-if>
     <sc-if value="{{machineLockUnbind}}" hint-placeholder-val="{{false}}">

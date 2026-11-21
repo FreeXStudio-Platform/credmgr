@@ -74,7 +74,7 @@ last_reviewed: 2026-08-19
 > since ADR-098 the five that used to refuse because their positive path needs a presence proof (and the
 > sealed read) **execute on a Mac with an enrolled Secure Enclave presence key**, and eight new ops carry
 > the proof and the Touch ID unlock (§4.2, §4.2a); with no key enrolled they still answer `presence_required`. **The CLI has 24 top-level subcommands**;
-> **the MCP server exposes 21 tools** (15, plus the six switchboard tools of ADR-155: `credmgr_settings_list/get/set/revert/request` and `credmgr_kb`; the rules, the safety tiers and every setting are in `LLM_KB.md`, generated from `credmgr_core::settings`). Everything else this document specifies — the other 29
+> **the MCP server exposes 22 tools** (15, plus `credmgr_notes_read` of ADR-174, plus the six switchboard tools of ADR-155: `credmgr_settings_list/get/set/revert/request` and `credmgr_kb`; the rules, the safety tiers and every setting are in `LLM_KB.md`, generated from `credmgr_core::settings`; since the ADR-155 amendment of 2026-11-21 (wiring audit Q-1) an agent changes only the settings of its own node, the vault's only when its scope is Global, holding `update` there, reads them only while it holds `list`, and never asks for more of its own `agentAccess`). Everything else this document specifies — the other 29
 > named operations, the rest of the command surface, two more MCP tools, server-pushed event
 > frames, the scripting client, and the full native-shell allowlist — is **`planned`: designed
 > here in full, dispatched nowhere.** Section 4 is the honest op-by-op map. `## Source` is where
@@ -206,7 +206,7 @@ removes.
 | A session token appears only in the response of the op that mints it (`vault.unlock`, `vault.gate_verify`) — never in the audit log, an `audit.tail`/`audit.get` response, a log line, an error or a `Debug` print; the audit `actor` is `<Origin>` or `<Origin>:s_<16 hex>` | **`built`** (ADR-077) | `server.rs::audit_actor`/`scrubbed`, `token.rs::redact_bearer_tokens`; `audit_actor.rs` (4 tests); the endpoint matrix's all-secrets plaintext invariant and its `audit.tail` rows judge the bytes. Alpha vaults written before this still hold dead `cmt_…` strings in their audit files — `v2/SECURITY.md` |
 | A token's scope is fixed at issue and cannot be raised at runtime | **`built`** | `token.rs` exposes no mutator for `node_id`/`capabilities`; `BrokerScope::holds` is a ceiling checked *in addition to* `resolve()` |
 | A token presented from a cwd that disagrees with its `boundWorkdir` proceeds, and writes an anomaly record | **`built`** | I-12; `server.rs::record_anomaly` — the anomaly never blocks the request that raised it |
-| `grant.create` and `node.reparent` refuse every origin that cannot prove live presence | **`built`** (ADR-098) | both arms require a verified presence proof — a Secure Enclave signature over the exact params, single-use, bound to the session — and otherwise answer `PresenceRequired`; an agent or fixture token can never hold one; I-23 for `reparent`, `crates/brokerd/tests/presence.rs` |
+| `grant.create` and `node.reparent` refuse every origin that cannot prove live presence | **`built`** (ADR-098) | both arms require a verified presence proof — a Secure Enclave signature over the exact params, single-use, bound to the session — and otherwise answer `PresenceRequired`; an agent or fixture token can never hold one; I-23 for `reparent`, `crates/brokerd/tests/presence.rs`. `grant.create` also needs a fresh vault second factor when one is enrolled, asked before the proof (`two_factor_required`, ADR-174); `crates/brokerd/tests/grant_ops.rs` |
 | Values appear only in `entry.reveal` and `totp.code` responses — never in list, get, search, audit or event frames | **`built`** | `ops.rs` returns a plaintext in exactly those two arms; `entry.get` (ADR-078) returns field ids, labels, types and masking and **no value**; the audit module's own contract is that it never records a value or a label |
 | Every request that mutates an *existing* entry carries the caller's last-seen `generation`; a stale value returns `conflict` rather than overwriting, and writes are serialised per node | **`built`** | `entry.update`/`rotate`/`remove`/`restore`/`undo` and the four `field.*` ops all require `params.generation` (each of those arms in `ops.rs` reads `params["generation"]`); `state.node_write_lock` serialises; I-25 proves exactly one of two concurrent writers wins. **`entry.create` is the exception, not covered by this row** — it bumps `generation` but reads no `params.generation` (its `ops.rs` arm), because there is nothing yet to conflict with — nor, for the same reason, `entry.create_batch` (`ADR-073`). `notes.write` requires `params.generation` too (`ADR-072`) |
 | `entry.create` is permitted while locked (into the pending tray); `entry.update` is not | **`built`** | I-18; ADR-023 |
@@ -345,7 +345,10 @@ credmgr node policy <id> --reason "…" [--agent-access read-write|read-only|non
         [--descendant-read|--no-descendant-read] [--json]
                                         # a partial patch, all-or-nothing; a change that widens
                                         # reach is refused with presence_required (ADR-071)
-credmgr grant <from> --to <node> --scope read --reason "…" | grant ls | grant revoke <id>
+credmgr grant <from> --to <node> [--entry <id>] --scope read --reason "…" [--expires-in-days <n>]
+                                        # Touch ID, and a fresh authenticator code when the vault has
+                                        # one; a one-entry grant expires (30 days unless given, 90 at
+                                        # most; ADR-174)  | grant ls | grant revoke <id>
 credmgr mcp                             # the MCP stdio server; for agent config, not humans;
                                         # presents CREDMGR_AGENT_TOKEN if set, never CREDMGR_TOKEN
 credmgr agent token issue <node> --label "…" --cap list,read [--expires 8h]
@@ -389,8 +392,10 @@ rather than recording it as the reason.
 token is presented on every subsequent request through the environment — never as a flag, for
 exactly the reason a value is never a flag. Since ADR-065 that login reaches every project in the
 vault, so the CLI prints a `#` warning line beside it (ignored by `eval`) to keep it out of any
-shell an AI agent runs in — accepted risk K-6. `credmgr grant <from> --to …` is wired end to end and
-validates every parameter, and then asks for Touch ID itself (the CLI answers `presence_required` with a
+shell an AI agent runs in — K-6, closed by ADR-174 for an unlock made inside a project's folder (that login reaches
+that project only and works only from its folder; the warning stays for the owner's own login). `credmgr grant <from> --to …` is wired end to end and
+validates every parameter (since ADR-174 a vault with a second factor answers `two_factor_required` first, and
+the CLI says to give the code with `credmgr gate verify`), and then asks for Touch ID itself (the CLI answers `presence_required` with a
 challenge, a signature and a retry) — or, with no presence key enrolled, refuses and says to run
 `credmgr presence enrol` (ADR-098, §4.2).
 
@@ -470,7 +475,7 @@ Fifteen tools are registered. Two more are specified here and are not.
 | Tool | Status | Op | Capability | Notes |
 |---|---|---|---|---|
 | `credmgr_whoami` | **`built`** | `whoami` | — | Returns the caller's node, its capabilities, and the nodes it can reach. An agent should call this first and reason about its own boundary instead of discovering it by being denied. **[Pass 2 · F-6] It returns *only* reachable nodes** — nodes outside scope are not named, not counted, and their existence is not implied. The naive implementation (list everything, flag reachability) would hand an agent every project name on the machine, which is most of the reconnaissance value the isolation model exists to withhold. I-22. |
-| `credmgr_list` | **`built`** | `entry.list` | `list` | Entry names and ids for one node. Scope-filtered; never returns another node's entries. `node` is required (the schema said optional until 2026-09-24 — §3.1a). An agent caller gets exactly `node`, `ids`, `names`, `generation`: the `entries` metadata of §4.1a is for human sessions only (ADR-077). |
+| `credmgr_list` | **`built`** | `entry.list` | `list` | Entry names and ids for one node. Scope-filtered; never returns another node's entries. `node` is required (the schema said optional until 2026-09-24 — §3.1a). An agent caller gets `node`, `ids`, `names`, `generation` and, **only when some listed entry carries tags, a `tags` map `{<entry id>: [...]}`** (ADR-174, decision 1; never another node's, never on a `privateNames` node): the `entries` metadata of §4.1a is otherwise for human sessions only (ADR-077). |
 | `credmgr_search` | **`built`** | `search` | `list` | Substring match over entry *names* only, across every node the caller can reach. A term matching only out of scope returns the identical empty result as a term matching nothing (I-3). Takes `term` (it advertised `query` until 2026-09-24 — §3.1a). |
 | `credmgr_get` | **`built`** | `entry.reveal` | `reveal` | The value. Subject to the node's 2FA policy and the vault's lock state. Takes `fieldIds` to narrow to some fields and answers `fields` (plus `value` when exactly one field is returned) — ADR-078. |
 | `credmgr_get_metadata` | **`built`** | `entry.get` | `read` | One entry's field ids, labels, types and masking, **never a value** (ADR-078). Needs the node unlocked, because labels are encrypted with the values. A read-only agent holds it. |
@@ -484,13 +489,13 @@ Fifteen tools are registered. Two more are specified here and are not.
 | `credmgr_undo` | **`built`** | `entry.undo` | `update` | Undoes a rotate or a removal, addressed by its audit record id — never by guessing at what changed. `keep-both` collision mode retained from V1. Itself a new audited action; the original record is never rewritten (ADR-055). |
 | `credmgr_totp_code` | **`built`** | `totp.code` | `reveal` | **The six digits only.** Takes `field` when the entry holds several seeds. |
 | `credmgr_recent_changes` | **`built`** | `audit.tail` | `list` | Redacted feed — id, action, timestamp, actor. The redaction is a property of the op for an agent origin, not a courtesy of this tool. `actor` names the origin and, for a live session, its public id (`HumanUi:s_…`) — never the token (ADR-077). |
-| `credmgr_notes_read` | **`planned`** | `notes.read` | `notes` | Will gate on a separate capability, never implied by `read`. The op and its storage are built (`ADR-072`); the tool is not registered. |
-| `credmgr_notes_write` | **`planned`** | `notes.write` | `notes` | How an agent will record *why* it did something, in the vault, next to what it did. The op is built and gates on `notes` alone (`ADR-072`); the tool is not registered. |
+| `credmgr_notes_read` | **`built`** (ADR-174) | `notes.read` | `read` | **Read-only, own node only.** An agent reads the note of the project it is scoped to under its own `read` capability (the `notes` capability stays out of an agent's reach); any other node is refused with nothing said of it. A note follows the **high-sensitivity reveal rules** (ADR-156): a **Guarded or Strict** node does not hand its note to an agent (a high value's reveal waits for the owner there and a note has no approval path), so only an **Open** node does, and the node's second factor is asked as for a reveal; a `privateNames` node answers that a note exists and none of it. The tool's description labels the note **untrusted user content**. |
+| `credmgr_notes_write` | **never** | `notes.write` | `notes` | Not registered and not to be: notes are the owner's. `notes.write` needs `notes`, which an agent never holds, and I-13 asserts no tool maps to it. |
 
 There is no tool for `field.reorder`: ordering is presentation only, and an agent has no use for it
 (`FORBIDDEN_OPS` is unchanged; the three field writes are no wider than `credmgr_update` and
-`credmgr_remove`, which an agent already holds). I-13 pins the registry to exactly these fifteen
-tools, so a sixteenth cannot appear without a reviewed change.
+`credmgr_remove`, which an agent already holds). I-13 pins the registry to exactly this reviewed set
+(22 tools since ADR-174), so another cannot appear without a reviewed change.
 
 Every registered tool is a thin, verbatim forwarder: `call_tool` looks the name up, forwards
 `arguments` to the named op unchanged, and unwraps the envelope. There is no tool-specific logic,
@@ -546,6 +551,12 @@ beside the registry rather than in a test file so the two stay visibly in sync, 
 **I-13** (`crates/mcp/tests/i13_tool_registry.rs`) in two independent directions: no registered
 tool may map to a forbidden *op*, and no tool *name* may contain a forbidden fragment. Either
 check alone would miss a tool that calls a permitted op under a misleading name, or the reverse.
+**Since the 2026-11-20 wiring audit (Q-3) the list is complete by construction:** `FORBIDDEN_OPS`
+names every op `docs/help/ops.json` classes `human_only` (the owner's login, `admin`, the `notes`
+capability or presence; refused to every agent scope), and I-13's
+`the_forbidden_list_names_every_human_only_op` fails when a human-only op is missing from it — so a
+new owner-only op is guarded the day it is dispatched, not when someone remembers to list it. The
+bullets below are the reasons; the code list is the whole set.
 
 - **No grant creation or modification.** `Grant.createdBy` is typed `'human'`; there is no agent
   path, and adding one would defeat the entire access graph.
@@ -580,8 +591,8 @@ check alone would miss a tool that calls a permitted op under a misleading name,
 - **No merge.** The eight `merge.*` ops (ADR-168) are on `FORBIDDEN_OPS`: a suggestion of kind `identical` says that two
   entries hold the same value, a merge removes entries and renames, and the decision memory is the owner's judgement. The
   broker answers only the owner's login with `admin` on the node (`capability_not_held` to every agent scope). Tags
-  (`entry.tag_set`, ADR-167) have no tool either; like `entry.alias` the op is not listed here because no tool exists to
-  forbid, and the broker refuses `Origin::Agent` itself.
+  (`entry.tag_set`, ADR-167) and aliases (`entry.alias`) have no tool either, and the broker refuses `Origin::Agent` itself;
+  since the wiring audit (Q-3) both are on `FORBIDDEN_OPS` as well, with every other human-only op.
 - **No applying a tidy-up plan.** `vault.doctor_apply` (ADR-169) is a run of `entry.move`s in one request; like
   `entry.move` it would let an agent carry entries out of its scope. It is on `FORBIDDEN_OPS`, and the broker answers
   only the owner's login.
@@ -603,7 +614,9 @@ check alone would miss a tool that calls a permitted op under a misleading name,
 - **No 2FA gate change and no directory binding.** `vault.gate_enroll_begin`,
   `vault.gate_enroll_confirm`, `vault.gate_recover` and `node.set_workdirs` are on the forbidden
   list (ADR-064, ADR-066): resetting or replacing the gate, and re-pointing the directories that
-  scope every agent launched in them, are policy changes.
+  scope every agent launched in them, are policy changes. `vault.gate_recover` needs no login, so,
+  like `vault.recover`, the broker also refuses an agent token or a call from inside a registered
+  project folder before either factor is read (wiring audit Q-2).
 
 ### 3.3 What a denial teaches — **`built`**
 
@@ -742,7 +755,7 @@ Additive fields (ADR-077); nothing here changes an existing key.
 | `entry.list` | `entries: [{id, name, type, sensitivity, fieldCount, modified, rotatedAt, expiresAt, hasTotp}]` | Beside `ids`/`names`/`generation`; same gate and filter; only fields the plaintext manifest holds; `rotatedAt`/`expiresAt` are `null` when absent; `hasTotp` is true when the entry carries a TOTP seed (ADR-080; never the seed). **Returned to human sessions only** (`HumanUi`, `Cli`, `Native`); an `Origin::Agent` caller — MCP, a tokenless cwd-scoped process, an explicit agent token — never receives the key. |
 | `notes.read` | `{node, markdown, modified, generation}` | `generation` is the manifest generation a following `notes.write` must be based on (read before the note, so a racing write can only make it stale). A caller holding `notes` without `list` can therefore write. |
 | `totp.code` | a code, or `malformed_request` | A stored value that is not a usable seed is a typed refusal whose message says why — not base32, or fewer than 80 bits — never the value. Seeds may be stored padded, lower case or grouped. The floor is 80 bits (16 base32 characters), a recorded deviation from RFC 4226 §4's 128 (ADR-077). |
-| `maintenance.rotate_root` | `{rotated, recoveryCode, nodesRewrapped, vaultGeneration, filesReplaced, artifactsResigned, completionPending, notResigned[]}` | `recoveryCode` is shown once. `completionPending: true` also carries `meta.vaultLocked: true` (ADR-076). Not reachable on the wire until presence exists (§4.2). |
+| `maintenance.rotate_root` | `{rotated, recoveryCode, nodesRewrapped, vaultGeneration, filesReplaced, artifactsResigned, completionPending, notResigned[], nodesRekeyed[], filesResealed}` | `recoveryCode` is shown once. `completionPending: true` also carries `meta.vaultLocked: true` (ADR-076). Since ADR-174 every live node gets a new keypair and the orphan a new cold key in the same commit: `nodesRekeyed` (sorted ids) and `filesResealed` (a count, the sealed copies included), as `vault.set_passphrase` answers them. |
 | `node.seal` | `{node, sealed: true, archiveMovePending?}` | `archiveMovePending: true` means the registry committed the seal and the archive's file moves, which are idempotent, will be finished by the next unlock (ADR-079). |
 | `node.restore` | `{node, restored: true, workdirsDropped?}` | `workdirsDropped` names workdirs another node has claimed since the seal; they are not restored (ADR-079). |
 
@@ -890,7 +903,7 @@ key (Touch ID, or the device password where no fingerprint is enrolled); repeat 
 
 | Op | Why presence, not just a capability |
 |---|---|
-| `grant.create` | Creating a grant widens a boundary. A grant that an unattended process could create is not a boundary. |
+| `grant.create` | Creating a grant widens a boundary. A grant that an unattended process could create is not a boundary. (The op itself needs the owner's presence proof and, since ADR-174, a fresh second factor when one is enrolled; a single-entry grant must expire within 90 days.) |
 | `node.reparent` | Re-parenting changes a node's ancestor set and therefore what it can read — a grant by another name (F-8, I-23). With a proof, depth and kind follow; a cycle and `orphan` are refused. |
 | `audit.get` | The full, unredacted record of one decision. `audit.tail`'s redacted feed is the unattended-safe version. |
 | `totp.seed` | A code is worth thirty seconds; a seed is worth forever. The seed is returned only here, only to the owner's login with a proof; the desktop app shows it after a Touch ID check (and a fresh second factor if the vault has one), re-masks it after the reveal window, never copies it and clears it on lock (ADR-098), and the CLI has no command. |
@@ -951,13 +964,22 @@ and seals the new wrap to this Mac's key (made if missing), or answers `machineL
 backup carries the wrap **unsealed** inside its own encryption (addendum P0-2), so while bound it is written outside the
 vault folder, to `<state>/backups/<vault id>/` (second addendum, N2). The bind record is keyed by the vault's identity,
 `<vault>/vault.id` (32 random hex digits, written by the first bind), not by its path (N4). File tier only: it protects a copy of
-the vault folder made after the bind; not a stolen or unlocked Mac, Time Machine, whole-disk images, Migration Assistant
-or CredMgr backups.
+the vault folder made after the bind (and, ADR-174 O-2, a Time Machine backup of it, when the device key was made already
+excluded from Time Machine: `deviceKeyTimeMachineCovered`); not a stolen or unlocked Mac, whole-disk images, Migration
+Assistant or CredMgr backups. **ADR-174 (2026-11-20, the owner's decisions O-1..O-5):** a CredMgr backup of a bound vault
+restores on another Mac with the passphrase or the recovery code of its day (O-1, unchanged behaviour, now tested); the
+device key is excluded from Time Machine on its temporary file before it reaches its path, its provenance recorded in
+`<state>/machine/lock.key.provenance.json`, the exclusion re-asserted at every bind and passphrase unlock, and a key with no
+such provenance is put aside to `<state>/machine/retired/` and replaced when a plain vault is bound (unless another vault
+on this Mac is bound) (O-2); bind refuses a vault folder in iCloud Drive, `~/Library/CloudStorage/*`, under a
+`.dropbox` marker or under a File Provider / iCloud extended attribute (O-3, `malformed_request`, nothing changed); the
+stable key id stays (O-4, default kept per ADR-174); each bind phase that can change the vault needs Touch ID where a
+presence key is enrolled, else a fresh second factor where a gate is (O-5).
 
 | Op | Params → result | Gate |
 |---|---|---|
-| `keystore.status` | `{}` → `{bound, tier: "file"/"off", secureEnclave: false, opensHere, sealedKeyId, damaged, deviceKeyPresent, deviceKeyId, deviceKeyUnreadable, deviceKeyModeOpen, deviceKeyForeignOwner, recoveryUnlock, markedBound, plainWhileBound, preBindNodes, inFolderArchives, warning, protects, doesNotProtect}` — public facts, never a key | the owner's login; an agent refused before anything is read. CLI `credmgr keystore status` |
-| `keystore.bind` | **two phases** (second addendum, N1), `phase` required. `{phase:"prepare", passphrase, recoveryCode}` → the status plus `phase`, `changed: false`, `already`, `newRecoveryCode` (the code the commit will install; `null` when `already`), `expiresIn` (seconds, 600) and `nodesToRekey`; nothing durable is written, and the prepared material (new root key, its wrap, the new code) lives in broker memory only, tied to the current root key, until it expires, the vault locks, a rotation happens or `cancel`. `{phase:"commit", recoveryCode}` (the new code typed back whole; omitted when `already`) → the status plus `changed`, `deviceKeyCreated`, `nodesRekeyed`, `rekeyFailed: [{node, reason}]`, `archivesMoved` and `archivesNotMoved: [{file, reason}]` (archives moved out of `<vault>/backups/`, third addendum M1), and, when it changed something, `orphanKeyReplaced`, `rotation` (as `maintenance.rotate_root` answers, without its `recoveryCode`), `completionPending` and `meta.vaultLocked` when the rotation's last step waits; a code that is not the one shown is `recovery_code_mismatch` (not counted: the same login was just shown it) and the prepared bind still waits; none prepared, expired or overtaken is `malformed_request` "the machine lock was not turned on (nothing changed)". `{phase:"cancel"}` → the status plus `changed: false`. A missing or unknown `phase` is `malformed_request`. A prepared bind belongs to the login that prepared it: another login's commit, cancel or prepare while it waits is `malformed_request` (M4) | the vault open, `admin`, the owner's login; prepare's passphrase opens the wrap (`wrong_passphrase`) and its code opens the current recovery wrap (`recovery_code_mismatch`), both counted in the per-uid back-off (only `prepare` is an auth path); a recovery code set up, a device key path outside the vault folder, every project unlocked, nothing in the tray or the sealed entries; otherwise `malformed_request`, nothing changed. Idempotent once finished. CLI `credmgr keystore bind` (prompts for both, shows the new code, asks for it back; an empty line cancels) |
+| `keystore.status` | `{}` → `{bound, tier: "file"/"off", secureEnclave: false, opensHere, sealedKeyId, damaged, deviceKeyPresent, deviceKeyId, deviceKeyUnreadable, deviceKeyModeOpen, deviceKeyForeignOwner, recoveryUnlock, markedBound, plainWhileBound, preBindNodes, inFolderArchives, recordDetached, deviceKeyTimeMachineExcluded, deviceKeyTimeMachineCovered, syncedFolder, bindProof: "presence"/"secondFactor"/"none", warning, protects, doesNotProtect}` — public facts, never a key | the owner's login; an agent refused before anything is read. CLI `credmgr keystore status` |
+| `keystore.bind` | **two phases** (second addendum, N1), `phase` required. `{phase:"prepare", passphrase, recoveryCode}` → the status plus `phase`, `changed: false`, `already`, `newRecoveryCode` (the code the commit will install; `null` when `already`), `expiresIn` (seconds, 600) and `nodesToRekey`; nothing durable is written, and the prepared material (new root key, its wrap, the new code) lives in broker memory only, tied to the current root key, until it expires, the vault locks, a rotation happens or `cancel`. `{phase:"commit", recoveryCode}` (the new code typed back whole; omitted when `already`) → the status plus `changed`, `deviceKeyCreated`, `deviceKeyReplaced` (ADR-174 O-2: an older key that may be in Time Machine was put aside), `nodesRekeyed`, `rekeyFailed: [{node, reason}]`, `archivesMoved` and `archivesNotMoved: [{file, reason}]` (archives moved out of `<vault>/backups/`, third addendum M1), and, when it changed something, `orphanKeyReplaced`, `rotation` (as `maintenance.rotate_root` answers, without its `recoveryCode`), `completionPending` and `meta.vaultLocked` when the rotation's last step waits; a code that is not the one shown is `recovery_code_mismatch` (not counted: the same login was just shown it) and the prepared bind still waits; none prepared, expired or overtaken is `malformed_request` "the machine lock was not turned on (nothing changed)". `{phase:"cancel"}` → the status plus `changed: false`. A missing or unknown `phase` is `malformed_request`. A prepared bind belongs to the login that prepared it: another login's commit, cancel or prepare while it waits is `malformed_request` (M4) | the vault open, `admin`, the owner's login; prepare's passphrase opens the wrap (`wrong_passphrase`) and its code opens the current recovery wrap (`recovery_code_mismatch`), both counted in the per-uid back-off (only `prepare` is an auth path); a recovery code set up, a device key path outside the vault folder, every project unlocked, nothing in the tray or the sealed entries, and (ADR-174 O-3) a vault folder no sync service shares; otherwise `malformed_request`, nothing changed. **ADR-174 O-5:** `prepare` and a `commit` that would proceed need a presence proof for exactly that request where a presence key is enrolled (`presence_required`), else a fresh second factor where a gate is (`two_factor_required`, the prepared bind kept); with neither, the passphrase and the recovery codes alone; `cancel` never asks. Idempotent once finished. CLI `credmgr keystore bind` (prompts for both, shows the new code, asks for it back; an empty line cancels) |
 | `keystore.unbind` | `{passphrase?}` → the status plus `changed`; the device key stays | the vault open, `admin`, the owner's login, a fresh second factor when one is enrolled, a presence proof every time once a presence key is enrolled, and `passphrase` (counted in the back-off) when neither is; otherwise `malformed_request`. Idempotent. CLI `credmgr keystore unbind` (prompts for the passphrase; empty sends none) |
 
 Both writes take the exclusive request barrier and rewrite `root.wrap.pass` with one atomic write that is read back

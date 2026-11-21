@@ -1805,7 +1805,9 @@ fn a_note_is_sealed_capability_gated_digest_bound_and_survives_a_restart() {
     assert_eq!(read["markdown"], secret_words);
     assert_eq!(read["modified"], NOW);
 
-    // `notes` never rides along with `read`, and projects stay apart.
+    // `notes` never rides along with `read`, and projects stay apart. ADR-174: an agent's `read` does let it read
+    // its OWN node's note, but only as a high-sensitivity reveal (an Open node), so on this default Guarded node
+    // it is refused, and it can never write one.
     let reader = BrokerScope {
         node_id: "acme".into(),
         capabilities: vec![Capability::List, Capability::Read, Capability::Reveal],
@@ -1820,6 +1822,16 @@ fn a_note_is_sealed_capability_gated_digest_bound_and_survives_a_restart() {
             NOW,
             "notes.read",
             json!({ "node": "acme" })
+        ),
+        Err(OpError::NodeAccessDenied { rule: "L1", .. })
+    ));
+    assert!(matches!(
+        call(
+            &state,
+            &reader,
+            NOW,
+            "notes.write",
+            json!({ "node": "acme", "markdown": "x", "generation": 1 })
         ),
         Err(OpError::CapabilityNotHeld {
             capability: Capability::Notes

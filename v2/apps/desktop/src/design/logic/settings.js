@@ -185,10 +185,10 @@ export const settingsMethods = {
   askMachineLock(on){
     if(this.state.machineLockBusy)return;
     this.wipeMachineLockFields();
-    this.setState({dialog:'machineLock',machineLockAsk:on?'bind':'unbind',machineLockError:'',machineLockShown:null});
+    this.setState({dialog:'machineLock',machineLockAsk:on?'bind':'unbind',machineLockError:'',machineLockShown:null,machineLockFactorAgain:false});
     this.focusLater(on?'input[data-machine-lock-pass]':'[data-machine-lock-cancel]');
   },
-  wipeMachineLockFields(){ this._mlPass=''; this._mlCode=''; this._mlRetype=''; try{ document.querySelectorAll('input[data-machine-lock-secret]').forEach((el)=>{ el.value=''; }); }catch(e){} },
+  wipeMachineLockFields(){ this._mlPass=''; this._mlCode=''; this._mlRetype=''; this._mlFactor=''; try{ document.querySelectorAll('input[data-machine-lock-secret]').forEach((el)=>{ el.value=''; }); }catch(e){} },
   cancelMachineLock(){
     const waiting=!!this.state.machineLockShown;
     this.wipeMachineLockFields();
@@ -201,13 +201,22 @@ export const settingsMethods = {
     const pass=this._mlPass||'', code=(this._mlCode||'').trim();
     if(on&&!pass){ this.setState({machineLockError:'Enter the vault passphrase.'}); return; }
     if(on&&!code){ this.setState({machineLockError:'Enter your current recovery code.'}); return; }
+    // ADR-174 O-5: with a second factor and no Touch ID, turning the lock on needs a fresh authenticator code (Touch ID, where it is set
+    // up, is asked by the shell itself for each step).
+    const needFactor=on&&!!(this.state.machineLock&&this.state.machineLock.bindProof==='secondFactor');
+    const factor=(this._mlFactor||'').trim();
+    if(needFactor&&!factor){ this.setState({machineLockError:'Enter the 6-digit code from your authenticator.'}); return; }
+    if(needFactor&&!(await this.giveMachineLockFactor(factor)))return;
     this.wipeMachineLockFields();
     if(on){
       // Step one: nothing changes; the broker answers the new code (or, already bound, re-keys on the commit with no code).
       this.setState({machineLockBusy:true,machineLockError:''});
       let prepared=null;
       try{ prepared=await admin.machineLockPrepare(pass,code); }
-      catch(e){ this.setState({machineLockBusy:false,dialog:null,machineLockAsk:null}); this.routeError(e,{op:'keystore.bind'}); return; }
+      catch(e){
+        if(e&&e.code==='two_factor_required'){ this.setState({machineLockBusy:false,machineLockError:'A fresh code from your authenticator is needed. Nothing has changed. Type the passphrase, the recovery code and a new authenticator code, then press Next.'}); return; }
+        this.setState({machineLockBusy:false,dialog:null,machineLockAsk:null}); this.routeError(e,{op:'keystore.bind'}); return;
+      }
       if(prepared.already||!prepared.newRecoveryCode){ this.setState({machineLockBusy:false}); return this.finishMachineLockOn(undefined); }
       this.setState({machineLockBusy:false,dialog:'machineLock',machineLockAsk:'confirm',machineLockShown:String(prepared.newRecoveryCode),machineLockError:''});
       this.focusLater('input[data-machine-lock-retype]');
@@ -229,7 +238,27 @@ export const settingsMethods = {
     if(this.state.machineLockBusy)return;
     const typed=(this._mlRetype||'').trim();
     if(!typed){ this.setState({machineLockError:'Type the new recovery code back, exactly as shown above.'}); return; }
+    if(this.state.machineLockFactorAgain){
+      const factor=(this._mlFactor||'').trim();
+      if(!factor){ this.setState({machineLockError:'Enter a fresh 6-digit code from your authenticator.'}); return; }
+      if(!(await this.giveMachineLockFactor(factor)))return;
+    }
     return this.finishMachineLockOn(typed);
+  },
+  /** ADR-174 O-5: give the second factor (the step-up's five-minute window).  A refused code keeps the dialog and says why; it is single-use, so it is cleared. */
+  async giveMachineLockFactor(factor){
+    this.setState({machineLockBusy:true,machineLockError:''});
+    try{ await sessionActions.stepUp(this.model,factor); return true; }
+    catch(e){
+      this._mlFactor=''; try{ document.querySelectorAll('input[data-machine-lock-factor]').forEach((el)=>{ el.value=''; }); }catch(_){}
+      const r=classifyError(e,{op:'vault.gate_verify',field:'code'});
+      if(r.route==='inline'){ this.setState({machineLockError:r.message}); return false; }
+      this.wipeMachineLockFields();
+      this.setState({dialog:null,machineLockAsk:null,machineLockShown:null});
+      this.routeError(e,{op:'vault.gate_verify'});
+      return false;
+    }
+    finally{ this.setState({machineLockBusy:false}); }
   },
   async finishMachineLockOn(typed){
     this.setState({machineLockBusy:true,machineLockError:''});
@@ -249,6 +278,11 @@ export const settingsMethods = {
         // The prepared bind still waits: let them check what they wrote down.
         this._mlRetype=''; try{ document.querySelectorAll('input[data-machine-lock-retype]').forEach((el)=>{ el.value=''; }); }catch(_){}
         this.setState({machineLockError:'That is not the code shown above. Nothing has changed. Check what you wrote down and type it again.'});
+      } else if(e&&e.code==='two_factor_required'){
+        // ADR-174 O-5: the step-up's five minutes ran out while the code was written down; the prepared bind still waits.
+        this._mlFactor='';
+        this.setState({machineLockFactorAgain:true,machineLockError:'Five minutes have passed since your authenticator code. Nothing has changed. Enter a fresh code below and press "Turn the lock on" again.'});
+        this.focusLater('input[data-machine-lock-factor]');
       } else {
         this.wipeMachineLockFields();
         this.setState({dialog:null,machineLockAsk:null,machineLockShown:null});
@@ -596,9 +630,11 @@ export const settingsMethods = {
       :ml.recordDetached?(ml.warning?String(ml.warning):'This Mac turned the lock on for a vault in this folder under another vault id: vault.id was changed or the folder was put back to an older copy. Nothing was repaired.')
       :ml.plainWhileBound||(ml.preBindNodes&&ml.preBindNodes.length)?(ml.warning?String(ml.warning):'Turning the lock on did not finish. Turn it on again.')
       :mlOn&&!ml.opensHere?'Sealed to a device key this Mac does not hold. Lock the vault and open it with your recovery code to seal it to this Mac.'
-      :mlOn?'On · the passphrase file is sealed to a device key file on this Mac (not the Secure Enclave). A copy of the vault folder made since then opens elsewhere only with the recovery code. Copies made before, CredMgr backups (kept outside the vault folder while this is on), Time Machine and a stolen or unlocked Mac are not protected by this.'+(ml.deviceKeyModeOpen?' The key file can be read by other users; it is narrowed the next time it is read.':'')
+      :mlOn?'On · the passphrase file is sealed to a device key file on this Mac (not the Secure Enclave). '+(ml.deviceKeyTimeMachineCovered?'A copy of the vault folder made since then, a Time Machine backup included (the key is kept out of it), opens elsewhere only with the recovery code.':'A copy of the vault folder made since then opens elsewhere only with the recovery code.'+(ml.deviceKeyTimeMachineExcluded!=null?' Time Machine backups may hold this device key (it was made before it was kept out of Time Machine); turn the lock off and on again to replace it.':''))+' Copies made before, CredMgr backups (kept outside the vault folder while this is on), whole-disk images and a stolen or unlocked Mac are not protected by this.'+(ml.deviceKeyModeOpen?' The key file can be read by other users; it is narrowed the next time it is read.':'')+((ml.deviceKeyTimeMachineExcluded===false||ml.syncedFolder)&&ml.warning?' '+String(ml.warning):'')
+      // ADR-174 O-3: a folder another Mac can open (iCloud Drive, Dropbox, ...) is never tied to this one
+      :ml.syncedFolder?'This vault folder is in '+String(ml.syncedFolder).slice(0,80)+', which another Mac can open too, so it is not locked to this Mac. Move the vault to a folder that is not synced to turn this on.'
       :!ml.recoveryUnlock?'Needs a recovery code first, so a new Mac can still open the vault: change the passphrase once to set one up.'
-      :'Seal the passphrase file to this Mac, so a copy of the vault folder made from then on (a synced folder, a copied directory) does not open on another computer with the passphrase alone. It does not protect a stolen or unlocked Mac, Time Machine, or CredMgr backups.';
+      :'Seal the passphrase file to this Mac, so a copy of the vault folder made from then on (a copied directory, a Time Machine backup) does not open on another computer with the passphrase alone. It does not protect a stolen or unlocked Mac, a whole-disk image, or CredMgr backups.';
     // the cross-node anomaly alarm (ADR-156)
     const anomN=this.model.kind==='bridge'?(this.model.anomaliesUnseen||0):0;
     const verifyChip=a.verify?(a.verify.ok?{state:'ok',label:`ok · ${plural(a.verify.nodesChecked,'node')} checked`}:{state:'danger',label:plural(a.verify.errors.length,'problem')}):{state:'',label:'not checked yet'};
@@ -847,15 +883,20 @@ export const settingsMethods = {
       machineLockShow:!!ml,
       machineLockOn:mlOn,
       machineLockChipLabel:!ml?'':ml.damaged?'damaged':mlOn?'on · file':'off',
-      machineLockChipState:!ml?'':ml.damaged||ml.plainWhileBound||(mlOn&&!ml.opensHere)?'danger':(ml.preBindNodes&&ml.preBindNodes.length)||ml.recordDetached?'warn':mlOn?'ok':'',
+      machineLockChipState:!ml?'':ml.damaged||ml.plainWhileBound||(mlOn&&!ml.opensHere)?'danger':(ml.preBindNodes&&ml.preBindNodes.length)||ml.recordDetached||(mlOn&&ml.syncedFolder)||(mlOn&&ml.deviceKeyTimeMachineExcluded===false)?'warn':mlOn?'ok':'',
       machineLockCaption:mlCaption,
       // An unfinished bind (status says so) is finished by binding again, so the button offers that rather than Unbind.
       machineLockLabel:mlOn&&!(ml.preBindNodes&&ml.preBindNodes.length)?'Unbind…':'Bind…',
-      machineLockDisabled:mlBusy||(!mlOn&&!!ml&&!ml.recoveryUnlock),
+      machineLockDisabled:mlBusy||(!mlOn&&!!ml&&(!ml.recoveryUnlock||!!ml.syncedFolder)),
       toggleMachineLock:()=>this.askMachineLock(!(mlOn&&!(ml.preBindNodes&&ml.preBindNodes.length))),
       onMachineLockPass:(ev)=>{ this._mlPass=ev.target.value; },
       onMachineLockCode:(ev)=>{ this._mlCode=ev.target.value; },
       onMachineLockRetype:(ev)=>{ this._mlRetype=ev.target.value; },
+      // ADR-174 O-5: what turning the lock on asks for beyond the passphrase and the recovery codes
+      onMachineLockFactor:(ev)=>{ this._mlFactor=ev.target.value; },
+      machineLockFactorShow:mlAsk==='bind'&&!!(ml&&ml.bindProof==='secondFactor'),
+      machineLockFactorAgainShow:mlAsk==='confirm'&&!!s.machineLockFactorAgain,
+      machineLockProofNote:!ml?'':ml.bindProof==='presence'?'Touch ID is asked for at each step.':ml.bindProof==='secondFactor'?'Your second factor is asked for too: enter a fresh code from your authenticator.':'Without Touch ID or a second factor set up, the passphrase and the recovery code are what prove it is you.',
       machineLockKey:(ev)=>{ if(ev.key==='Enter')this.setMachineLock(mlAsk==='bind'||mlAsk==='confirm'); },
       machineLockError:s.machineLockError||'',
       dlgMachineLock:!!mlAsk,

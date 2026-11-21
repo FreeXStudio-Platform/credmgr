@@ -19,6 +19,8 @@
     if (!a.to || (a.to.kind !== "node" && a.to.kind !== "entry") || typeof a.to.nodeId !== "string") throw B.error("malformed_request", "params.to must be { kind, nodeId }");
     if (typeof a.reason !== "string" || a.reason.length < 8) throw B.error("malformed_request", "params.reason must be at least 8 characters");
     if (!Array.isArray(a.scope) || !a.scope.length || a.scope.some(function (c) { return CAPS.indexOf(c) < 0; })) throw B.error("malformed_request", "params.scope may only contain read, reveal or notes");
+    // ADR-174 (6): a single-entry grant must expire, at most 90 days ahead.
+    if (a.to.kind === "entry" && (typeof a.expiresAt !== "number" || a.expiresAt - Math.floor(Date.now() / 1000) > 90 * 86400)) throw B.error("malformed_request", "an entry-level grant must expire, at most 90 days ahead");
     throw B.error("presence_required", "presence cannot be attested by this transport", { operation: "grant.create" });
   };
 
@@ -118,9 +120,12 @@
   // where it is set up (S.touchId: the shell attaches the proof; without it, presence_required), and the passphrase where neither is set up
   // (S.noPresenceNoGate: without it, malformed_request).  S.machineLockSealFails makes a rotation answer `machineLockRemoved` (review P1-4).
   // The broker's own sentences (ops.rs machine_lock_status_json).
-  var MACHINE_LOCK_PROTECTS = "a copy of the vault folder alone (a synced folder, a copied directory, a USB disk) made after the lock was turned on cannot be opened with the passphrase on another computer; it needs this Mac's device key or the recovery code";
-  var MACHINE_LOCK_PROTECTS_OFF = "nothing extra: the passphrase alone opens a copy of the vault folder on any computer";
-  var MACHINE_LOCK_DOES_NOT = "a stolen or unlocked Mac (its disk holds the vault folder and the device key; FileVault and a locked screen protect that); Time Machine, whole-disk images and Migration Assistant, which carry the device key with the folder; what a copy made before the lock was turned on already held; CredMgr backup archives, which hold the passphrase file unsealed inside their own encryption and open with their backup passphrase and the vault passphrase (while the lock is on they are written outside the vault folder, in CredMgr's state folder, so a copy of the vault folder does not carry them; one copied elsewhere is not covered); anyone holding the recovery code";
+  var MACHINE_LOCK_PROTECTS = "a copy of the vault folder alone (a copied directory, a USB disk, a Time Machine backup, which leaves the device key out) made after the lock was turned on cannot be opened with the passphrase on another computer; it needs this Mac's device key or the recovery code of its day";
+  // ADR-174 O-2: a key made before it was kept out of Time Machine is never claimed (S.deviceKeyPredates).
+  var MACHINE_LOCK_PROTECTS_NO_TM = "a copy of the vault folder alone (a copied directory, a USB disk) made after the lock was turned on cannot be opened with the passphrase on another computer; it needs this Mac's device key or the recovery code of its day";
+  var MACHINE_LOCK_OLD_KEY = "Time Machine backups that may hold this Mac's device key (it was made before it was kept out of Time Machine, or its exclusion did not hold; turn the lock off and on again to replace it with one no backup ever held); ";
+  var MACHINE_LOCK_PROTECTS_OFF ="nothing extra: the passphrase alone opens a copy of the vault folder on any computer";
+  var MACHINE_LOCK_DOES_NOT = "a stolen or unlocked Mac (its disk holds the vault folder and the device key; FileVault and a locked screen protect that); whole-disk images and Migration Assistant, which carry the device key with the folder; what a copy made before the lock was turned on already held; CredMgr backup archives, which hold the passphrase file unsealed inside their own encryption and open with their backup passphrase and the vault passphrase (while the lock is on they are written outside the vault folder, in CredMgr's state folder, so a copy of the vault folder does not carry them; one copied elsewhere is not covered); anyone holding the recovery code";
   function machineLockStatus() {
     var S = B.S, bound = !!S.machineLock, key = S.deviceKeyId || null, pre = S.machineLockPreBind || [];
     var plainWhileBound = !!S.machineLockPlainWhileBound, detached = !!S.machineLockRecordDetached;
@@ -131,10 +136,19 @@
       recoveryUnlock: !!S.recoveryUnlock, markedBound: bound || plainWhileBound, plainWhileBound: plainWhileBound, preBindNodes: pre.slice(),
       // ADR-165 M5: S.machineLockRecordDetached — this Mac's record names this folder under another vault id; said first.
       recordDetached: detached,
+      // ADR-174 O-2: the device key is kept out of Time Machine (made and marked together here).
+      deviceKeyTimeMachineExcluded: key ? true : null,
+      // ...and made already excluded, so a bound vault's Time Machine backups are covered (S.deviceKeyPredates: an older key, not claimed).
+      deviceKeyTimeMachineCovered: bound && !!key && !S.deviceKeyPredates,
+      // ADR-174 O-3: S.machineLockSyncedFolder — the vault folder is in a synced folder ("iCloud Drive"); bind refuses it.
+      syncedFolder: S.machineLockSyncedFolder || null,
+      // ADR-174 O-5: Touch ID where it is set up (S.touchId: the shell attaches the proof), else a fresh second factor (S.gateEnrolled).
+      bindProof: S.touchId ? "presence" : S.gateEnrolled ? "secondFactor" : "none",
       warning: detached ? "this Mac's machine-lock record names this folder as vault 0123456789abcdef0123456789abcdef, but its vault.id is none: changed, removed, or an older copy was put back. Nothing was repaired. What was written after the lock stays protected; turn the lock off and on again"
         : plainWhileBound ? "this Mac recorded the vault as bound, but the passphrase file on disk is plain: turning the lock on was interrupted, or an older plain file was put back; bind again"
         : pre.length ? "turning the lock on did not finish: " + pre.join(", ") + " still use a key from before it; bind again" : null,
-      protects: bound ? MACHINE_LOCK_PROTECTS : MACHINE_LOCK_PROTECTS_OFF, doesNotProtect: MACHINE_LOCK_DOES_NOT,
+      protects: !bound ? MACHINE_LOCK_PROTECTS_OFF : S.deviceKeyPredates ? MACHINE_LOCK_PROTECTS_NO_TM : MACHINE_LOCK_PROTECTS,
+      doesNotProtect: bound && S.deviceKeyPredates ? MACHINE_LOCK_DOES_NOT.replace("what a copy made before", MACHINE_LOCK_OLD_KEY + "what a copy made before") : MACHINE_LOCK_DOES_NOT,
     };
   }
   H.keystore_status = function () {
@@ -155,6 +169,14 @@
       out.phase = "cancel";
       out.changed = false;
       return out;
+    }
+    if ((a.phase === "prepare" || a.phase === "commit") && S.machineLockSyncedFolder && !S.machineLock) {
+      throw B.error("malformed_request", "the machine lock was not turned on (nothing changed): the vault folder is in " + S.machineLockSyncedFolder + ", which another Mac can open too. A lock tied to this Mac would make every other Mac need the recovery code, and a recovery there would move the lock and retire the code. Move the vault to a folder that is not synced, then turn the lock on");
+    }
+    // ADR-174 O-5: each phase that can change the vault asks for Touch ID (attached by the shell when S.touchId) or, without it, a fresh
+    // second factor; a commit with nothing waiting refuses on its own first.
+    if ((a.phase === "prepare" || (a.phase === "commit" && S.machineLockPending)) && !S.touchId && S.gateEnrolled && !S.elevated) {
+      throw B.error("two_factor_required", "a fresh second factor is required", { challenge: "totp", scope: "vault", expiresIn: 0 });
     }
     if (a.phase === "commit") {
       var p = S.machineLockPending;

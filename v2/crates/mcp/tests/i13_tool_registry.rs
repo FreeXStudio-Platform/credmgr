@@ -145,6 +145,7 @@ const REVIEWED_TOOLS: &[(&str, &str)] = &[
     ("credmgr_search", "search"),
     ("credmgr_get", "entry.reveal"),
     ("credmgr_get_metadata", "entry.get"),
+    ("credmgr_notes_read", "notes.read"),
     ("credmgr_create", "entry.create"),
     ("credmgr_update", "entry.update"),
     ("credmgr_rotate", "entry.rotate"),
@@ -175,7 +176,28 @@ fn the_registry_is_exactly_the_reviewed_set_of_tools() {
         "the MCP registry changed: review the new tool against 10_API_AND_MCP.md §3.2, then \
          add it to REVIEWED_TOOLS in this file"
     );
-    assert_eq!(registry().len(), 21);
+    assert_eq!(registry().len(), 22);
+}
+
+/// ADR-174 (2): an agent may read a project's note through MCP and never write one. The one notes tool maps to
+/// `notes.read`; no tool maps to `notes.write`; and the read tool's description tells the model the note is
+/// untrusted user content.
+#[test]
+fn agents_read_notes_through_mcp_but_never_write_them() {
+    let tools = registry();
+    assert!(tools.iter().all(|t| t.op != "notes.write"));
+    assert!(tools.iter().all(|t| t.name != "credmgr_notes_write"));
+    let notes: Vec<_> = tools
+        .iter()
+        .filter(|t| t.op.starts_with("notes."))
+        .collect();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].name, "credmgr_notes_read");
+    assert_eq!(notes[0].op, "notes.read");
+    assert!(
+        notes[0].description.contains("UNTRUSTED USER CONTENT"),
+        "the tool must label the note untrusted"
+    );
 }
 
 /// ADR-155: the knowledge base names exactly the tools the server registers, so a model reading it can never be told
@@ -308,4 +330,125 @@ fn every_merge_op_is_forbidden_and_no_tool_sets_tags() {
     assert!(registry()
         .iter()
         .all(|t| t.op != "entry.tag_set" && t.op != "entry.alias"));
+}
+
+/// Wiring audit 2026-11-20: the ops the docs already call never-an-agent's but `FORBIDDEN_OPS` did not name, so a
+/// tool mapping to one would have passed I-13. `10_API_AND_MCP.md` §3.2 (`orphan.list`), §4.2a (presence and
+/// Touch ID, "none an MCP tool"), §4.2b (`session.confirm`), ADR-088/ADR-173 (deciding a held request) and §1.4
+/// (the unredacted `audit.get`).
+#[test]
+fn orphan_list_presence_confirmation_approval_decisions_and_the_full_audit_record_are_forbidden() {
+    for op in [
+        "orphan.list",
+        "orphan.reveal",
+        "presence.challenge",
+        "presence.enrol",
+        "presence.status",
+        "presence.unenrol",
+        "device.enrol",
+        "device.remove",
+        "session.confirm",
+        "vault.approval_decide",
+        "audit.get",
+    ] {
+        assert!(FORBIDDEN_OPS.contains(&op), "{op} must be forbidden");
+        assert!(
+            registry().iter().all(|t| t.op != op),
+            "no tool may map to {op}"
+        );
+    }
+}
+
+/// The broker's operations as `docs/help/ops.json` classifies them (`tools/gen_help.py` holds its key set equal to
+/// the ops `ops.rs` dispatches): op name → `agent_reach`.
+fn ops_json_reach() -> Vec<(String, String)> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/help/ops.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+    let doc: serde_json::Value = serde_json::from_str(&text).expect("ops.json is JSON");
+    let ops = doc["ops"].as_object().expect("ops.json has an ops map");
+    assert!(
+        ops.len() > 100,
+        "ops.json lists every broker op ({} found)",
+        ops.len()
+    );
+    ops.iter()
+        .map(|(op, row)| {
+            let reach = row["agent_reach"]
+                .as_str()
+                .unwrap_or_else(|| panic!("ops.json {op}: agent_reach missing"))
+                .to_string();
+            (op.clone(), reach)
+        })
+        .collect()
+}
+
+/// Wiring audit Q-3: `FORBIDDEN_OPS` names **every** op the broker reserves for a person — each op `ops.json` marks
+/// `human_only` (needs `admin`, the owner's login, the `notes` capability or presence; refused to every agent scope)
+/// — so I-13's "no tool maps to a forbidden op" covers all of them, and a new human-only op that is not added here
+/// fails this test instead of passing unguarded. The only way out is a reviewed tool for it (none exists: an op a
+/// tool maps to would also have to stop being `human_only`). The converse holds too: a forbidden op that is a real
+/// broker op is `human_only` (`tools/gen_help.py --check` enforces it as well). The old placeholder names (no such
+/// op is dispatched) stay listed, harmlessly, as §3.2 records them.
+#[test]
+fn the_forbidden_list_names_every_human_only_op() {
+    let reach = ops_json_reach();
+    let tool_ops: Vec<&str> = registry().iter().map(|t| t.op).collect();
+    let missing: Vec<&str> = reach
+        .iter()
+        .filter(|(op, r)| r == "human_only" && !tool_ops.contains(&op.as_str()))
+        .map(|(op, _)| op.as_str())
+        .filter(|op| !FORBIDDEN_OPS.contains(op))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "human-only ops missing from FORBIDDEN_OPS (add them in crates/mcp/src/tools.rs): {missing:?}"
+    );
+    for op in FORBIDDEN_OPS {
+        if let Some((_, r)) = reach.iter().find(|(name, _)| name == op) {
+            assert_eq!(
+                r, "human_only",
+                "{op} is forbidden to agents, so ops.json must class it human_only"
+            );
+        }
+    }
+    // No tool maps to a human-only op at all (a tool is an agent's way in).
+    for tool in registry() {
+        assert!(
+            reach
+                .iter()
+                .all(|(op, r)| op != tool.op || r != "human_only"),
+            "tool {} maps to {}, which ops.json marks human_only",
+            tool.name,
+            tool.op
+        );
+    }
+}
+
+/// Wiring audit Q-3: the fifteen human-only ops the audit found missing from the list, named one by one.
+#[test]
+fn the_fifteen_human_only_ops_the_wiring_audit_found_unlisted_are_forbidden() {
+    for op in [
+        "node.seal",
+        "node.restore",
+        "vault.node_lock",
+        "vault.node_unlock",
+        "vault.approval_get",
+        "vault.anomalies_ack",
+        "vault.pending_accept",
+        "vault.pending_discard",
+        "audit.report",
+        "entry.expiring",
+        "entry.history",
+        "grant.list",
+        "entry.alias",
+        "entry.tag_set",
+        "notes.write",
+    ] {
+        assert!(FORBIDDEN_OPS.contains(&op), "{op} must be forbidden");
+        assert!(
+            registry().iter().all(|t| t.op != op),
+            "no tool may map to {op}"
+        );
+    }
 }

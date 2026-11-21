@@ -20,7 +20,9 @@
 //!   commit) or the new passphrase and the new code (after it), never neither;
 //! * a recovery wrap put back from before the recovery opens nothing;
 //! * every attempt reaches the audit trail — those made while the vault was locked at the next unlock — and
-//!   no file in the vault or the state directory holds the code or the new passphrase.
+//!   no file in the vault or the state directory holds the code or the new passphrase;
+//! * (wiring audit Q-2) the gate's last door, `vault.gate_recover`, refuses an agent exactly as `vault.recover` does:
+//!   before either factor is read, and again on a freshly started broker once the factors have loaded the registry.
 
 mod f1_support;
 
@@ -1239,4 +1241,192 @@ fn the_whole_vault_folder_rolled_back_to_before_the_recovery_is_refused_by_the_r
         Err(OpError::Internal(_))
     ));
     assert!(fresh.is_locked());
+}
+
+/// Wiring audit 2026-11-20: a recovery code `vault.recover` used is retired at every door that reads the recovery
+/// wrap, not only at `vault.recover` itself: the gate's last door (`vault.gate_recover`, which takes a passphrase
+/// and the recovery code and resets the second factor) and the machine lock's bind (`keystore.bind`, which proves
+/// the code before it seals). Each refuses the used code with the new passphrase; the new code still works.
+#[test]
+fn a_used_recovery_code_opens_neither_the_gates_last_door_nor_the_machine_lock_bind() {
+    let (v, state, _entry) = forgotten();
+    let used = old_code(&v);
+    let answer = recover(&state, &used, NEW_PASSPHRASE).expect("vault.recover");
+    let new_code = answer["recoveryCode"].as_str().unwrap().to_string();
+    let owner = scope_from(&state, &answer);
+
+    // The machine lock's bind proves the recovery code: the used one is a mismatch, the new one is accepted.
+    assert!(matches!(
+        call(
+            &state,
+            &owner,
+            NOW,
+            "keystore.bind",
+            json!({ "phase": "prepare", "passphrase": NEW_PASSPHRASE, "recoveryCode": used }),
+        ),
+        Err(OpError::RecoveryCodeMismatch)
+    ));
+    call(
+        &state,
+        &owner,
+        NOW,
+        "keystore.bind",
+        json!({ "phase": "prepare", "passphrase": NEW_PASSPHRASE, "recoveryCode": new_code }),
+    )
+    .expect("the new code prepares a bind");
+    call(
+        &state,
+        &owner,
+        NOW,
+        "keystore.bind",
+        json!({ "phase": "cancel" }),
+    )
+    .expect("the prepared bind is cancelled");
+
+    // The gate's last door, with the new passphrase and the used code: wrong factors, and nothing reset.
+    state.lock();
+    assert_eq!(
+        call(
+            &state,
+            &anyone(),
+            NOW,
+            "vault.gate_recover",
+            json!({ "passphrase": NEW_PASSPHRASE, "recoveryCode": used }),
+        ),
+        Err(OpError::WrongPassphrase)
+    );
+    call(
+        &state,
+        &anyone(),
+        NOW,
+        "vault.gate_recover",
+        json!({ "passphrase": NEW_PASSPHRASE, "recoveryCode": new_code }),
+    )
+    .expect("the new code and the new passphrase open the last door");
+    unlock_with(&state, NEW_PASSPHRASE).expect("the new passphrase still opens the vault");
+}
+
+// ---- wiring audit Q-2: the gate's last door refuses an agent exactly as `vault.recover` does ----------------------
+
+/// A vault with a project whose folder is registered and the vault's second factor on, locked: what a person who
+/// lost the authenticator meets. Returns the vault, its broker and the resolved project folder.
+fn gated_with_a_project_folder() -> (Vault, Arc<BrokerState>, PathBuf) {
+    let (v, state) = created_vault(None);
+    let owner = login(&state);
+    let workdir = v._dir.path().join("acme-src");
+    std::fs::create_dir_all(&workdir).unwrap();
+    // The kernel reports a process's cwd resolved, and `node.create` stores the workdir resolved (see above).
+    let workdir = std::fs::canonicalize(&workdir).unwrap();
+    call(
+        &state,
+        &owner,
+        NOW,
+        "node.create",
+        json!({ "id": "acme", "label": "Acme", "parentId": "global",
+                "workdirs": [workdir.to_string_lossy()] }),
+    )
+    .expect("node.create");
+    enrol_gate(&state, &owner);
+    state.lock();
+    (v, state, workdir)
+}
+
+fn gate_recover_from(
+    state: &Arc<BrokerState>,
+    cwd: Option<&Path>,
+    v: &Vault,
+) -> Result<Value, OpError> {
+    server::handle_request_at(
+        state,
+        &credmgr_brokerd::peer::PeerInfo {
+            uid: 501,
+            pid: 1,
+            cwd: cwd.map(|c| c.to_string_lossy().into_owned()),
+        },
+        &Request {
+            id: "r".into(),
+            op: "vault.gate_recover".into(),
+            token: None,
+            params: json!({ "passphrase": PASSPHRASE, "recoveryCode": old_code(v) }),
+        },
+        NOW,
+        Instant::now(),
+    )
+    .0
+}
+
+/// The gate is still in force: the passphrase alone does not open the vault.
+fn assert_gate_still_in_force(state: &BrokerState) {
+    let r = unlock_with(state, PASSPHRASE);
+    assert!(
+        matches!(r, Err(OpError::TwoFactorRequired { .. })),
+        "the gate must still be in force: {r:?}"
+    );
+    assert!(state.is_locked());
+}
+
+/// Wiring audit Q-2 (ADR-064/ADR-163 amendment): an agent's session — origin agent, holding a token — is refused
+/// before either factor is read, even holding both right factors, and the gate stays in force.
+#[test]
+fn the_gates_last_door_refuses_an_agent_before_either_factor_is_read() {
+    let (v, state, _workdir) = gated_with_a_project_folder();
+    let before = wraps(&v);
+    let mut agent = anyone();
+    agent.token_id = Some("an-agent-token".to_string());
+    agent.origin = Origin::Agent;
+    assert!(matches!(
+        call(
+            &state,
+            &agent,
+            NOW,
+            "vault.gate_recover",
+            json!({ "passphrase": PASSPHRASE, "recoveryCode": old_code(&v) })
+        ),
+        Err(OpError::CapabilityNotHeld { .. })
+    ));
+    // Before either factor is read: wrong factors get the same answer, never `wrong_passphrase`.
+    assert!(matches!(
+        call(
+            &state,
+            &agent,
+            NOW,
+            "vault.gate_recover",
+            json!({ "passphrase": "not the passphrase", "recoveryCode": "0".repeat(64) })
+        ),
+        Err(OpError::CapabilityNotHeld { .. })
+    ));
+    assert_eq!(wraps(&v), before);
+    assert_gate_still_in_force(&state);
+}
+
+/// Q-2 through the real request path: a token-less agent inside a registered project folder is refused, on a loaded
+/// broker and on a freshly started one whose registry is empty until the factors open the vault (the second asking,
+/// as `vault.recover`'s review P1-1). A person's terminal, with the same factors, then resets the gate: nothing was
+/// spent and no failed guess was counted.
+#[test]
+fn the_gates_last_door_refuses_an_agent_in_a_registered_project_folder_loaded_or_freshly_started() {
+    let (v, state, workdir) = gated_with_a_project_folder();
+    let answer = gate_recover_from(&state, Some(&workdir), &v);
+    assert!(
+        matches!(answer, Err(OpError::CapabilityNotHeld { .. })),
+        "loaded broker: {answer:?}"
+    );
+    assert_gate_still_in_force(&state);
+    drop(state);
+
+    // A daemon that has just started: nothing loaded, so nothing in memory names the project folder.
+    let fresh = v.broker(None);
+    assert!(!fresh.is_durable(), "the vault is not loaded yet");
+    let answer = gate_recover_from(&fresh, Some(&workdir), &v);
+    assert!(
+        matches!(answer, Err(OpError::CapabilityNotHeld { .. })),
+        "freshly started broker: {answer:?}"
+    );
+    assert!(fresh.is_locked(), "the refusal opened nothing");
+    assert_gate_still_in_force(&fresh);
+
+    // A person's terminal (no project folder) is served with the same factors, and the gate is reset.
+    let answer = gate_recover_from(&fresh, None, &v).expect("a person resets the gate");
+    assert_eq!(answer["gateReset"], true);
+    unlock_with(&fresh, PASSPHRASE).expect("with the gate reset the passphrase alone unlocks");
 }

@@ -574,19 +574,24 @@ fn a_rotation_moves_every_signed_and_wrapped_file_to_the_new_key_and_the_vault_r
     );
     assert!(!vault.paths().rotation_stage().exists());
 
-    // A rotation re-wraps, it does not re-key: the same keypair, the same
-    // public key in the registry, the same hot key in memory.
+    // ADR-174 (N5-Q1): a rotation also re-keys every live node — a new keypair,
+    // a new public key in the registry, the new private key in the hot set and
+    // in the key file, every envelope re-sealed (`adr174_rekey.rs` replays the
+    // attack this closes).
+    assert_eq!(
+        outcome.nodes_rekeyed.as_deref(),
+        Some(&["acme".to_string(), GLOBAL_ID.to_string()][..])
+    );
+    assert!(outcome.files_resealed >= 4, "{outcome:?}");
     let doc_after = registry_file::load(&vault.paths(), &new_rk).unwrap();
     for node in NODES {
-        assert_eq!(
+        assert_ne!(
             doc_after.nodes[node].public_key, doc_before.nodes[node].public_key,
-            "{node}'s public key must not change"
+            "{node}'s public key is a new one"
         );
     }
-    assert_eq!(
-        state.hot_key_bytes_for_test("acme").unwrap(),
-        acme_private_before
-    );
+    let acme_private_after = state.hot_key_bytes_for_test("acme").unwrap();
+    assert_ne!(acme_private_after, acme_private_before);
     let reopened = unwrap_node_key(
         &new_rk,
         "acme",
@@ -594,7 +599,11 @@ fn a_rotation_moves_every_signed_and_wrapped_file_to_the_new_key_and_the_vault_r
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(reopened.to_bytes(), acme_private_before);
+    assert_eq!(reopened.to_bytes(), acme_private_after);
+    assert_eq!(
+        hex(x25519_dalek::PublicKey::from(&reopened).as_bytes()),
+        doc_after.nodes["acme"].public_key
+    );
     assert!(
         doc_after.vault_generation > doc_before.vault_generation,
         "a rotation is a write: the generation moved forward"
@@ -1920,7 +1929,10 @@ fn a_rotation_is_audited_and_the_record_is_signed_under_the_new_root_key() {
     assert_eq!(record.timestamp, NOW + 1);
     let detail = record.detail.expect("a detail line");
     assert!(
-        detail.contains("2 node keys re-wrapped") && detail.contains("0 left unsigned"),
+        // ADR-174: a rotation replaces the live node keys and re-seals what they hold.
+        detail.contains("2 node keys replaced")
+            && detail.contains("files re-sealed")
+            && detail.contains("0 left unsigned"),
         "{detail}"
     );
     // Counts only: not the recovery code, not a key, not the passphrase.
@@ -2034,14 +2046,21 @@ fn snapshot_all(vault: &Vault) -> std::collections::BTreeMap<String, Vec<u8>> {
 }
 
 /// What a file is, for the purpose of a root-key rotation: `Some(Some(kind))`
-/// — signed or wrapped under the root key, so it MUST change; `Some(None)` —
-/// sealed to a node *public* key or a hash-chained log, so it MUST NOT;
-/// `None` — nobody has decided, which fails the test. This is the executable
-/// form of [`credmgr_brokerd::state::ROOT_BOUND_ARTEFACTS`].
+/// — signed or wrapped under the root key, or (ADR-174) sealed to a LIVE
+/// node's key, which the rotation replaces, so it MUST change; `Some(None)` —
+/// sealed to a key the rotation keeps (a sealed node's archive) or a
+/// hash-chained log, so it MUST NOT; `None` — nobody has decided, which fails
+/// the test. The root-bound kinds are the executable form of
+/// [`credmgr_brokerd::state::ROOT_BOUND_ARTEFACTS`]; the `resealed:` kinds are
+/// the re-key's (`rotate/rekey_live.rs`).
 fn classify(path: &str) -> Option<Option<&'static str>> {
     let parts: Vec<&str> = path.split('/').collect();
     let is_env = |s: &str| s.ends_with(".env");
     match parts.as_slice() {
+        // The orphan's sealed copies: re-sealed to its new cold key (ADR-174, N5-Q2).
+        ["vault", "nodes", ORPHAN_ID, "entries", f] if is_env(f) => {
+            Some(Some("resealed:orphan-copy"))
+        }
         ["vault", "keys", "root.wrap.pass"] => Some(Some("root.wrap.pass")),
         ["vault", "keys", "root.wrap.recovery"] => Some(Some("root.wrap.recovery")),
         ["vault", "keys", "nodes", f] if f.ends_with(".key") => Some(Some("node-key")),
@@ -2050,17 +2069,21 @@ fn classify(path: &str) -> Option<Option<&'static str>> {
             Some(Some("registry"))
         }
         ["vault", "nodes", _, "manifest.json"] => Some(Some("manifest")),
-        ["vault", "nodes", _, "entries", f] if is_env(f) => Some(None),
+        ["vault", "nodes", _, "entries", f] if is_env(f) => Some(Some("resealed:entry")),
         ["vault", "audit", f] if f.ends_with(".tip") => Some(Some("audit-tip")),
         ["vault", "audit", f] if f.ends_with(".log") => Some(None),
         ["vault", "archive", "removed-entries", _, _, "removed.json"] => {
             Some(Some("removed-entry"))
         }
-        ["vault", "archive", "removed-entries", _, _, "entry.env"] => Some(None),
+        ["vault", "archive", "removed-entries", _, _, "entry.env"] => {
+            Some(Some("resealed:removed-entry"))
+        }
         ["vault", "archive", "entry-history", _, _, f] if f.ends_with(".json") => {
             Some(Some("entry-history"))
         }
-        ["vault", "archive", "entry-history", _, _, f] if is_env(f) => Some(None),
+        ["vault", "archive", "entry-history", _, _, f] if is_env(f) => {
+            Some(Some("resealed:entry-history"))
+        }
         ["vault", "archive", id, "meta.json"]
             if !id.ends_with("-entries") && *id != "entry-history" =>
         {
@@ -2085,8 +2108,10 @@ fn classify(path: &str) -> Option<Option<&'static str>> {
 ///
 /// It can go red three ways, each one a real defect: a root-bound file the
 /// rotation missed (unchanged — it would no longer open), a file the rotation
-/// touched that it should not (an envelope), and a new kind of file added to
-/// the vault without anyone deciding which side of the line it is on.
+/// touched that it should not (a sealed node's archived envelope), and a new
+/// kind of file added to the vault without anyone deciding which side of the
+/// line it is on. Since ADR-174 the live nodes' envelopes are on the "must
+/// change" side too: the rotation gives each live node a new keypair.
 #[test]
 fn exactly_the_root_bound_files_change_and_every_file_is_accounted_for() {
     use credmgr_brokerd::state::ROOT_BOUND_ARTEFACTS;
@@ -2112,6 +2137,7 @@ fn exactly_the_root_bound_files_change_and_every_file_is_accounted_for() {
     let before = snapshot_all(vault);
     let outcome = state.rotate_root(passphrase(), NOW + 1).expect("rotates");
     assert!(outcome.skipped.is_empty(), "{:?}", outcome.skipped);
+    assert!(outcome.orphan_key_replaced);
     let after = snapshot_all(vault);
 
     let mut kinds_changed = std::collections::BTreeSet::new();
@@ -2171,13 +2197,21 @@ fn exactly_the_root_bound_files_change_and_every_file_is_accounted_for() {
         "removed-entry",
         "entry-history",
         "counter",
+        // ADR-174 (N5-Q1): what the live nodes hold, re-sealed to their new keys.
+        "resealed:entry",
+        "resealed:removed-entry",
+        "resealed:entry-history",
+        "resealed:orphan-copy",
     ]
     .into_iter()
     .collect();
     assert_eq!(kinds_changed, expected);
     assert_eq!(
         ROOT_BOUND_ARTEFACTS.len(),
-        expected.len(),
+        expected
+            .iter()
+            .filter(|k| !k.starts_with("resealed:"))
+            .count(),
         "ROOT_BOUND_ARTEFACTS and this test's kinds must be edited together"
     );
 
@@ -2935,7 +2969,9 @@ fn a_node_sealed_before_a_rotation_restores_byte_identical_after_it_and_after_a_
     );
 
     let outcome = state.rotate_root(passphrase(), NOW + 5).expect("rotates");
+    // ADR-174 (N5-Q2): the orphan's sealed copies are re-sealed to a new cold key; nothing is left behind.
     assert!(outcome.skipped.is_empty(), "{:?}", outcome.skipped);
+    assert!(outcome.orphan_key_replaced);
     assert!(!outcome.completion_pending);
     let new_rk = root_from_disk(&vault);
     assert_ne!(new_rk, old_rk);
@@ -3013,10 +3049,12 @@ fn a_node_sealed_before_a_rotation_restores_byte_identical_after_it_and_after_a_
     assert_eq!(reveal(&state, &owner, "acme", &e1), "value-one");
 }
 
-/// init -> rotate_root: the cold key opens under the NEW root only, is the same
-/// orphan keypair, and still opens what was sealed to it before the rotation.
+/// init -> rotate_root: the cold key opens under the NEW root only and, since
+/// ADR-174 (N5-Q2), is a NEW orphan keypair even though it holds a sealed copy:
+/// the copy is re-sealed to it, the old cold key no longer opens it, and the new
+/// one does.
 #[test]
-fn the_orphan_cold_key_opens_under_the_new_root_only_and_still_opens_what_was_sealed_before() {
+fn the_orphan_cold_key_is_a_new_keypair_under_the_new_root_and_its_sealed_copy_follows_it() {
     let (vault, state) = created_vault();
     let paths = vault.paths();
     let old_rk = root_from_disk(&vault);
@@ -3038,31 +3076,39 @@ fn the_orphan_cold_key_opens_under_the_new_root_only_and_still_opens_what_was_se
     let orphan_envelope_path = paths.entry_env(ORPHAN_ID, &entry);
     let orphan_envelope = std::fs::read(&orphan_envelope_path).unwrap();
 
-    state.rotate_root(passphrase(), NOW + 1).expect("rotates");
+    let old_secret =
+        credmgr_core::cold::open_orphan_cold(&old_rk, &before, Some(&header.public)).unwrap();
+    let outcome = state.rotate_root(passphrase(), NOW + 1).expect("rotates");
+    assert!(outcome.orphan_key_replaced);
+    assert!(outcome.skipped.is_empty(), "{:?}", outcome.skipped);
     let new_rk = root_from_disk(&vault);
 
     let after = std::fs::read(paths.orphan_key()).unwrap();
-    assert_ne!(after, before, "the cold key file was re-sealed");
+    assert_ne!(after, before, "the cold key file was replaced");
+    let new_public = credmgr_core::cold::parse_header(&after).unwrap().public;
+    assert_ne!(new_public, header.public, "a NEW orphan keypair (ADR-174)");
+    let doc = registry_file::load(&paths, &new_rk).unwrap();
     assert_eq!(
-        credmgr_core::cold::parse_header(&after).unwrap().public,
-        header.public,
-        "the orphan keypair is unchanged"
+        hex(new_public.as_bytes()),
+        doc.nodes[ORPHAN_ID].public_key,
+        "the registry names the new orphan public key"
     );
-    let secret = credmgr_core::cold::open_orphan_cold(&new_rk, &after, Some(&header.public))
+    let secret = credmgr_core::cold::open_orphan_cold(&new_rk, &after, Some(&new_public))
         .expect("the cold key opens under the new root");
     assert!(
         credmgr_core::cold::open_orphan_cold(&old_rk, &after, None).is_err(),
         "…and under the old root no longer"
     );
-    assert_eq!(
-        std::fs::read(&orphan_envelope_path).unwrap(),
-        orphan_envelope,
-        "orphan envelopes are sealed to the public key: a rotation leaves them alone"
+    let resealed = std::fs::read(&orphan_envelope_path).unwrap();
+    assert_ne!(resealed, orphan_envelope, "the sealed copy was re-sealed");
+    assert!(
+        credmgr_core::envelope::open_any(&resealed, &old_secret, ORPHAN_ID, &entry).is_err(),
+        "the old cold key opens the re-sealed copy no longer"
     );
+    assert!(state.orphan_digest_mismatches().unwrap().is_empty());
     // ADR-078: an entry is a version-2 field document (`open` is version 1 only).
-    let (kind, plaintext) =
-        credmgr_core::envelope::open_any(&orphan_envelope, &secret, ORPHAN_ID, &entry)
-            .expect("the envelope sealed before the rotation opens with the re-sealed cold key");
+    let (kind, plaintext) = credmgr_core::envelope::open_any(&resealed, &secret, ORPHAN_ID, &entry)
+        .expect("the re-sealed copy opens with the new cold key");
     assert_eq!(kind, credmgr_core::envelope::PayloadKind::FieldDocument);
     let doc = credmgr_core::fields::decode(plaintext.expose_secret()).expect("a field document");
     assert_eq!(doc.fields.len(), 1);

@@ -457,8 +457,9 @@ fn print_usage() {
          \x20                                      (counts by action, actor and node, denials, presence uses; no values)\n\
          \x20 credmgr node seal <name>\n\
          \x20 credmgr node restore <name>\n\
-         \x20 credmgr grant <from> --to <node> --scope read --reason \"...\"\n\
-         \x20                                      (needs presence — native shell only, Phase 5)\n\
+         \x20 credmgr grant <from> --to <node> [--entry <entry-id>] --scope read --reason \"...\"\n\
+         \x20       [--expires-in-days <n>]        (needs Touch ID, asked automatically, and a fresh authenticator code when the vault\n\
+         \x20                                      has one; a one-entry grant expires, 30 days unless given, 90 at most)\n\
          \x20 credmgr grant ls [--json]\n\
          \x20 credmgr grant revoke <id>\n\
          \x20 credmgr mcp                          (MCP stdio server; for agent config, not humans)\n\
@@ -1048,7 +1049,8 @@ fn print_unlock_result(value: &Value) {
         // project until the vault locks. A `#` line, so `eval` ignores it.
         println!(
             "# CREDMGR_TOKEN opens every project in this vault until it locks — \
-             keep it out of any shell an AI agent runs in"
+             keep it out of any shell an AI agent runs in. (Unlocked from inside a project's folder it \
+             reaches that project only, and only from that folder.)"
         );
     }
 }
@@ -1236,6 +1238,28 @@ fn cmd_keystore(mut args: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
+/// ADR-174 O-5: one `keystore.bind` phase. Touch ID is answered by [`call`] (the broker's `presence_required`); a
+/// `two_factor_required` asks for the authenticator code on the next stdin line, gives it (`vault.gate_verify`,
+/// which opens the five-minute window for this login) and sends the phase once more. Nothing changed before.
+fn keystore_bind_phase(params: &Value) -> Result<Value, String> {
+    match call("keystore.bind", params.clone()) {
+        Err(e) if e.starts_with("two_factor_required") => {
+            eprintln!("Turning the machine lock on needs your second factor.");
+            let factor = quick_cmds::ask_secret("Authenticator code")?;
+            if factor.trim().is_empty() {
+                return Err(
+                    "two_factor_required: turning the machine lock on needs a fresh second factor - give the \
+                     authenticator code (or run `credmgr gate verify` first); nothing changed"
+                        .to_string(),
+                );
+            }
+            call("vault.gate_verify", json!({ "code": factor.trim() }))?;
+            call("keystore.bind", params.clone())
+        }
+        other => other,
+    }
+}
+
 /// `credmgr keystore bind` (review N1): `prepare` with the passphrase and the current recovery code (which
 /// changes nothing and answers the new code), the new code printed once, then `commit` with it typed back.
 /// Up to three tries at the retyping; anything else (an empty line, the end of stdin) cancels, and nothing
@@ -1258,7 +1282,7 @@ fn keystore_bind_two_phase(json_out: bool) -> Result<Value, String> {
         "passphrase": passphrase.as_str(),
         "recoveryCode": code.trim(),
     });
-    let answer = call("keystore.bind", params.clone());
+    let answer = keystore_bind_phase(&params);
     quick_cmds::wipe_strings(&mut params);
     drop(passphrase);
     drop(code);
@@ -1268,7 +1292,7 @@ fn keystore_bind_two_phase(json_out: bool) -> Result<Value, String> {
     }
     if prepared["already"] == json!(true) {
         // Bound already: no new code; the commit re-keys any project whose key dates from before the bind.
-        let value = call("keystore.bind", json!({ "phase": "commit" }))
+        let value = keystore_bind_phase(&json!({ "phase": "commit" }))
             .map_err(|e| keystore_error_hint("bind", e))?;
         if json_out {
             println!("{value}");
@@ -1301,7 +1325,7 @@ fn keystore_bind_two_phase(json_out: bool) -> Result<Value, String> {
             );
         }
         let mut params = json!({ "phase": "commit", "recoveryCode": typed.trim() });
-        let answer = call("keystore.bind", params.clone());
+        let answer = keystore_bind_phase(&params);
         quick_cmds::wipe_strings(&mut params);
         match answer {
             Ok(value) => {
@@ -1403,6 +1427,13 @@ fn keystore_text(sub: &str, v: &Value) -> String {
     if let Some(w) = v["warning"].as_str() {
         out.push_str(&format!("warning: {w}\n"));
     }
+    // ADR-174 O-3: a folder another Mac can open is never tied to this one.
+    if let (false, Some(service)) = (bound, v["syncedFolder"].as_str()) {
+        out.push_str(&format!(
+            "note: this vault folder is in {service}, which another Mac can open too, so the machine lock cannot be \
+             turned on for it; move the vault to a folder that is not synced first\n"
+        ));
+    }
     if let Some(p) = v["protects"].as_str() {
         out.push_str(&format!("protects: {p}\n"));
     }
@@ -1423,6 +1454,9 @@ fn keystore_text(sub: &str, v: &Value) -> String {
 fn keystore_error_hint(sub: &str, e: String) -> String {
     if e.starts_with("two_factor_required") && sub == "unbind" {
         return format!("{e}\n(turning the machine lock off needs a fresh second factor: run `credmgr gate verify` first)");
+    }
+    if e.starts_with("presence_required") && sub == "bind" {
+        return format!("{e}\n(ADR-174: turning the machine lock on needs Touch ID where a presence key is enrolled; nothing changed)");
     }
     if e.starts_with("recovery_code_mismatch") && sub == "bind" {
         return "recovery_code_mismatch: that recovery code does not open this vault - nothing was changed. \
@@ -2813,12 +2847,13 @@ fn cmd_node(mut args: Vec<String>) -> Result<(), String> {
     }
 }
 
-/// `10_API_AND_MCP.md §2`: `credmgr grant <from> --to <to> --scope read
-/// --reason "…"` · `credmgr grant ls | revoke <id>`. `grant.create`'s
-/// positive path is unconditionally `presence_required` until Phase 5's
-/// native shell exists (`ops.rs`'s own doc on `grant.create`) — this command
-/// is wired now anyway, since the CLI surface itself, and every validation
-/// short of presence, are real today; only the final step is not.
+/// The expiry the CLI offers a single-entry grant when none is given (ADR-174 (6); the broker allows 90 at most).
+const GRANT_ENTRY_DEFAULT_DAYS: i64 = 30;
+
+/// `10_API_AND_MCP.md §2`: `credmgr grant <from> --to <to> [--entry <id>] --scope read
+/// --reason "…" [--expires-in-days <n>]` · `credmgr grant ls | revoke <id>`. `grant.create`
+/// needs a presence proof (Touch ID) and, when the vault has a second factor, a fresh
+/// authenticator code (ADR-174); the broker decides both.
 fn cmd_grant(mut args: Vec<String>) -> Result<(), String> {
     if args.is_empty() {
         return Err(
@@ -2859,24 +2894,56 @@ fn cmd_grant(mut args: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         from => {
+            const USAGE: &str =
+                "usage: credmgr grant <from> --to <node> [--entry <entry-id>] --scope read \
+                                 --reason \"...\" [--expires-in-days <n>]";
             let mut args = args;
-            let to = take_flag_value(&mut args, "--to")
-                .ok_or("usage: credmgr grant <from> --to <node> --scope read --reason \"...\"")?;
+            let to = take_flag_value(&mut args, "--to").ok_or(USAGE)?;
+            let entry = take_flag_value(&mut args, "--entry");
+            let days = take_flag_value(&mut args, "--expires-in-days");
             let scope_str =
                 take_flag_value(&mut args, "--scope").unwrap_or_else(|| "read".to_string());
             let reason = take_text_flag(&mut args, "--reason")?
                 .ok_or("--reason is required (min 8 characters)")?;
             let scope: Vec<&str> = scope_str.split(',').map(str::trim).collect();
-            call(
-                "grant.create",
-                json!({
-                    "from": from,
-                    "to": { "kind": "node", "nodeId": to },
-                    "scope": scope,
-                    "reason": reason,
-                }),
-            )?;
-            println!("grant created");
+            let target = match &entry {
+                Some(e) => json!({ "kind": "entry", "nodeId": to, "entryId": e }),
+                None => json!({ "kind": "node", "nodeId": to }),
+            };
+            // ADR-174 (6): a single-entry grant must expire, at most 90 days ahead. Without a choice the CLI
+            // offers 30 days and says so; a node grant expires only when asked.
+            let days: Option<i64> = match (days, &entry) {
+                (Some(d), _) => Some(
+                    d.parse::<i64>()
+                        .ok()
+                        .filter(|d| *d >= 1)
+                        .ok_or("--expires-in-days must be a whole number of days, 1 or more")?,
+                ),
+                (None, Some(_)) => Some(GRANT_ENTRY_DEFAULT_DAYS),
+                (None, None) => None,
+            };
+            let mut params = json!({
+                "from": from,
+                "to": target,
+                "scope": scope,
+                "reason": reason,
+            });
+            if let Some(d) = days {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|_| "the system clock is before 1970".to_string())?
+                    .as_secs() as i64;
+                params["expiresAt"] = json!(now + d * 86_400);
+            }
+            // ADR-174 (5): a grant needs a fresh authenticator code (when the vault has one) as well as Touch ID.
+            stable::with_second_factor_hint(call("grant.create", params))?;
+            match days {
+                Some(d) => println!(
+                    "grant created; it expires in {d} day{}",
+                    if d == 1 { "" } else { "s" }
+                ),
+                None => println!("grant created"),
+            }
             Ok(())
         }
     }

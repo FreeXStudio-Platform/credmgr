@@ -961,8 +961,12 @@ def build_steps() -> list[Step]:
     add(S("notes.write", "an empty note clears it",
           lambda c: {"node": "acme", "markdown": "", "generation": c.gen("acme")},
           ok("{cleared:true}", shape(cleared=True))))
-    add(S("notes.read", "an agent has no `notes` capability (never inherited from read)", {"node": "acme"},
-          refuse("capability_not_held", capability="notes"), "agent:acme"))
+    add(S("notes.read", "an agent reads its own note only on an Open node: a note is high-sensitivity text (ADR-174), and acme is Guarded",
+          {"node": "acme"}, refuse("node_access_denied", rule="L1", subject="acme", target="acme", capability="notes"), "agent:acme"))
+    add(S("notes.read", "an agent never reads another node's note (ADR-174)", {"node": "beta"},
+          refuse("node_access_denied", target="beta"), "agent:acme"))
+    add(S("notes.write", "an agent never writes a note: it has no `notes` capability (ADR-174)",
+          {"node": "acme", "markdown": "x", "generation": 0}, refuse("capability_not_held", capability="notes"), "agent:acme"))
 
     # ---- 4. audit, grants, presence-gated ops ------------------------------------------------
     add(S("audit.tail", "the owner sees full records, and no record names a session token", {"limit": 500},
@@ -1075,6 +1079,10 @@ def build_steps() -> list[Step]:
           refuse("malformed_request")))
     add(S("grant.create", "orphan cannot be an endpoint",
           {"from": "orphan", "to": {"kind": "node", "nodeId": "acme"}, "scope": ["read"], "reason": "matrix: orphan"},
+          refuse("malformed_request")))
+    add(S("grant.create", "ADR-174: a single-entry grant must carry an expiry",
+          lambda c: {"from": "beta", "to": {"kind": "entry", "nodeId": "acme", "entryId": c["e_api"]},
+                     "scope": ["reveal"], "reason": "matrix: no expiry"},
           refuse("malformed_request")))
     add(S("grant.revoke", "no grant exists to revoke (create is presence-gated)", {"id": "g_000000000000"},
           refuse("not_found"), primary=True))
@@ -1382,6 +1390,9 @@ def build_steps() -> list[Step]:
     ML = dict(bound=ANY, tier=ANY, secureEnclave=False, opensHere=True, sealedKeyId=ANY, damaged=False,
               deviceKeyPresent=ANY, deviceKeyId=ANY, deviceKeyUnreadable=False, deviceKeyModeOpen=False,
               deviceKeyForeignOwner=False, recoveryUnlock=True, plainWhileBound=False, preBindNodes=[],
+              # ADR-174: no presence key or gate yet (O-5), a temporary folder no sync service shares (O-3), and the
+              # device key's Time Machine state, which depends on the host (O-2).
+              bindProof="none", syncedFolder=None, deviceKeyTimeMachineExcluded=ANY, deviceKeyTimeMachineCovered=ANY,
               protects=_is_str(20), doesNotProtect=_is_str(20))
     add(S("keystore.status", "off on a new vault: the honest tier, never the Secure Enclave", {},
           ok("{bound:false, tier:off, secureEnclave:false}", shape(**{**ML, "bound": False, "tier": "off"})), primary=True))
@@ -1412,7 +1423,7 @@ def build_steps() -> list[Step]:
           lambda c: {"phase": "commit", "recoveryCode": c["rc_new"]},
           ok("{bound:true, tier:file, changed:true, deviceKeyCreated:true, nodesRekeyed}",
              shape(**{**ML, "bound": True, "tier": "file", "changed": True, "deviceKeyCreated": True,
-                      "markedBound": True, "nodesRekeyed": ANY, "rekeyFailed": [], "orphanKeyReplaced": ANY,
+                      "deviceKeyReplaced": False, "markedBound": True, "nodesRekeyed": ANY, "rekeyFailed": [], "orphanKeyReplaced": ANY,
                       "rotation": ANY})), primary=True,
           save=lambda c, v, resp: c.set_secret("rc", c["rc_new"])))
     add(S("keystore.bind", "a second prepare on a bound vault draws no code",
@@ -1479,8 +1490,16 @@ def build_steps() -> list[Step]:
     add(S("settings.revert", "the owner puts the theme back", lambda c: {"change": c["sc_theme"]},
           ok("{applied:true}", shape(applied=True)), primary=True))
     add(S("settings.revert", "an unknown change", {"change": "sc-0000000000000000"}, refuse("not_found")))
-    add(S("settings.set", "an agent's weakening change waits for the owner",
-          {"id": "app.autoLockMins", "value": 0, "reason": "matrix: agent asks"},
+    # ADR-155 amendment (wiring audit Q-1): an agent changes only its own node's settings, holding `update` there; a
+    # vault setting is Global's and Global's own node settings are too (the full rules are isolation.rs I-32).
+    add(S("settings.set", "a project agent may not change a vault setting, not even a cosmetic one",
+          {"id": "app.theme", "value": "dark", "reason": "matrix: agent theme"},
+          refuse("capability_not_held", capability="update"), "agent:acme"))
+    add(S("settings.set", "nor Global's own node settings, not even to make them stricter",
+          {"id": "node.lockAfterSeconds", "node": "global", "value": 60, "reason": "matrix: agent global"},
+          refuse("capability_not_held", capability="update"), "agent:acme"))
+    add(S("settings.set", "an agent's weakening change to its own project waits for the owner",
+          {"id": "node.requireTwoFactor", "node": "acme", "value": "never", "reason": "matrix: agent asks"},
           ok("{state:pending, request}", lambda v, c: (shape(applied=False, state="pending", request=_is_str(3))(v, c),
                                                          c.__setitem__("sr_lock", v["request"]))),
           "agent:acme"))
@@ -1516,6 +1535,9 @@ def build_steps() -> list[Step]:
     add(S("maintenance.rotate_root", "with a gate enrolled and no fresh second factor, two_factor_required comes "
                                      "before the presence refusal",
           lambda c: {"passphrase": c["pw"]}, refuse("two_factor_required", scope="global", expiresIn=0)))
+    add(S("grant.create", "ADR-174: with a gate enrolled a grant needs a fresh code, asked before presence",
+          {"from": "beta", "to": {"kind": "node", "nodeId": "acme"}, "scope": ["read"], "reason": "matrix: code probe"},
+          refuse("two_factor_required", scope="global", expiresIn=0)))
     add(S("vault.lock", "lock the vault (drops every login session)", {}, ok("{locked:true}", shape(locked=True)),
           primary=True, fatal=True))
     add(S("vault.status", "locked", {}, ok("{locked:true, initialized:true}", shape(locked=True, initialized=True)),
@@ -1541,6 +1563,11 @@ def build_steps() -> list[Step]:
           ok("{pending ∋ LOCKED_WRITE}", shape(pending=lambda p: any(x["name"] == "LOCKED_WRITE" for x in p)))))
     add(S("vault.pending_discard", "discard it", lambda c: {"node": "acme", "entry": c["p3"]},
           ok("{discarded:true}", shape(discarded=True))))
+    # Wiring audit Q-2 (ADR-064/163 amendment): the last door refuses an agent exactly as `vault.recover` does, before
+    # either factor is read - here with both right factors, and the gate is still in force for the rows below.
+    add(S("vault.gate_recover", "an agent is refused before either factor is read",
+          lambda c: {"passphrase": c["pw"], "recoveryCode": c["rc"]}, refuse("capability_not_held", capability="admin"),
+          "agent:acme"))
     add(S("vault.gate_recover", "a wrong root recovery code resets nothing",
           lambda c: {"passphrase": c["pw"], "recoveryCode": "0000-0000-0000"}, refuse("wrong_passphrase"), "anon"))
     add(S("vault.gate_recover", "recovery code missing", lambda c: {"passphrase": c["pw"]},

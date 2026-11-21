@@ -581,6 +581,48 @@ fn grant_create_is_presence_required_end_to_end() {
     );
 }
 
+/// ADR-174 (6): `credmgr grant … --entry` offers a single-entry grant 30 days when no expiry is given (so the
+/// broker's expiry rule passes and the next gate, presence, is what answers), passes a chosen one on, and the
+/// broker refuses one past 90 days.
+#[test]
+fn an_entry_grant_from_the_cli_gets_an_expiry_and_the_broker_caps_it_at_90_days() {
+    let fixture = start_fixture_broker();
+    let admin_token = fixture.issue_token("acme", vec![Capability::Admin], Origin::HumanUi);
+    let grant = |extra: &[&str]| {
+        let mut args = vec![
+            "grant",
+            "elsewhere",
+            "--to",
+            "acme",
+            "--entry",
+            "e_test0001",
+            "--scope",
+            "reveal",
+            "--reason",
+            "cli integration test reason",
+        ];
+        args.extend_from_slice(extra);
+        credmgr_with_token(&fixture, &fixture.acme_workdir, &args, Some(&admin_token))
+    };
+    for extra in [&[][..], &["--expires-in-days", "90"][..]] {
+        let (ok, _stdout, stderr) = grant(extra);
+        assert!(!ok);
+        assert!(
+            stderr.contains("presence_required"),
+            "{extra:?}: the expiry passed, presence is next: {stderr}"
+        );
+    }
+    let (ok, _stdout, stderr) = grant(&["--expires-in-days", "91"]);
+    assert!(!ok);
+    assert!(
+        stderr.contains("malformed_request") && stderr.contains("at most 90 days"),
+        "{stderr}"
+    );
+    let (ok, _stdout, stderr) = grant(&["--expires-in-days", "0"]);
+    assert!(!ok);
+    assert!(stderr.contains("--expires-in-days"), "{stderr}");
+}
+
 /// ADR-056: `credmgr unlock`, through the real compiled binary against a
 /// real broker, is the "real, non-fixture client" the mechanism's own exit
 /// criteria name — proving the whole chain end to end: passphrase in over

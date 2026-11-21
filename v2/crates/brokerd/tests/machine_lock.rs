@@ -87,6 +87,38 @@ fn recover(state: &BrokerState, code: &str, new_passphrase: &str) -> Result<Valu
     )
 }
 
+thread_local! {
+    /// The presence key this test enrolled (each test runs on its own thread), so a bind phase can carry the
+    /// proof ADR-174 O-5 asks for, as the shell and the CLI attach it.
+    static PRESENCE: std::cell::RefCell<Option<Signer>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Enrol a presence key, and remember it for [`bind_call`].
+fn enrol_key(state: &BrokerState, owner: &credmgr_brokerd::scope::BrokerScope) -> Signer {
+    let key = enrol_first_key(state, owner);
+    PRESENCE.with(|p| *p.borrow_mut() = Some(key.clone()));
+    key
+}
+
+/// A `keystore.bind` phase as a client sends it: with a presence proof for exactly this request when the vault
+/// has a presence key enrolled (ADR-174 O-5).
+fn bind_call(
+    state: &BrokerState,
+    owner: &credmgr_brokerd::scope::BrokerScope,
+    at: i64,
+    params: Value,
+) -> Result<Value, OpError> {
+    let params = PRESENCE
+        .with(|p| {
+            p.borrow()
+                .as_ref()
+                .filter(|_| !state.presence_keys().is_empty())
+                .map(|k| with_proof(state, owner, k, at, "keystore.bind", params.clone()))
+        })
+        .unwrap_or(params);
+    call(state, owner, at, "keystore.bind", params)
+}
+
 /// `keystore.bind` in its two phases (review N1): `prepare` with the passphrase and the vault's current
 /// recovery code, then `commit` with the new code it showed typed back; that code becomes the current one.
 fn bind(v: &Vault, state: &BrokerState, owner: &credmgr_brokerd::scope::BrokerScope) -> Value {
@@ -100,11 +132,10 @@ fn bind_with(
     passphrase: &str,
 ) -> Value {
     let code = v.recovery_code.borrow().clone();
-    let prepared = call(
+    let prepared = bind_call(
         state,
         owner,
         NOW,
-        "keystore.bind",
         json!({ "phase": "prepare", "passphrase": passphrase, "recoveryCode": code }),
     )
     .expect("keystore.bind prepare");
@@ -139,12 +170,12 @@ fn commit(
     if let Some(code) = code {
         params["recoveryCode"] = json!(code);
     }
-    call(state, owner, at, "keystore.bind", params)
+    bind_call(state, owner, at, params)
 }
 
 /// Prepare a bind and answer the new code it showed.
 fn prepare(v: &Vault, state: &BrokerState, owner: &credmgr_brokerd::scope::BrokerScope) -> String {
-    let p = call(state, owner, NOW, "keystore.bind", bind_params(v)).expect("prepare");
+    let p = bind_call(state, owner, NOW, bind_params(v)).expect("prepare");
     assert_eq!(p["phase"], "prepare");
     assert_eq!(p["changed"], false);
     p["newRecoveryCode"]
@@ -327,13 +358,24 @@ fn bind_seals_the_wrap_the_passphrase_still_opens_it_here_and_status_is_honest()
     let not = st["doesNotProtect"].as_str().unwrap();
     for said in [
         "stolen",
-        "Time Machine",
+        "whole-disk",
         "Migration Assistant",
         "before the lock",
         "backup",
     ] {
         assert!(not.contains(said), "doesNotProtect must say {said}: {not}");
     }
+    // ADR-174 O-2: the device key was made already excluded from Time Machine, so a Time Machine backup is covered
+    // (claimed only where Time Machine exists).
+    assert!(!not.contains("Time Machine"), "{not}");
+    let on_macos = cfg!(target_os = "macos");
+    assert_eq!(st["deviceKeyTimeMachineCovered"], on_macos);
+    assert_eq!(
+        st["protects"].as_str().unwrap().contains("Time Machine"),
+        on_macos,
+        "{}",
+        st["protects"]
+    );
     assert_eq!(st["preBindNodes"], json!([]));
     assert_eq!(st["warning"], Value::Null);
     // Bind again: no rotation, the same file, the same key, the same code.
@@ -867,7 +909,7 @@ fn an_old_backup_of_a_bound_vault_opens_with_the_passphrase_after_a_rotation_and
         "the archive never carries the device key"
     );
     // A later rotation, while bound: a new code, and the code of the backup's day is dead.
-    let presence = enrol_first_key(&state, &owner);
+    let presence = enrol_key(&state, &owner);
     let proved = with_proof(
         &state,
         &owner,
@@ -928,6 +970,505 @@ fn an_old_backup_of_a_bound_vault_opens_with_the_passphrase_after_a_rotation_and
     assert_eq!(st["plainWhileBound"], false);
 }
 
+/// ADR-174 O-1 (the owner's decision): "A backup of a locked vault still restores on another Mac with passphrase +
+/// recovery code, so a dead Mac never means lost data." A CredMgr backup of a bound vault, restored on a Mac that
+/// has never held this vault's device key, opens with the vault passphrase of the backup's day; and, restored
+/// again on another such Mac, with the recovery code of the backup's day through `vault.recover` (the Lock
+/// screen's "Forgot passphrase?"), which also issues a new code. Neither path reads a device key, and neither
+/// Mac had one before.
+#[test]
+fn a_backup_of_a_bound_vault_restores_on_another_mac_with_the_passphrase_or_the_recovery_code() {
+    let (v, state, entry) = bound_vault();
+    let owner = login(&state);
+    let code_of_the_day = v.recovery_code.borrow().clone();
+    let b = call(
+        &state,
+        &owner,
+        NOW,
+        "maintenance.backup",
+        json!({ "passphrase": "an archive passphrase" }),
+    )
+    .expect("backup");
+    assert_eq!(b["passphraseFileUnsealed"], true);
+    let blob = std::fs::read(b["path"].as_str().unwrap()).unwrap();
+    let archive = decrypt_with_passphrase(
+        &SecretBox::new(Box::new("an archive passphrase".to_string())),
+        &blob,
+    )
+    .expect("archive opens");
+    drop(state);
+    // The Mac dies: its state folder, and the device key in it, are gone with it.
+    std::fs::remove_dir_all(&v.state_dir).unwrap();
+
+    let fresh_mac = |code: &str| {
+        let new = tempfile::tempdir().unwrap();
+        let mac = Vault {
+            vault_dir: new.path().join("vault"),
+            state_dir: new.path().join("state"),
+            recovery_code: std::cell::RefCell::new(code.to_string()),
+            _dir: new,
+        };
+        restore_bundle(&archive, &mac.vault_dir, &mac.state_dir).expect("restore");
+        assert!(
+            !key_path(&mac).exists(),
+            "the other Mac holds no device key"
+        );
+        assert_eq!(
+            form(&mac),
+            WrapForm::Plain,
+            "the archive's wrap is unsealed"
+        );
+        mac
+    };
+
+    // Another Mac, the passphrase.
+    let a = fresh_mac(&code_of_the_day);
+    let s = a.broker(None);
+    let token = unlock_with(&s, PASSPHRASE).expect("the passphrase of the backup's day opens it")
+        ["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let o = scope_of(&s, &token);
+    assert_eq!(reveal(&s, &o, "acme", &entry), "alpha-secret");
+    assert!(
+        !key_path(&a).exists(),
+        "opening needed no device key and made none"
+    );
+    drop(s);
+
+    // Yet another Mac, the passphrase forgotten: the recovery code of the backup's day.
+    let b = fresh_mac(&code_of_the_day);
+    let s = b.broker(None);
+    let answer = recover(&s, &code_of_the_day, NEW_PASSPHRASE)
+        .expect("the recovery code of the backup's day opens it");
+    assert_eq!(answer["locked"], false);
+    assert_eq!(
+        answer["machineLocked"], false,
+        "a restored archive is not bound until bound again on that Mac"
+    );
+    let new_code = answer["recoveryCode"].as_str().unwrap().to_string();
+    assert_ne!(new_code, code_of_the_day, "a recovery issues a new code");
+    let o = scope_of(&s, answer["token"].as_str().unwrap());
+    assert_eq!(reveal(&s, &o, "acme", &entry), "alpha-secret");
+    drop(s);
+    let s = b.broker(None);
+    unlock_with(&s, NEW_PASSPHRASE).expect("the new passphrase opens it after a restart");
+}
+
+/// ADR-174 O-2 (the owner's decision): "Keep the Mac-bound device key out of Time Machine." The bind marks the key
+/// with Time Machine's sticky exclusion before sealing under it; status reports it; an attribute that went away
+/// is reported with a warning and set again by the next passphrase unlock; an unbound vault's unlock never makes
+/// or touches a key.
+#[cfg(target_os = "macos")]
+#[test]
+fn the_device_key_is_kept_out_of_time_machine_at_bind_and_again_at_every_unlock() {
+    let (v, state, _entry) = bound_vault();
+    assert_eq!(machine_lock::backup_excluded(&key_path(&v)), Some(true));
+    let owner = login(&state);
+    let st = status(&state, &owner);
+    assert_eq!(st["deviceKeyTimeMachineExcluded"], true);
+    assert_eq!(st["warning"], Value::Null);
+    drop(state);
+
+    // Something drops the attribute (a copy, a restore by another tool).
+    let removed = std::process::Command::new("/usr/bin/xattr")
+        .args(["-d", machine_lock::BACKUP_EXCLUDE_XATTR])
+        .arg(key_path(&v))
+        .status()
+        .unwrap();
+    assert!(removed.success());
+    assert_eq!(machine_lock::backup_excluded(&key_path(&v)), Some(false));
+    // The key's bytes are what they were; only the attribute changed.
+    let key_bytes = std::fs::read(key_path(&v)).unwrap();
+
+    let state = v.broker(None);
+    let token = unlock_with(&state, PASSPHRASE).unwrap()["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // The unlock re-asserted it.
+    assert_eq!(machine_lock::backup_excluded(&key_path(&v)), Some(true));
+    assert_eq!(std::fs::read(key_path(&v)).unwrap(), key_bytes);
+    let owner = scope_of(&state, &token);
+    // Drop it again while the vault is open: status warns, in words that say what it means.
+    std::process::Command::new("/usr/bin/xattr")
+        .args(["-d", machine_lock::BACKUP_EXCLUDE_XATTR])
+        .arg(key_path(&v))
+        .status()
+        .unwrap();
+    let st = status(&state, &owner);
+    assert_eq!(st["deviceKeyTimeMachineExcluded"], false);
+    let w = st["warning"].as_str().unwrap();
+    assert!(
+        w.contains("Time Machine") && w.contains("next unlock"),
+        "{w}"
+    );
+    assert!(
+        !w.contains(&*v.state_dir.to_string_lossy()),
+        "no path in the warning: {w}"
+    );
+
+    // While the key is not excluded, Time Machine is not claimed, and doesNotProtect says why.
+    assert_eq!(st["deviceKeyTimeMachineCovered"], false);
+    assert!(!st["protects"].as_str().unwrap().contains("Time Machine"));
+    assert!(st["doesNotProtect"]
+        .as_str()
+        .unwrap()
+        .contains("Time Machine backups that may hold this Mac's device key"));
+
+    // An unbound vault: an unlock makes no key and marks nothing.
+    let (u, s) = created_vault(None);
+    drop(s);
+    let s = u.broker(None);
+    unlock_with(&s, PASSPHRASE).unwrap();
+    assert!(!key_path(&u).exists());
+    let o = login(&s);
+    assert_eq!(status(&s, &o)["deviceKeyTimeMachineExcluded"], Value::Null);
+}
+
+/// ADR-174 O-2, the security review of the first build: a device key that already existed before the bind (made
+/// before ADR-174: no exclusion attribute, no provenance) may be in older Time Machine backups. Binding a plain
+/// vault puts it aside (excluded, renamed into `machine/retired/`, never deleted) and seals under a fresh key made
+/// already excluded, so Time Machine is claimed; when another vault on this Mac is bound (and may be sealed under
+/// the old key) the key is kept and excluded, and Time Machine is not claimed — doesNotProtect says why.
+#[cfg(target_os = "macos")]
+#[test]
+fn an_existing_device_key_that_may_be_in_time_machine_is_replaced_at_bind_or_never_claimed() {
+    use std::os::unix::fs::PermissionsExt;
+    let make_old_key = |v: &Vault| -> Vec<u8> {
+        let dir = key_path(v).parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let old: Vec<u8> = (0..32u8)
+            .map(|i| i.wrapping_mul(7).wrapping_add(3))
+            .collect();
+        std::fs::write(key_path(v), &old).unwrap();
+        std::fs::set_permissions(key_path(v), std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(machine_lock::backup_excluded(&key_path(v)), Some(false));
+        old
+    };
+    let old_id = |old: &[u8]| {
+        let arr: [u8; 32] = old.try_into().unwrap();
+        machine_lock::key_id_hex(&machine_lock::DeviceKey::from_bytes(&arr).id())
+    };
+
+    // Alone on this Mac: replaced.
+    let (v, state) = created_vault(None);
+    let old = make_old_key(&v);
+    let owner = login(&state);
+    let answer = bind(&v, &state, &owner);
+    assert_eq!(answer["bound"], true, "{answer}");
+    assert_eq!(answer["deviceKeyReplaced"], true);
+    assert_eq!(answer["deviceKeyCreated"], true);
+    assert_ne!(answer["deviceKeyId"], json!(old_id(&old)));
+    assert_eq!(answer["sealedKeyId"], answer["deviceKeyId"]);
+    let retired = key_path(&v)
+        .parent()
+        .unwrap()
+        .join("retired")
+        .join(format!("{}.key", old_id(&old)));
+    assert_eq!(std::fs::read(&retired).unwrap(), old, "kept, never deleted");
+    assert_eq!(machine_lock::backup_excluded(&retired), Some(true));
+    assert_eq!(machine_lock::backup_excluded(&key_path(&v)), Some(true));
+    assert_eq!(answer["deviceKeyTimeMachineCovered"], true);
+    assert!(answer["protects"]
+        .as_str()
+        .unwrap()
+        .contains("Time Machine"));
+    // The vault opens with the passphrase on a fresh broker, under the new key.
+    drop(state);
+    let state = v.broker(None);
+    unlock_with(&state, PASSPHRASE).expect("opens under the fresh key");
+    drop(state);
+
+    // Another vault on this Mac is bound: the key is kept (excluded from now on) and never claimed.
+    let (w, state) = created_vault(None);
+    let old = make_old_key(&w);
+    let vaults = key_path(&w).parent().unwrap().join("vaults");
+    std::fs::create_dir_all(&vaults).unwrap();
+    let other_id = "0123456789abcdef0123456789abcdef";
+    std::fs::write(
+        vaults.join(format!("{other_id}.json")),
+        json!({ "v": 2, "vaultId": other_id, "vault": "/elsewhere/another-vault" }).to_string(),
+    )
+    .unwrap();
+    let owner = login(&state);
+    let answer = bind(&w, &state, &owner);
+    assert_eq!(answer["bound"], true, "{answer}");
+    assert_eq!(answer["deviceKeyReplaced"], false);
+    assert_eq!(answer["deviceKeyCreated"], false);
+    assert_eq!(answer["deviceKeyId"], json!(old_id(&old)));
+    assert_eq!(std::fs::read(key_path(&w)).unwrap(), old);
+    assert_eq!(machine_lock::backup_excluded(&key_path(&w)), Some(true));
+    assert_eq!(answer["deviceKeyTimeMachineCovered"], false);
+    assert!(!answer["protects"]
+        .as_str()
+        .unwrap()
+        .contains("Time Machine"));
+    assert!(answer["doesNotProtect"]
+        .as_str()
+        .unwrap()
+        .contains("Time Machine backups that may hold this Mac's device key"));
+    // Status says the same.
+    let st = status(&state, &owner);
+    assert_eq!(st["deviceKeyTimeMachineCovered"], false);
+}
+
+/// ADR-174 O-5 (the owner's decision): "Turning the machine lock on needs Touch ID or your authenticator code." With
+/// a presence key enrolled, the prepare and the commit each need a presence proof for exactly that request (one
+/// made for the prepare does not open the commit), and a missing proof changes nothing and keeps the prepared bind;
+/// a request refused anyway (a synced folder) is refused before any prompt. Status says what bind asks for.
+#[test]
+fn turning_the_lock_on_needs_touch_id_for_each_phase_where_a_presence_key_is_enrolled() {
+    let (v, state) = created_vault(None);
+    let owner = login(&state);
+    assert_eq!(status(&state, &owner)["bindProof"], "none");
+    let key = enrol_key(&state, &owner);
+    assert_eq!(status(&state, &owner)["bindProof"], "presence");
+    let before = snapshot(&v.vault_dir);
+
+    let r = call(&state, &owner, NOW, "keystore.bind", bind_params(&v));
+    assert!(matches!(r, Err(OpError::PresenceRequired { .. })), "{r:?}");
+    assert!(!state.machine_lock_bind_pending(NOW));
+    let proved = with_proof(&state, &owner, &key, NOW, "keystore.bind", bind_params(&v));
+    let p = call(&state, &owner, NOW, "keystore.bind", proved).expect("prepare with Touch ID");
+    let new_code = p["newRecoveryCode"].as_str().unwrap().to_string();
+    assert_eq!(
+        snapshot(&v.vault_dir),
+        before,
+        "the prepare changed nothing"
+    );
+
+    // The commit asks again; without a proof nothing changes and the prepared bind waits.
+    let commit_params = json!({ "phase": "commit", "recoveryCode": new_code });
+    let r = call(&state, &owner, NOW, "keystore.bind", commit_params.clone());
+    assert!(matches!(r, Err(OpError::PresenceRequired { .. })), "{r:?}");
+    assert_eq!(snapshot(&v.vault_dir), before);
+    assert!(state.machine_lock_bind_pending(NOW));
+    // A proof made for another request (here: the prepare's) does not open the commit.
+    let wrong = with_proof(&state, &owner, &key, NOW, "keystore.bind", bind_params(&v));
+    let mut replay = commit_params.clone();
+    replay["presence"] = wrong["presence"].clone();
+    let r = call(&state, &owner, NOW, "keystore.bind", replay);
+    assert!(matches!(r, Err(OpError::PresenceFailed { .. })), "{r:?}");
+    assert_eq!(snapshot(&v.vault_dir), before);
+    let proved = with_proof(&state, &owner, &key, NOW, "keystore.bind", commit_params);
+    let done = call(&state, &owner, NOW, "keystore.bind", proved).expect("commit with Touch ID");
+    assert_eq!(done["bound"], true);
+    assert_eq!(
+        form(&v),
+        WrapForm::Sealed {
+            key_id: machine_lock::DeviceKey::load(&key_path(&v))
+                .unwrap()
+                .unwrap()
+                .id()
+        }
+    );
+    // Cancel never asks (it only forgets).
+    call(
+        &state,
+        &owner,
+        NOW,
+        "keystore.bind",
+        json!({ "phase": "cancel" }),
+    )
+    .expect("cancel");
+
+    // A request refused anyway is refused before any prompt: a synced folder answers its own refusal.
+    let root = tempfile::tempdir().unwrap();
+    let dropbox = root.path().join("Dropbox");
+    std::fs::create_dir_all(&dropbox).unwrap();
+    std::fs::write(dropbox.join(".dropbox"), b"{}").unwrap();
+    let (w, s) = vault_at(root, dropbox.join("vault"));
+    let o = login(&s);
+    enrol_key(&s, &o);
+    expect_synced_refusal(
+        call(&s, &o, NOW, "keystore.bind", bind_params(&w)),
+        "Dropbox",
+    );
+}
+
+/// ADR-174 O-5: with a second factor enrolled and no presence key, each phase needs it fresh (the five-minute
+/// window a step-up opens). A refusal is `two_factor_required`, changes nothing, is not a counted guess, and keeps
+/// the prepared bind, so a commit typed after the window closed works once the factor is given again.
+#[test]
+fn turning_the_lock_on_needs_a_fresh_second_factor_where_one_is_enrolled_and_no_touch_id() {
+    let (v, state) = created_vault(None);
+    let owner = login(&state);
+    let totp = enrol_gate(&state, &owner);
+    assert_eq!(status(&state, &owner)["bindProof"], "secondFactor");
+    // (A step-up records the code it used in the vault, so "nothing changed" is checked around each refusal.)
+    let before = snapshot(&v.vault_dir);
+    let r = call(&state, &owner, LATER, "keystore.bind", bind_params(&v));
+    assert!(matches!(r, Err(OpError::TwoFactorRequired { .. })), "{r:?}");
+    assert!(!state.machine_lock_bind_pending(LATER));
+    assert_eq!(snapshot(&v.vault_dir), before);
+    step_up(&state, &owner, &totp, LATER);
+    let p = call(&state, &owner, LATER, "keystore.bind", bind_params(&v)).expect("prepare");
+    let new_code = p["newRecoveryCode"].as_str().unwrap().to_string();
+
+    // The code written down slowly: the window has closed by the commit, inside the prepared bind's ten minutes.
+    let late = LATER + 400;
+    let before = snapshot(&v.vault_dir);
+    let r = commit(&state, &owner, late, Some(&new_code));
+    assert!(matches!(r, Err(OpError::TwoFactorRequired { .. })), "{r:?}");
+    assert_eq!(snapshot(&v.vault_dir), before);
+    assert!(
+        state.machine_lock_bind_pending(late),
+        "the prepared bind waits"
+    );
+    step_up(&state, &owner, &totp, late);
+    let done = commit(&state, &owner, late, Some(&new_code)).expect("commit");
+    assert_eq!(done["bound"], true);
+    *v.recovery_code.borrow_mut() = new_code;
+}
+
+/// A vault created at `vault_dir` (made here), its state folder beside the temporary root.
+fn vault_at(root: tempfile::TempDir, vault_dir: std::path::PathBuf) -> (Vault, Arc<BrokerState>) {
+    std::fs::create_dir_all(&vault_dir).unwrap();
+    let state_dir = root.path().join("state");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    let v = Vault {
+        vault_dir,
+        state_dir,
+        recovery_code: std::cell::RefCell::new(String::new()),
+        _dir: root,
+    };
+    let state = v.broker(None);
+    let begin = call(
+        &state,
+        &anyone(),
+        NOW,
+        "vault.init_begin",
+        json!({ "passphrase": PASSPHRASE }),
+    )
+    .expect("init_begin");
+    let code = begin["recoveryCode"].as_str().unwrap().to_string();
+    call(
+        &state,
+        &anyone(),
+        NOW,
+        "vault.init_confirm",
+        json!({ "recoveryCode": code }),
+    )
+    .expect("init_confirm");
+    *v.recovery_code.borrow_mut() = code;
+    (v, state)
+}
+
+fn expect_synced_refusal(r: Result<Value, OpError>, label: &str) {
+    match r {
+        Err(OpError::Malformed(m)) => assert!(
+            m.contains("nothing changed") && m.contains(label) && m.contains("another Mac"),
+            "{m}"
+        ),
+        other => panic!("expected the synced-folder refusal ({label}), got {other:?}"),
+    }
+}
+
+/// ADR-174 O-3 (the owner's decision): "Refuse to lock a vault folder that two Macs share (iCloud/Dropbox)." A
+/// vault folder in iCloud Drive, in a CloudStorage provider's folder or under a `.dropbox` marker is refused at
+/// the prepare, before anything is proven or written (no device key, the wrap byte for byte as it was, no code
+/// drawn), and status names the service; a folder that becomes synced between the phases is refused at the
+/// commit, which keeps the prepared bind, and the bind goes through once the folder is out of it.
+#[test]
+fn bind_refuses_a_vault_folder_that_a_sync_service_shares_with_other_macs() {
+    for (sub, label) in [
+        (
+            vec![
+                "Library",
+                "Mobile Documents",
+                "com~apple~CloudDocs",
+                "vault",
+            ],
+            "iCloud Drive",
+        ),
+        (
+            vec!["Library", "CloudStorage", "Dropbox", "vault"],
+            "Dropbox",
+        ),
+        (
+            vec![
+                "Library",
+                "CloudStorage",
+                "GoogleDrive-someone@example.com",
+                "vault",
+            ],
+            "Google Drive",
+        ),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        let mut at = home.clone();
+        for s in &sub {
+            at.push(s);
+        }
+        let (v, state) = vault_at(root, at);
+        state.set_sync_home_for_test(Some(home.clone()));
+        let owner = login(&state);
+        let before = snapshot(&v.vault_dir);
+        let r = call(&state, &owner, NOW, "keystore.bind", bind_params(&v));
+        expect_synced_refusal(r, label);
+        assert_eq!(snapshot(&v.vault_dir), before, "nothing changed: {label}");
+        assert!(!key_path(&v).exists(), "no device key was made: {label}");
+        let st = status(&state, &owner);
+        assert_eq!(st["syncedFolder"], label);
+        assert_eq!(st["bound"], false);
+        assert!(!st.to_string().contains("someone@example.com"));
+        // A commit is refused the same way (and nothing waits for it anyway).
+        expect_synced_refusal(commit(&state, &owner, NOW, Some("anything")), label);
+        assert!(!state.machine_lock_bind_pending(NOW));
+    }
+
+    // A `.dropbox` marker in a parent (a Dropbox folder outside CloudStorage), found with no home at all.
+    let root = tempfile::tempdir().unwrap();
+    let dropbox = root.path().join("Dropbox");
+    let (v, state) = vault_at(root, dropbox.join("work").join("vault"));
+    let owner = login(&state);
+    assert_eq!(status(&state, &owner)["syncedFolder"], Value::Null);
+    // Prepared while the folder was not synced; then the folder becomes a Dropbox folder.
+    let new_code = prepare(&v, &state, &owner);
+    std::fs::write(dropbox.join(".dropbox"), b"{}").unwrap();
+    let before = snapshot(&v.vault_dir);
+    expect_synced_refusal(commit(&state, &owner, NOW, Some(&new_code)), "Dropbox");
+    assert_eq!(snapshot(&v.vault_dir), before);
+    assert!(!key_path(&v).exists());
+    assert!(
+        state.machine_lock_bind_pending(NOW),
+        "the prepared bind still waits"
+    );
+    std::fs::remove_file(dropbox.join(".dropbox")).unwrap();
+    let done =
+        commit(&state, &owner, NOW, Some(&new_code)).expect("commit once the folder is not synced");
+    assert_eq!(done["bound"], true);
+    assert_eq!(done["syncedFolder"], Value::Null);
+}
+
+/// ADR-174 O-3: iCloud Drive's Desktop & Documents sync keeps `~/Desktop` in place and marks it with File Provider
+/// attributes; a vault under such a folder is refused.
+#[cfg(target_os = "macos")]
+#[test]
+fn bind_refuses_a_vault_under_a_folder_a_file_provider_marks() {
+    let root = tempfile::tempdir().unwrap();
+    let desktop = root.path().join("Desktop");
+    let (v, state) = vault_at(root, desktop.join("vault"));
+    let ok = std::process::Command::new("/usr/bin/xattr")
+        .args(["-w", "com.apple.fileprovider.detached#B", "1"])
+        .arg(&desktop)
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok);
+    let owner = login(&state);
+    expect_synced_refusal(
+        call(&state, &owner, NOW, "keystore.bind", bind_params(&v)),
+        "Desktop & Documents",
+    );
+    assert!(!key_path(&v).exists());
+    assert_eq!(form(&v), WrapForm::Plain);
+}
+
 #[test]
 fn bind_refuses_a_vault_with_no_recovery_code_and_changes_nothing() {
     let (v, state) = created_vault(None);
@@ -976,7 +1517,7 @@ fn a_rotation_never_makes_the_device_key_inside_the_vault_folder_and_says_the_lo
     std::fs::remove_dir_all(inside.join("machine").join("lock.key")).ok();
     std::fs::remove_file(inside.join("machine").join("lock.key")).ok();
     state.set_state_dir_for_test(inside.clone());
-    let presence = enrol_first_key(&state, &owner);
+    let presence = enrol_key(&state, &owner);
     // The passphrase is proven through the real device key first, so give the rotation one to read…
     std::fs::copy(key_path(&v), inside.join("machine").join("lock.key")).unwrap();
     // …then the rotation's own reseal: it must refuse to use a key under the vault folder.
@@ -1035,7 +1576,7 @@ fn unbind_needs_the_second_factor_and_presence_where_enrolled_and_keeps_the_devi
     let (v, state) = created_vault(None);
     let owner = login(&state);
     bind(&v, &state, &owner);
-    let key = enrol_first_key(&state, &owner);
+    let key = enrol_key(&state, &owner);
     let totp = enrol_gate(&state, &owner);
     let sealed = pass_wrap(&v);
 
@@ -1182,7 +1723,7 @@ fn rotation_and_a_passphrase_change_while_bound_reseal_to_the_same_key() {
         panic!()
     };
     let owner = login(&state);
-    let presence = enrol_first_key(&state, &owner);
+    let presence = enrol_key(&state, &owner);
     let ask = json!({ "passphrase": PASSPHRASE });
     let proved = with_proof(
         &state,
@@ -1341,7 +1882,7 @@ fn bind_is_two_phase_and_an_abandoned_prepare_leaves_the_old_code_and_root_fully
     let state_before = snapshot(&v.state_dir);
     let root_before = root_key(&v);
 
-    let p = call(&state, &owner, NOW, "keystore.bind", bind_params(&v)).expect("prepare");
+    let p = bind_call(&state, &owner, NOW, bind_params(&v)).expect("prepare");
     let shown = p["newRecoveryCode"].as_str().unwrap().to_string();
     assert_ne!(shown, old_code);
     assert_eq!(p["expiresIn"], BIND_PREPARE_SECONDS);
@@ -1412,7 +1953,7 @@ fn bind_is_two_phase_and_an_abandoned_prepare_leaves_the_old_code_and_root_fully
     // Overtaken by a rotation between the phases: the prepared material belongs to a root key the vault no
     // longer runs under, so the commit is refused and nothing of the prepare is used.
     let shown = prepare(&v, &state, &owner);
-    let presence = enrol_first_key(&state, &owner);
+    let presence = enrol_key(&state, &owner);
     let proved = with_proof(
         &state,
         &owner,
@@ -1456,7 +1997,15 @@ fn bind_is_two_phase_and_an_abandoned_prepare_leaves_the_old_code_and_root_fully
                 id: "r".into(),
                 op: "keystore.bind".into(),
                 token: Some(token.clone()),
-                params: json!({ "phase": "commit", "recoveryCode": current }),
+                // ADR-174 O-5: with a presence key enrolled the client attaches a proof to each commit.
+                params: with_proof(
+                    &state,
+                    &owner,
+                    &presence,
+                    NOW,
+                    "keystore.bind",
+                    json!({ "phase": "commit", "recoveryCode": current }),
+                ),
             },
             NOW,
             clock,
@@ -1628,7 +2177,7 @@ fn the_commit_moves_pre_bind_archives_out_of_the_vault_folder_and_status_counts_
             .contains("still in the vault folder"),
         "{st}"
     );
-    let p = call(&state, &owner, NOW, "keystore.bind", bind_params(&v)).expect("prepare (already)");
+    let p = bind_call(&state, &owner, NOW, bind_params(&v)).expect("prepare (already)");
     assert_eq!(p["already"], true);
     let again = commit(&state, &owner, NOW, None).expect("commit (already)");
     assert_eq!(again["archivesMoved"], 0, "{again}");
@@ -1638,7 +2187,7 @@ fn the_commit_moves_pre_bind_archives_out_of_the_vault_folder_and_status_counts_
     );
     assert_eq!(status(&state, &owner)["inFolderArchives"], 1);
     std::fs::remove_dir_all(outside.join("credmgr-backup-5.enc")).unwrap();
-    call(&state, &owner, NOW, "keystore.bind", bind_params(&v)).expect("prepare (already)");
+    bind_call(&state, &owner, NOW, bind_params(&v)).expect("prepare (already)");
     let third = commit(&state, &owner, NOW, None).expect("commit (already)");
     assert_eq!(third["archivesMoved"], 1, "{third}");
     assert_eq!(status(&state, &owner)["inFolderArchives"], 0);
@@ -1744,7 +2293,7 @@ fn a_prepared_bind_belongs_to_the_login_that_prepared_it() {
     assert_eq!(done["bound"], true);
     *v.recovery_code.borrow_mut() = shown;
     // Once nothing waits (or it lapsed), another login may prepare.
-    let p = call(&state, &second, NOW, "keystore.bind", bind_params(&v)).expect("prepare");
+    let p = bind_call(&state, &second, NOW, bind_params(&v)).expect("prepare");
     assert_eq!(p["already"], true);
     let late = call(&state, &first, NOW, "keystore.bind", bind_params(&v));
     elsewhere(late);
@@ -1769,7 +2318,7 @@ fn an_interrupted_unbind_never_turns_the_lock_back_on_and_the_record_follows_the
 ) {
     let (v, state, entry) = bound_vault();
     let owner = login(&state);
-    let presence = enrol_first_key(&state, &owner);
+    let presence = enrol_key(&state, &owner);
     let rotate = |state: &BrokerState, owner: &credmgr_brokerd::scope::BrokerScope| {
         let proved = with_proof(
             state,
@@ -1857,7 +2406,7 @@ fn an_interrupted_unbind_never_turns_the_lock_back_on_and_the_record_follows_the
         .as_str()
         .unwrap()
         .contains("Nothing was repaired"));
-    let presence = enrol_first_key(&state, &owner);
+    let presence = enrol_key(&state, &owner);
     let proved = with_proof(
         &state,
         &owner,

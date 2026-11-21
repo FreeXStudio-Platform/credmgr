@@ -182,6 +182,7 @@ pub fn restart(
 /// A presence key a test signs with. ADR-148 §P2-5: a **software** P-256 key, so every presence-gated row
 /// runs on any host (Linux CI included) and checks the broker's verifier and its refusals; the Secure
 /// Enclave itself is exercised only by the Touch ID unlock tests, which still need the test helper.
+#[derive(Clone)]
 pub struct Signer(p256::ecdsa::SigningKey);
 
 impl Signer {

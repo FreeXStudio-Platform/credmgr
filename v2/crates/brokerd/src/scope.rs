@@ -95,6 +95,28 @@ pub(crate) fn match_workdir<'a>(registry: &'a Registry, cwd: &str) -> Option<&'a
     best.map(|(_, id)| id)
 }
 
+/// ADR-174 (3): is `cwd` inside one of `node_id`'s own registered folders (equal to one, or beneath it)? Unlike
+/// [`match_workdir`] this does not ask which node owns the folder most closely: a folder nested under another
+/// node's still belongs to the project that registered the outer one.
+pub(crate) fn cwd_within_node_workdirs(registry: &Registry, node_id: &str, cwd: &str) -> bool {
+    registry.nodes.get(node_id).is_some_and(|n| {
+        n.workdirs
+            .iter()
+            .any(|wd| cwd == wd || cwd.starts_with(&format!("{wd}/")))
+    })
+}
+
+/// ADR-174 (3): a login minted by an unlock made from inside a project's folder is a **project login**
+/// (`Origin::Cli`, that project's node, the folder recorded). Every other session token is the owner's
+/// (`Origin::HumanUi`, Global) or a fixture's without a folder, and is unaffected.
+pub(crate) fn is_project_login(
+    node_id: &str,
+    origin: Origin,
+    bound_workdir: &Option<String>,
+) -> bool {
+    origin == Origin::Cli && bound_workdir.is_some() && node_id != GLOBAL_ID
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Anomaly {
     pub kind: AnomalyKind,
@@ -109,6 +131,9 @@ pub enum AnomalyKind {
     /// ADR-164 review P2-10: an agent token presented from a folder registered to another node — a sign it was
     /// copied to where it does not belong. Logged only; the request proceeds under the token's own node.
     AgentTokenWorkdirMismatch,
+    /// ADR-174 (3): a project login presented from outside its project's registered folders. The request is
+    /// refused (the login is not honoured); the record names only the session, never the project or the folder.
+    ProjectLoginWrongFolder,
 }
 
 /// `06_ACCESS_GRAPH.md §4`'s resolution order. Returns the scope plus any
@@ -192,6 +217,10 @@ pub fn resolve_scope_at(
             }
         }
     }
+    // ADR-174 (3): set when a project login is presented from outside its project's folders. It is not honoured,
+    // so the caller falls through to the scope its folder gives it, and the server answers `session_expired`
+    // (a presented token that names no scope, ADR-068) and files this record.
+    let mut wrong_folder: Option<Anomaly> = None;
     // 1. Explicit token — its nodeId wins, always.
     if let Some(token_id) = presented_token.filter(|b| !crate::token::is_agent_bearer(b)) {
         if let Some(Token {
@@ -203,29 +232,45 @@ pub fn resolve_scope_at(
             bound_workdir,
         }) = tokens.get(token_id)
         {
-            // ADR-077: this detail is written to the plaintext audit log and
-            // returned by `audit.tail`, so it names the session by its public
-            // id. It used to interpolate `id` — the bearer — which handed any
-            // process that could read the feed a login to replay.
-            let anomaly = match (&bound_workdir, &peer.cwd) {
-                (Some(bound), Some(live)) if bound != live => Some(Anomaly {
-                    kind: AnomalyKind::TokenWorkdirMismatch,
-                    detail: format!(
+            if is_project_login(&node_id, origin, &bound_workdir) {
+                let inside = peer
+                    .cwd
+                    .as_deref()
+                    .is_some_and(|cwd| cwd_within_node_workdirs(registry, &node_id, cwd));
+                if !inside {
+                    wrong_folder = Some(Anomaly {
+                        kind: AnomalyKind::ProjectLoginWrongFolder,
+                        detail: format!(
+                            "login {public_id} (a project login) presented from outside its project's folders"
+                        ),
+                    });
+                }
+            }
+            if wrong_folder.is_none() {
+                // ADR-077: this detail is written to the plaintext audit log and
+                // returned by `audit.tail`, so it names the session by its public
+                // id. It used to interpolate `id` — the bearer — which handed any
+                // process that could read the feed a login to replay.
+                let anomaly = match (&bound_workdir, &peer.cwd) {
+                    (Some(bound), Some(live)) if bound != live => Some(Anomaly {
+                        kind: AnomalyKind::TokenWorkdirMismatch,
+                        detail: format!(
                         "session {public_id} bound to {bound:?}, presenting process cwd is {live:?}"
                     ),
-                }),
-                _ => None,
-            };
-            return (
-                BrokerScope {
-                    node_id,
-                    capabilities,
-                    origin,
-                    token_id: Some(id),
-                    bound_workdir,
-                },
-                anomaly,
-            );
+                    }),
+                    _ => None,
+                };
+                return (
+                    BrokerScope {
+                        node_id,
+                        capabilities,
+                        origin,
+                        token_id: Some(id),
+                        bound_workdir,
+                    },
+                    anomaly,
+                );
+            }
         }
     }
 
@@ -245,7 +290,7 @@ pub fn resolve_scope_at(
                     token_id: None,
                     bound_workdir: Some(cwd.clone()),
                 },
-                None,
+                wrong_folder,
             );
         }
     }
@@ -259,7 +304,7 @@ pub fn resolve_scope_at(
             token_id: None,
             bound_workdir: peer.cwd.clone(),
         },
-        None,
+        wrong_folder,
     )
 }
 

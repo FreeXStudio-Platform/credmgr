@@ -120,7 +120,10 @@ describe("the Security section's machine lock row", () => {
     expect(dlg).toMatch(/does not protect a stolen or unlocked Mac/);
     // Review P0-1 / P1-3 / P2-6: what a copy made before already held, Time Machine and Migration Assistant, backups, a second Mac.
     expect(dlg).toMatch(/Copies made before now<\/strong> still open with the passphrase, and still show what they held then/);
-    expect(dlg).toMatch(/Time Machine, a whole-disk image or Migration Assistant/);
+    // ADR-174 O-2: the device key is kept out of Time Machine, so the dialog no longer lists Time Machine as uncovered.
+    expect(dlg).toMatch(/The device key is kept out of Time Machine/);
+    expect(dlg).toMatch(/a whole-disk image or Migration Assistant/);
+    expect(dlg).not.toMatch(/unlocked Mac, Time Machine/);
     expect(dlg).toMatch(/CredMgr backups/);
     expect(dlg).toMatch(/Another Mac sharing this vault folder needs the recovery code/);
     expect(dlg).toMatch(/gives you a <strong>new<\/strong> recovery code/);
@@ -286,6 +289,97 @@ describe("the Security section's machine lock row", () => {
     await l.setMachineLock(true);
     expect(broker().state().machineLock).toBeFalsy();
     expect(l.state.notice?.text).toMatch(/needs a recovery code set up first/);
+  });
+
+  it("with a second factor and no Touch ID, asks for a fresh authenticator code before step one, and again if the window closed (ADR-174 O-5)", async () => {
+    const l = await security({ gate: true, gateCode: "123456" });
+    let v = l.renderVals();
+    expect(l.state.machineLock.bindProof).toBe("secondFactor");
+    v.toggleMachineLock();
+    v = l.renderVals();
+    expect(v).toMatchObject({ machineLockBind: true, machineLockFactorShow: true });
+    expect(v.machineLockProofNote).toMatch(/second factor is asked for too/);
+    // Without the code: nothing is sent.
+    v.onMachineLockPass({ target: { value: PASS } });
+    v.onMachineLockCode({ target: { value: broker().state().rootRecoveryCode } });
+    await l.setMachineLock(true);
+    expect(l.state.machineLockError).toMatch(/6-digit code from your authenticator/);
+    expect(broker().calls("keystore_bind")).toEqual([]);
+    // A wrong code is refused by the step-up; nothing is sent either.
+    l.renderVals().onMachineLockFactor({ target: { value: "000000" } });
+    await l.setMachineLock(true);
+    await settle();
+    expect(broker().calls("keystore_bind")).toEqual([]);
+    expect(l.state.dialog).toBe("machineLock");
+    // The right one: the step-up, then step one.
+    l.renderVals().onMachineLockPass({ target: { value: PASS } });
+    l.renderVals().onMachineLockCode({ target: { value: broker().state().rootRecoveryCode } });
+    l.renderVals().onMachineLockFactor({ target: { value: "123456" } });
+    await l.setMachineLock(true);
+    await settle();
+    expect(broker().calls("vault_gate_verify").length).toBeGreaterThanOrEqual(1);
+    expect(l.state.machineLockAsk).toBe("confirm");
+    expect(l._mlFactor).toBe("");
+    // The five minutes run out while the code is written down: the commit asks again and the prepared bind waits.
+    broker().set({ elevated: false });
+    v = l.renderVals();
+    v.onMachineLockRetype({ target: { value: v.machineLockNewCode } });
+    await l.setMachineLock(true);
+    await settle();
+    v = l.renderVals();
+    expect(broker().state().machineLock).toBeFalsy();
+    expect(v).toMatchObject({ machineLockConfirmStep: true, machineLockFactorAgainShow: true });
+    expect(v.machineLockError).toMatch(/Five minutes have passed/);
+    v.onMachineLockRetype({ target: { value: v.machineLockNewCode } });
+    v.onMachineLockFactor({ target: { value: "123456" } });
+    await l.setMachineLock(true);
+    await settle();
+    expect(broker().state().machineLock).toBe(true);
+    expect(l.renderVals().machineLockOn).toBe(true);
+  });
+
+  it("with Touch ID set up, says each step asks for it (the shell attaches the proof) (ADR-174 O-5)", async () => {
+    const l = await security({ touchId: true, gate: true });
+    l.renderVals().toggleMachineLock();
+    const v = l.renderVals();
+    expect(v.machineLockFactorShow).toBe(false);
+    expect(v.machineLockProofNote).toMatch(/Touch ID is asked for at each step/);
+    l.state = { ...l.state, dialog: null };
+    await bindNow(l);
+    expect(broker().state().machineLock).toBe(true);
+  });
+
+  it("claims Time Machine only for a device key made already excluded, and says what an older key means (ADR-174 O-2)", async () => {
+    const l = await security();
+    await bindNow(l);
+    expect(l.renderVals().machineLockCaption).toMatch(/a Time Machine backup included \(the key is kept out of it\)/);
+    broker().set({ deviceKeyPredates: true });
+    l._mlAsked = false;
+    l.loadMachineLock();
+    await settle();
+    const c = l.renderVals().machineLockCaption;
+    expect(c).not.toMatch(/a Time Machine backup included/);
+    expect(c).toMatch(/Time Machine backups may hold this device key/);
+    expect(c).toMatch(/turn the lock off and on again to replace it/);
+    expect(l.state.machineLock.doesNotProtect).toMatch(/Time Machine backups that may hold this Mac's device key/);
+  });
+
+  it("offers no Bind on a vault folder another Mac can open, names the service, and a stale Bind changes nothing (ADR-174 O-3)", async () => {
+    const l = await security();
+    broker().set({ machineLockSyncedFolder: "iCloud Drive" });
+    l._mlAsked = false;
+    l.loadMachineLock();
+    await settle();
+    const v = l.renderVals();
+    expect(v).toMatchObject({ machineLockOn: false, machineLockDisabled: true });
+    expect(v.machineLockCaption).toMatch(/in iCloud Drive, which another Mac can open too/);
+    expect(v.machineLockCaption).toMatch(/not synced/);
+    typeInto(l, true, { passphrase: PASS, code: broker().state().rootRecoveryCode });
+    await l.setMachineLock(true);
+    await settle();
+    expect(broker().state().machineLock).toBeFalsy();
+    expect(broker().state().machineLockPending).toBeFalsy();
+    expect(l.state.machineLockAsk).not.toBe("confirm");
   });
 
   // Review P2-8: this runs against the fixture broker, so it proves what the SCREEN does with a presence_required answer (asks first,

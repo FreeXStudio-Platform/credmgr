@@ -257,8 +257,8 @@ tier report", not "no application"; conflating the two is exactly the stale-clai
 document exists to eliminate. **One narrow tier report exists since ADR-165 (2026-11-14):** the machine lock's
 `keystore.status` answers `tier: "file"` or `"off"` and `secureEnclave: false`, and the Security panel's Machine lock row and
 `credmgr keystore status` say in words that its device key is a file on this Mac, not a key sealed in the Secure Enclave, and that it
-protects a copy of the vault folder made after the bind but not a stolen Mac, Time Machine, a whole-disk image, Migration Assistant or a
-CredMgr backup (ADR-165 addendum). That reports the machine lock's own tier only; the passphrase wrap underneath
+protects a copy of the vault folder made after the bind (and a Time Machine backup when the key was made already excluded, ADR-174 O-2)
+but not a stolen Mac, a whole-disk image, Migration Assistant or a CredMgr backup (ADR-165 addendum, ADR-174). That reports the machine lock's own tier only; the passphrase wrap underneath
 is still the Software tier and the general tier line above is still `planned`. Overstating protection is the
 failure mode this whole project exists to avoid, so the requirement is recorded here and gated in
 `12_BUILD_PLAN.md`'s Phase 5 exit criteria rather than left to whoever builds the screen.

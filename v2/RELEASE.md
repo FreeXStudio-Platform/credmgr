@@ -416,8 +416,10 @@ owners, is in `docs/PHASE8_AUDIT_REPORT.md §4`.
   or your recovery code *and* a copy of your vault folder can decrypt it without the second factor (the
   disaster tool `scripts/emergency-decrypt.mjs` does exactly that, by design). Treat each of the passphrase and
   the recovery code as a complete key to your vault.
-- **K-6 · An exported login reaches every project.** Keep `CREDMGR_TOKEN` out of shells where an
-  AI agent runs; lock the vault when you are done.
+- **K-6 · An exported login (closed for a project folder, ADR-174).** An unlock inside a project's folder gives
+  a login for that project only, honoured only from that folder. Your own login (an unlock from anywhere else)
+  still reaches every project: keep `CREDMGR_TOKEN` out of shells where an AI agent runs; lock the vault when you
+  are done.
 - **K-7 · Sealing a project, and what is still missing.** `credmgr node seal <id>` moves a project's entries into
   the Orphaned node, re-encrypted to its cold key; the seal is recorded in the signed registry, so it survives a
   restart and a crash in the middle of it cannot lock you out. Within seven days `credmgr node restore <id>` puts
