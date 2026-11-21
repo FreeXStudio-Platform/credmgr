@@ -22,8 +22,11 @@
 //! is), so neither op refuses for a locked node or a full tray as `keystore.bind` does. A **sealed** node
 //! keeps its keypair (its archived key is re-wrapped by the rotation, as before): nothing is written to it
 //! while sealed, and `node.restore` brings it back on that key; `node.rekey` gives it a new one after. The
-//! **orphan**'s cold keypair is replaced, as the bind's rotation replaces it, when it holds no sealed copy;
-//! when it holds some, it is kept (re-sealed under the new root, as before) and named in `notResigned`.
+//! **orphan**'s cold keypair is replaced, as the bind's rotation replaces it, and since ADR-174 (closing
+//! ADR-165's N5-Q2) even when it holds sealed copies: each copy is opened with the old cold key and sealed
+//! to the new one ([`BrokerState::plan_orphan_reseal`]), one more staged file under the same commit record.
+//! Only a cold key that does not open, or does not match the registry's orphan public key, is kept
+//! (re-sealed under the new root, as before) and named in `notResigned`.
 //!
 //! **Fail honest, never refuse on one bad file.** An envelope that does not open under its node's current
 //! key opened nothing before and opens nothing after; it is left exactly as it is and named in
@@ -36,9 +39,9 @@ use std::path::PathBuf;
 
 use x25519_dalek::{PublicKey, StaticSecret};
 
-use credmgr_core::envelope;
 use credmgr_core::keys::{generate_node_keypair, unwrap_node_key, wrap_node_key, WrappedNodeKey};
 use credmgr_core::registry::ORPHAN_ID;
+use credmgr_core::{cold, envelope};
 use credmgr_store::{atomic, rotation};
 use secrecy::ExposeSecret;
 
@@ -232,14 +235,75 @@ impl BrokerState {
     }
 }
 
+/// ADR-174 (N5-Q2): the orphan node's new cold keypair and its sealed copies re-sealed to it.
+pub(in crate::state) struct OrphanReseal {
+    /// The new orphan public key (registry cleartext).
+    pub public: PublicKey,
+    /// The new `keys/cold/orphan.key`, its private half sealed under the NEW root key.
+    pub file: Vec<u8>,
+    /// The sealed copies (`nodes/orphan/entries/<id>.env`), re-sealed to `public`.
+    pub files: Vec<Resealed>,
+    /// Copies that did not open under the old cold key, left as they were, for `notResigned`.
+    pub skipped: Vec<rotation::Skipped>,
+}
+
+impl BrokerState {
+    /// Plan the orphan's re-key (ADR-174, N5-Q2) against `old`, the root key the vault runs under now: open the
+    /// current cold key (it must match the orphan public key the registry names), draw a new cold keypair
+    /// sealed under `new`, and re-seal every sealed copy `rows` names to it. Writes nothing. `Err(reason)` when
+    /// the current cold key cannot be opened or does not match: the caller keeps it.
+    pub(in crate::state) fn plan_orphan_reseal(
+        &self,
+        old: &[u8; 32],
+        new: &[u8; 32],
+        rows: &[String],
+    ) -> Result<OrphanReseal, String> {
+        let bytes = atomic::read(&self.paths.orphan_key())
+            .map_err(|e| format!("the orphan cold key could not be read ({e})"))?;
+        let expected = self
+            .node_public_key(ORPHAN_ID)
+            .ok_or_else(|| "the registry names no orphan public key".to_string())?;
+        let old_cold = cold::open_orphan_cold(old, &bytes, Some(&expected)).map_err(|_| {
+            "the orphan cold key did not open under the current root key, or does not match the registry's \
+             orphan public key"
+                .to_string()
+        })?;
+        let (public, file) = cold::generate_orphan_cold(new);
+        let (files, left) = reseal_node_files(
+            &self.paths,
+            ORPHAN_ID,
+            rows,
+            &old_cold,
+            &public,
+            OnUnreadable::LeaveAndName,
+        )
+        .map_err(|e| format!("the sealed copies could not be read: {e:?}"))?;
+        drop(old_cold);
+        let skipped = left
+            .into_iter()
+            .map(|(what, reason)| rotation::Skipped {
+                kind: "rekey-file",
+                id: what,
+                reason,
+            })
+            .collect();
+        Ok(OrphanReseal {
+            public,
+            file,
+            files,
+            skipped,
+        })
+    }
+}
+
 /// The manifest digests a node's re-key changes: rows by entry id, the note, the merge memory.
 pub(in crate::state) fn new_digests(
-    node: &NodeRekey,
+    files: &[Resealed],
 ) -> (HashMap<String, String>, Option<String>, Option<String>) {
     let mut rows = HashMap::new();
     let mut note = None;
     let mut merge = None;
-    for f in &node.files {
+    for f in files {
         match f.kind {
             ItemKind::Entry => {
                 if let Some(e) = &f.entry {

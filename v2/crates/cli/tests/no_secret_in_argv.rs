@@ -147,6 +147,8 @@ const VALUE_TAKING_FLAGS: &[(&str, &str)] = &[
         "capability names (list,read,...) an agent token carries (ADR-164); the token itself is printed, never taken",
     ),
     ("--expires", "a duration (90m, 8h, 2d or seconds) an agent token lives (ADR-164)"),
+    ("--entry", "an entry id (e_ and hex) a single-entry grant names (`grant`, ADR-174)"),
+    ("--expires-in-days", "a number of days a grant lives (`grant`, ADR-174)"),
     (
         "--code-on-argv",
         "an authenticator code on purpose, visible to `ps` while the command runs, worthless after about ninety seconds; the default is a prompt or stdin (issue #39) and `help` says what the flag costs",

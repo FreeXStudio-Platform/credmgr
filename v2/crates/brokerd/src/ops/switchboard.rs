@@ -2,14 +2,19 @@
 //! the broker by the app, the CLI and the MCP server alike, so no client can drift from another.
 //!
 //! Who may do what:
-//! * **Read** (`settings.list`, `settings.get`, `settings.kb`): any caller. A project's settings only for a project the
-//!   caller reaches.
+//! * **Read** (`settings.list`, `settings.get`): any caller but an agent holding no capability (`agentAccess: none`).
+//!   A project's settings only for a project the caller reaches. `settings.kb` is the static knowledge base, the same
+//!   text for every caller, and holds no vault state.
 //! * **Owner** (a live login session): changes a setting as the app always let them — a node setting needs `admin` on the
 //!   node and Touch ID when it widens reach (ADR-098); loosening "confirm before showing secrets" needs a fresh
 //!   confirmation (ADR-150).
-//! * **Agent**: a cosmetic or strengthening change applies at once; a weakening one becomes a request
-//!   (`state/switchboard.rs`) that only the owner decides (`settings.request_decide`, never an MCP tool), after a fresh
-//!   confirmation (Touch ID or passphrase through `session.confirm`).
+//! * **Agent**: reads while it holds `list` (an agent in a project set to `agentAccess: none` holds nothing and gets
+//!   `capability_not_held`). It changes only the settings of **its own node** — a project setting of the node its scope
+//!   sits on, a vault setting only when that node is Global — and only while it holds `update` there (ADR-155
+//!   amendment, wiring audit Q-1). There, a cosmetic or strengthening change applies at once; a weakening one becomes a
+//!   request (`state/switchboard.rs`) that only the owner decides (`settings.request_decide`, never an MCP tool), after a
+//!   fresh confirmation (Touch ID or passphrase through `session.confirm`). Raising its own node's `agentAccess` is never
+//!   an agent's request: it is refused, not queued.
 //! * Every applied change is recorded in `global.policy.settingsHistory` with the value it replaced; `settings.revert`
 //!   puts it back under the same rules.
 
@@ -74,6 +79,57 @@ fn check_reach(
         return Err(OpError::NotFound(format!("no node {node}")));
     }
     Ok(())
+}
+
+/// ADR-155 amendment (wiring audit Q-1): an agent reads the switchboard only while it holds `list`. An agent in a
+/// project set to `agentAccess: none` holds nothing (`scope.rs`: "`none` gets nothing, full stop"), so it is refused
+/// before any node is looked at — the same answer for its own project, another one and one that does not exist.
+fn agent_reads(scope: &BrokerScope) -> Result<(), OpError> {
+    if is_agent_caller(scope) && !scope.holds(Capability::List) {
+        return Err(OpError::CapabilityNotHeld {
+            capability: Capability::List,
+        });
+    }
+    Ok(())
+}
+
+/// ADR-155 amendment (wiring audit Q-1): what an agent needs before it may change a setting at all, even make it
+/// stricter. A setting is stored on one node: a project setting on `node`, a vault setting on Global. The agent must
+/// hold `update` (its capability ceiling: `agentAccess: read-write`, or an agent token that carries it), the node must
+/// be **its own** — the node its scope sits on, so Global only for an agent whose scope is Global — and `update` must
+/// resolve there. Reaching another node through the access graph (Global for everyone, an ancestor, a shared sibling, a
+/// grant) gives entry access, never a say over that node's policy. The ceiling is checked first, so an agent holding
+/// nothing learns nothing about which nodes exist; an unreachable node still answers as one that does not exist.
+fn agent_write_gate(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    node: Option<&str>,
+    now: i64,
+) -> Result<(), OpError> {
+    let refused = || OpError::CapabilityNotHeld {
+        capability: Capability::Update,
+    };
+    if !scope.holds(Capability::Update) {
+        return Err(refused());
+    }
+    if node.is_some() {
+        check_reach(state, scope, node, now)?;
+    }
+    let target = node.unwrap_or(GLOBAL_ID);
+    if target != scope.node_id
+        || !resolve_capability(state, scope, target, Capability::Update, now).is_allow()
+    {
+        return Err(refused());
+    }
+    Ok(())
+}
+
+/// ADR-155 amendment (wiring audit Q-1): the setting an agent may never ask to weaken, because the weaker value widens
+/// what the asking agent itself may do. `node.agentAccess` on the agent's own node is its capability ceiling
+/// (`scope.rs`); an agent asking for more of it is asking to widen its own scope (`10_API_AND_MCP.md` §3.2: "An agent
+/// may not widen its own scope. This is the definition of the boundary."). The owner changes it with their own login.
+fn is_own_access(def: &SettingDef, scope: &BrokerScope, node: Option<&str>) -> bool {
+    def.id == "node.agentAccess" && node == Some(scope.node_id.as_str())
 }
 
 /// The setting's current value.
@@ -285,17 +341,34 @@ fn who(state: &BrokerState, scope: &BrokerScope) -> &'static str {
     }
 }
 
-/// The rule for this caller and this setting, as `settings.list` says it.
-fn rule_for(state: &BrokerState, scope: &BrokerScope, def: &SettingDef) -> &'static str {
+/// The rule for this caller and this setting (on `node`, for a project setting), as `settings.list` says it.
+fn rule_for(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    def: &SettingDef,
+    node: Option<&str>,
+    now: i64,
+) -> &'static str {
     match who(state, scope) {
         "owner" => "direct",
+        "agent" if agent_write_gate(state, scope, node, now).is_err() => "read only",
+        "agent" if is_own_access(def, scope, node) => {
+            "direct when stricter; never weaker (the owner's)"
+        }
         "agent" if def.security_relevant() => "direct when stricter; approval when weaker",
         "agent" => "direct",
         _ => "read only",
     }
 }
 
-fn describe(state: &BrokerState, scope: &BrokerScope, def: &SettingDef, value: Value) -> Value {
+fn describe(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    def: &SettingDef,
+    node: Option<&str>,
+    value: Value,
+    now: i64,
+) -> Value {
     json!({
         "id": def.id,
         "scope": def.scope.as_str(),
@@ -308,7 +381,7 @@ fn describe(state: &BrokerState, scope: &BrokerScope, def: &SettingDef, value: V
         "default": def.default_value(),
         "value": value,
         "risk": if def.security_relevant() { "security" } else { "cosmetic" },
-        "you": rule_for(state, scope, def),
+        "you": rule_for(state, scope, def, node, now),
     })
 }
 
@@ -318,17 +391,28 @@ pub(super) fn list(
     node: Option<&str>,
     now: i64,
 ) -> Result<Value, OpError> {
+    agent_reads(scope)?;
     check_reach(state, scope, node, now)?;
     let mut out = Vec::new();
     for def in settings::SETTINGS {
         match (def.scope, node) {
             (settings::Scope::Node, None) => continue,
-            (settings::Scope::Node, Some(n)) => {
-                out.push(describe(state, scope, def, current(state, def, Some(n))?))
-            }
-            (settings::Scope::Vault, _) => {
-                out.push(describe(state, scope, def, current(state, def, None)?))
-            }
+            (settings::Scope::Node, Some(n)) => out.push(describe(
+                state,
+                scope,
+                def,
+                Some(n),
+                current(state, def, Some(n))?,
+                now,
+            )),
+            (settings::Scope::Vault, _) => out.push(describe(
+                state,
+                scope,
+                def,
+                None,
+                current(state, def, None)?,
+                now,
+            )),
         }
     }
     Ok(json!({
@@ -349,8 +433,9 @@ pub(super) fn get(
 ) -> Result<Value, OpError> {
     let def = def_of(id)?;
     let node = node_of(def, node)?;
+    agent_reads(scope)?;
     check_reach(state, scope, node, now)?;
-    let mut v = describe(state, scope, def, current(state, def, node)?);
+    let mut v = describe(state, scope, def, node, current(state, def, node)?, now);
     let history: Vec<Value> = {
         let registry = state.registry.read().expect("registry poisoned");
         registry
@@ -391,13 +476,24 @@ fn set_value(
     if state.is_locked() {
         return Err(OpError::VaultLocked);
     }
-    check_reach(state, scope, node, now)?;
+    if is_agent_caller(scope) {
+        // Before anything is read: an agent changes only its own node's settings, holding `update` there (Q-1).
+        agent_write_gate(state, scope, node, now)?;
+    } else {
+        check_reach(state, scope, node, now)?;
+    }
     let from = current(state, def, node)?;
     let change = settings::classify(def, &from, &to);
     if change == Change::Same {
         return Ok(json!({ "applied": false, "change": "same", "id": def.id, "value": from }));
     }
     if is_agent_caller(scope) {
+        if change == Change::Weakens && is_own_access(def, scope, node) {
+            // Q-1: more access for the asking agent is never an agent's request; the owner changes it themselves.
+            return Err(OpError::CapabilityNotHeld {
+                capability: Capability::Admin,
+            });
+        }
         if change == Change::Weakens {
             let cwd = scope.bound_workdir.clone();
             let req = state
@@ -491,6 +587,13 @@ pub(super) fn revert(
     params: &Value,
     now: i64,
 ) -> Result<Value, OpError> {
+    // Q-1: an agent that may change no setting learns nothing about the recorded changes either; the full gate (its own
+    // node, `update` there) runs in `set_value` once the change says which node it touched.
+    if is_agent_caller(scope) && !scope.holds(Capability::Update) {
+        return Err(OpError::CapabilityNotHeld {
+            capability: Capability::Update,
+        });
+    }
     let rec = {
         let registry = state.registry.read().expect("registry poisoned");
         registry.nodes.get(GLOBAL_ID).and_then(|g| {
@@ -551,6 +654,7 @@ pub(super) fn request_get(
     id: &str,
     now: i64,
 ) -> Result<Value, OpError> {
+    agent_reads(scope)?;
     let r = state
         .setting_request(id)
         .ok_or_else(|| OpError::NotFound(format!("no request {id}")))?;

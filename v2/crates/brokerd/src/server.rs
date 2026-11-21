@@ -27,6 +27,7 @@ fn audit_action_for(kind: AnomalyKind) -> &'static str {
     match kind {
         AnomalyKind::TokenWorkdirMismatch => "anomaly.token_workdir_mismatch",
         AnomalyKind::AgentTokenWorkdirMismatch => "anomaly.agent_token_workdir_mismatch",
+        AnomalyKind::ProjectLoginWrongFolder => "anomaly.project_login_wrong_folder",
     }
 }
 
@@ -657,7 +658,7 @@ pub fn handle_request_at(
     // ADR-065 (review L6): a live login session keeps its own idle clock, so
     // an owner token nobody is using expires even while agents keep the
     // vault busy.
-    if state.is_owner_session(&scope) {
+    if state.is_owner_session(&scope) || state.is_project_login(&scope) {
         if let Some(token) = scope.token_id.as_deref() {
             state.touch_session(token, now);
         }
@@ -947,10 +948,22 @@ fn guard_against_panic(
 /// overshoots by more than this.
 const AUTOLOCK_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// Bind and serve forever, one OS thread per connection. `~/.credmgr/run/`
-/// must already be `0700` and the socket path `0600` on creation — Phase 2's
-/// `atomic::` helpers own directory modes; this function only creates the
-/// listener itself.
+/// `10 §1.1`: the socket lives in a `0700` folder. `atomic::ensure_dir` sets that mode only on a folder it
+/// creates, so a `run/` folder that already existed with a looser mode kept it (wiring audit 2026-11-20). The
+/// folder is tightened here, before anything binds in it; a folder this process cannot change refuses the start.
+pub fn secure_socket_dir(socket_path: &Path) -> io::Result<()> {
+    match socket_path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => {
+            std::fs::set_permissions(dir, std::os::unix::fs::PermissionsExt::from_mode(0o700))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Bind and serve forever, one OS thread per connection. `run/` must already
+/// exist (Phase 2's `atomic::ensure_dir` creates it); [`secure_socket_dir`]
+/// makes it `0700` whatever mode it had, and the socket is `0600` right after
+/// the bind.
 pub fn run(state: Arc<BrokerState>, socket_path: &Path) -> io::Result<()> {
     if socket_path.exists() {
         // Review M4: a socket that still answers belongs to a live broker for
@@ -968,6 +981,7 @@ pub fn run(state: Arc<BrokerState>, socket_path: &Path) -> io::Result<()> {
         }
         std::fs::remove_file(socket_path)?;
     }
+    secure_socket_dir(socket_path)?;
     let listener = UnixListener::bind(socket_path)?;
     // `0600`, owner-only (`02 §2`).
     std::fs::set_permissions(
@@ -1128,5 +1142,19 @@ mod tests {
         };
         assert!(!peer_is_owner(&peer, 501));
         assert!(peer_is_owner(&peer, 502));
+    }
+
+    /// Wiring audit 2026-11-20: a `run/` folder that already existed with a looser mode was left as it was,
+    /// so the socket did not sit in the `0700` folder `10 §1.1` promises.
+    #[test]
+    fn a_pre_existing_loose_run_folder_is_made_owner_only_before_the_bind() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path().join("run");
+        std::fs::create_dir(&run).unwrap();
+        std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o755)).unwrap();
+        secure_socket_dir(&run.join("broker.sock")).unwrap();
+        let mode = std::fs::metadata(&run).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "run/ is {mode:o}");
     }
 }

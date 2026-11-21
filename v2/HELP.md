@@ -407,14 +407,14 @@ A node can carry its own idle timer. When it runs out the node locks while the v
 
 ### Node notes
 
-Each node can hold one markdown note, sealed under the node's key. The inspector shows it. Writing a note is a CLI action; an empty input is refused so a failed pipe cannot erase a note, and 'notes clear' is the only deletion. Agents never hold the notes capability.
+Each node can hold one markdown note, sealed under the node's key. The inspector shows it. Writing a note is a CLI action; an empty input is refused so a failed pipe cannot erase a note, and 'notes clear' is the only deletion. An agent may read its own project's note through MCP (credmgr_notes_read, labelled untrusted content; Open projects only) and can never write one.
 
-- **Where:** App: inspector > notes (read). CLI: credmgr notes show | set | clear
+- **Where:** App: inspector > notes (read). CLI: credmgr notes show | set | clear. MCP: credmgr_notes_read (own project, read only)
 - **How:**
   1. Run credmgr notes set <id> --file ./notes.md.
   2. Run credmgr notes show <id>.
 - **Command line:** `credmgr notes show <id> | set <id> [--file <path>] | clear <id>`
-- **AI agents:** Only you can do this. An AI agent cannot.
+- **AI agents:** An AI agent can use this through MCP to read names, ids and labels, never a value.
 - **Also searched as:** note, markdown, node note, context, readme
 
 ### Write or clear a node note
@@ -1173,11 +1173,13 @@ Shows every grant: from and to, scope, reason and when it ends. Grants made else
 
 ### Create a grant
 
-The dialog takes a from-node, a to-node, what to allow (read, reveal values, notes) and a reason of at least eight characters. Creating a grant widens a boundary, so it asks for Touch ID and then writes the grant; with no Touch ID set up the broker refuses with presence_required and nothing changes. Grants made elsewhere are listed and can be revoked. A grant never expires by itself.
+The dialog takes a from-node, a to-node, what to allow (read, reveal values, notes) and a reason of at least eight characters. Creating a grant widens a boundary, so it needs your authenticator code (when the vault has a second factor) as well as Touch ID, and then writes the grant; with no Touch ID set up the broker refuses with presence_required and nothing changes. A grant to a whole project expires only if you say so; a grant to a single entry must expire, at most 90 days ahead (the command line offers 30 days). Grants made elsewhere are listed and can be revoked.
 
-- **Where:** App: node menu > Grant access; Settings > Grants > + New grant (Pro); drag one node onto another. CLI: credmgr grant <from> --to <node> --scope read --reason "..."
-- **How:** The dialog validates your input, asks for Touch ID and shows the result.
-- **Command line:** `credmgr grant <from> --to <node> --scope read --reason "..."`
+- **Where:** App: node menu > Grant access; Settings > Grants > + New grant (Pro); drag one node onto another. CLI: credmgr grant <from> --to <node> [--entry <id>] --scope read --reason "..." [--expires-in-days <n>]
+- **How:**
+  1. If the vault has a second factor, give a fresh code first (unlock again, or credmgr gate verify).
+  2. The dialog validates your input, asks for Touch ID and shows the result.
+- **Command line:** `credmgr grant <from> --to <node> [--entry <id>] --scope read --reason "..." [--expires-in-days <n>]`
 - **AI agents:** Only you can do this. An AI agent cannot.
 - **Also searched as:** new grant, share access, cross-project, allow node, drag node
 
@@ -1373,7 +1375,7 @@ Diagnoses registry and manifest problems; a dry run shows what it would fix. It 
 
 ### Rotate the root key
 
-Replaces the root key every other key is wrapped under and issues a new recovery code. It asks for the vault passphrase again, a fresh second factor (when one is on) and Touch ID; with no Touch ID set up the broker refuses and nothing changes. If Touch ID unlock is on it is re-sealed to the same Mac key. The command line has no command for it. A Touch ID unlock set up in 2.0.0-beta.1 (before version 2.0.0-rc.2) must be turned off and on again first: the rotation refuses to seal the new key to an unlock file it cannot authenticate.
+Replaces the root key every other key is wrapped under, gives every project a new key (everything it holds is re-sealed, in the same crash-safe step), replaces the key of the sealed copies of removed projects, and issues a new recovery code. A copy of the vault from before the rotation opens nothing written after it. It takes time in proportion to the number of entries. It asks for the vault passphrase again, a fresh second factor (when one is on) and Touch ID; with no Touch ID set up the broker refuses and nothing changes. If Touch ID unlock is on it is re-sealed to the same Mac key. The command line has no command for it. A Touch ID unlock set up in 2.0.0-beta.1 (before version 2.0.0-rc.2) must be turned off and on again first: the rotation refuses to seal the new key to an unlock file it cannot authenticate.
 
 - **Where:** App: Settings > Advanced > Rotate (Pro), or Operations
 - **How:**
@@ -1564,21 +1566,21 @@ Touch ID confirms the sensitive things: creating a grant, moving a project, the 
 
 ### Machine lock: lock the vault to this Mac
 
-Seals the vault's passphrase file with a device key kept on this Mac, outside the vault folder (a file only your user account can read), and replaces the root key and every project key at the same time. A copy of the vault folder made from then on - a synced folder, a copied directory, a USB disk - does not open on another computer with the passphrase alone. A copy made before still opens with the passphrase and still shows what it held then; nothing written after the lock is readable in it. Turning it on asks for the passphrase and your current recovery code, then shows you a NEW recovery code and asks you to type it back before anything changes; only then is the lock turned on, and the old code stops working. Closing the dialog before that changes nothing. On a new Mac, on another Mac that shares the folder, or if the key file is lost, open the vault with the recovery code; that also locks it to that Mac. It does not protect a stolen or unlocked Mac, Time Machine, a whole-disk image or Migration Assistant (they carry the device key with the folder), or CredMgr backups (they hold the passphrase file unsealed inside their own encryption and open with their backup passphrase and the vault passphrase; while the lock is on they are written outside the vault folder, in CredMgr's state folder on this Mac, and turning it on moves the ones already in the vault folder there, so a copy of the vault folder does not carry them). The key is a file, not sealed in the Secure Enclave. Rotating the root key and changing the passphrase keep the lock on, and say so if they could not.
+Seals the vault's passphrase file with a device key kept on this Mac, outside the vault folder (a file only your user account can read), and replaces the root key and every project key at the same time. A copy of the vault folder made from then on - a copied directory, a USB disk, a Time Machine backup (the device key is kept out of Time Machine) - does not open on another computer with the passphrase alone. A vault folder that another Mac can open too (iCloud Drive, including Desktop & Documents, Dropbox, Google Drive, OneDrive) cannot be locked: move the vault to a folder that is not synced first. A copy made before still opens with the passphrase and still shows what it held then; nothing written after the lock is readable in it. Turning it on asks for the passphrase and your current recovery code, plus Touch ID where it is set up (or, without it, a fresh code from your authenticator where a second factor is on) at each step, then shows you a NEW recovery code and asks you to type it back before anything changes; only then is the lock turned on, and the old code stops working. Closing the dialog before that changes nothing. On a new Mac, on another Mac that shares the folder, or if the key file is lost, open the vault with the recovery code; that also locks it to that Mac. A device key made before the key was kept out of Time Machine is replaced when the lock is turned on. A CredMgr backup still restores on another Mac with the passphrase or the recovery code of its day. It does not protect a stolen or unlocked Mac, a whole-disk image or Migration Assistant (they carry the device key with the folder), or CredMgr backups (they hold the passphrase file unsealed inside their own encryption and open with their backup passphrase and the vault passphrase; while the lock is on they are written outside the vault folder, in CredMgr's state folder on this Mac, and turning it on moves the ones already in the vault folder there, so a copy of the vault folder does not carry them). The key is a file, not sealed in the Secure Enclave. Rotating the root key and changing the passphrase keep the lock on, and say so if they could not.
 
 - **Where:** App: Settings > Security > Machine lock > Bind. CLI: credmgr keystore bind
 - **How:**
   1. Have your passphrase and your current recovery code ready, and unlock every project.
   2. Open Settings > Security and choose Bind on the Machine lock row.
-  3. Read what it covers and what it does not, type the passphrase and the recovery code, then choose Next. Nothing has changed yet.
+  3. Read what it covers and what it does not, type the passphrase and the recovery code (and your authenticator code if asked), then choose Next; confirm with Touch ID if it is set up. Nothing has changed yet.
   4. Write down the new recovery code it shows, type it back, then choose Turn the lock on; the old code no longer works.
 - **Command line:** `credmgr keystore bind`
 - **AI agents:** Only you can do this. An AI agent cannot.
-- **Also searched as:** machine lock, bind to this mac, lock to this mac, device key, copied vault folder, keystore, new mac, time machine, recovery code, backup
+- **Also searched as:** machine lock, bind to this mac, lock to this mac, device key, copied vault folder, keystore, new mac, time machine, icloud, dropbox, touch id, recovery code, backup
 
 ### Machine lock status
 
-Shows whether the passphrase file is sealed to a device key, whether this Mac holds that key, and the honest tier: a key file on this Mac, never the Secure Enclave. Says when turning the lock on did not finish (projects still on a key from before it) or when an older, unlocked passphrase file was put back, and what to do. Also says what the lock protects (a copy of the vault folder made after it) and what it does not (a stolen or unlocked Mac, Time Machine and disk images, copies made before it, CredMgr backups, or whoever holds the recovery code). Needs the owner's login; an agent is refused.
+Shows whether the passphrase file is sealed to a device key, whether this Mac holds that key, and the honest tier: a key file on this Mac, never the Secure Enclave. Says when turning the lock on did not finish (projects still on a key from before it) or when an older, unlocked passphrase file was put back, and what to do. Also says what the lock protects (a copy of the vault folder made after it) and what it does not (a stolen or unlocked Mac, disk images, copies made before it, CredMgr backups, or whoever holds the recovery code), whether a Time Machine backup is covered (only for a device key made already excluded from Time Machine), whether the vault folder is in a synced folder that cannot be locked, and what turning the lock on will ask for (Touch ID, an authenticator code, or nothing more than the passphrase and the recovery code). Needs the owner's login; an agent is refused.
 
 - **Where:** App: Settings > Security > Machine lock. CLI: credmgr keystore status
 - **How:** Open Settings > Security and read the Machine lock row, or run credmgr keystore status.
@@ -1698,7 +1700,7 @@ Small local games for Graph mode, starting with CredPong. A game may read how ma
 
 ### The MCP server for AI agents
 
-credmgr mcp is a stdio MCP server that exposes 21 tools to an AI client. It forwards each call to the broker unchanged; the broker decides. You register it once, globally, in your AI client's MCP settings with the full path to the credmgr binary and the argument mcp. One entry serves every project because the folder the client starts in decides the node. Settings, Agents shows the exact configuration for each client and writes it only when you press Write on the change it shows; credmgr mcp --print-config prints it for a terminal.
+credmgr mcp is a stdio MCP server that exposes 22 tools to an AI client. It forwards each call to the broker unchanged; the broker decides. You register it once, globally, in your AI client's MCP settings with the full path to the credmgr binary and the argument mcp. One entry serves every project because the folder the client starts in decides the node. Settings, Agents shows the exact configuration for each client and writes it only when you press Write on the change it shows; credmgr mcp --print-config prints it for a terminal.
 
 - **Where:** Settings, Agents (the app). CLI: credmgr mcp --print-config <client>; credmgr agent connect <client>
 - **How:**
@@ -1778,7 +1780,7 @@ On a node with hidden names, an agent sees an opaque row (nameHidden) instead of
 
 ### Machine-readable manifest for AI agents
 
-v2/docs/llm/credmgr-capabilities.json describes every feature, the 21 MCP tools with their input schemas, the error codes with what to do on each, the broker operations (which ones an agent can reach), the CLI commands and the safety rules. It is generated from the same data as this help and is checked against the code, so it cannot silently drift.
+v2/docs/llm/credmgr-capabilities.json describes every feature, the 22 MCP tools with their input schemas, the error codes with what to do on each, the broker operations (which ones an agent can reach), the CLI commands and the safety rules. It is generated from the same data as this help and is checked against the code, so it cannot silently drift.
 
 - **Where:** File: v2/docs/llm/credmgr-capabilities.json. Regenerate: python3 tools/gen_help.py
 - **How:** Give the file to an agent as context.
@@ -1786,9 +1788,9 @@ v2/docs/llm/credmgr-capabilities.json describes every feature, the 21 MCP tools 
 
 ### Keep your login out of an agent's shell
 
-credmgr unlock exports a login token that reaches every project until the vault locks or the token idles out for 15 minutes. Never export it into a shell an AI agent runs in: the agent would inherit your reach. Agents should use the MCP server, scoped by folder, or an agent token for one node. The MCP server never reads CREDMGR_TOKEN and refuses to start if CREDMGR_AGENT_TOKEN holds a login.
+credmgr unlock exports a login token until the vault locks or the token idles out for 15 minutes. Run from inside a project's folder it reaches that project only and works only from that folder; run from anywhere else it is your own login and reaches every project, so never export that into a shell an AI agent runs in: the agent would inherit your reach. Agents should use the MCP server, scoped by folder, or an agent token for one node. The MCP server never reads CREDMGR_TOKEN and refuses to start if CREDMGR_AGENT_TOKEN holds a login.
 
-- **Where:** CLI: credmgr unlock; known risk K-6
+- **Where:** CLI: credmgr unlock; known risk K-6 (closed for a project folder, ADR-174)
 - **How:** Unlock in a shell the agent cannot read, and lock when done.
 - **Command line:** `credmgr unlock`
 - **AI agents:** Only you can do this. An AI agent cannot.
@@ -2190,7 +2192,7 @@ credmgr_notes_read and credmgr_notes_write are specified but not registered: nod
 
 - **Where:** Not available in this build
 - **How:** Not available.
-- **AI agents:** Only you can do this. An AI agent cannot.
+- **AI agents:** An AI agent can use this through MCP to read names, ids and labels, never a value.
 - **Also searched as:** agent notes, notes tool
 
 ### Duress code

@@ -287,9 +287,9 @@
       "summary": "Rename a node (the label only; the id never changes)."
     },
     "notes.read": {
-      "capability": "notes",
-      "agent_reach": "human_only",
-      "summary": "Read a node's markdown note. Needs the notes capability, which an agent scope never carries."
+      "capability": "read",
+      "agent_reach": "mcp",
+      "summary": "Read a node's markdown note. A person needs the notes capability; an agent reads only its own node's note (read capability; Open nodes only, as a high-sensitivity reveal) through credmgr_notes_read, and can never write one."
     },
     "notes.write": {
       "capability": "notes",
@@ -394,7 +394,7 @@
     "vault.gate_recover": {
       "capability": "none (passphrase + recovery code)",
       "agent_reach": "human_only",
-      "summary": "Reset the second factor with the passphrase and the root recovery code. Never unlocks."
+      "summary": "Reset the second factor with the passphrase and the root recovery code. Never unlocks. Refused to agents, as vault.recover is."
     },
     "vault.gate_verify": {
       "capability": "none (a code)",
@@ -428,13 +428,13 @@
     },
     "vault.pending_accept": {
       "capability": "create",
-      "agent_reach": "capability_only",
-      "summary": "Accept a held entry into its node. This is the human's review step; an agent must not use it."
+      "agent_reach": "human_only",
+      "summary": "Accept a held entry into its node. This is the human's review step; the broker refuses every agent (ADR-148 P1-4)."
     },
     "vault.pending_discard": {
       "capability": "create",
-      "agent_reach": "capability_only",
-      "summary": "Discard a held entry. This is the human's review step; an agent must not use it."
+      "agent_reach": "human_only",
+      "summary": "Discard a held entry. This is the human's review step; the broker refuses every agent (ADR-148 P1-4)."
     },
     "vault.pending_list": {
       "capability": "read",
@@ -469,17 +469,17 @@
     "settings.list": {
       "capability": "none (read-only)",
       "agent_reach": "mcp",
-      "summary": "Every setting with its value, default, accepted values, what it is for, where it is stored, its risk and the rule for you. Pass node to include that project's settings (an agent only for a project it reaches)."
+      "summary": "Every setting with its value, default, accepted values, what it is for, where it is stored, its risk and the rule for you. Pass node to include that project's settings (an agent only for a project it reaches, and only while it holds list: an agent with agentAccess none is refused)."
     },
     "settings.get": {
       "capability": "none (read-only)",
       "agent_reach": "mcp",
-      "summary": "One setting in full, with its last ten recorded changes (each with the value it replaced)."
+      "summary": "One setting in full, with its last ten recorded changes (each with the value it replaced). An agent needs list, as for settings.list."
     },
     "settings.set": {
       "capability": "admin",
       "agent_reach": "mcp",
-      "summary": "Change a setting. The owner: the rules the app always had. An agent: a cosmetic or stricter change applies at once; a weaker one waits for the owner's approval as a request."
+      "summary": "Change a setting. The owner: the rules the app always had. An agent: only the settings of its own node (the vault's only when its scope is Global), holding update there; a cosmetic or stricter change applies at once, a weaker one waits for the owner's approval as a request, and raising its own agentAccess is refused."
     },
     "settings.revert": {
       "capability": "admin",
@@ -489,7 +489,7 @@
     "settings.request_get": {
       "capability": "none (read-only)",
       "agent_reach": "mcp",
-      "summary": "The state of one agent request: pending, approved, denied or expired. Only its requester and the owner read it."
+      "summary": "The state of one agent request: pending, approved, denied or expired. Only its requester (holding list) and the owner read it."
     },
     "settings.request_list": {
       "capability": "admin",

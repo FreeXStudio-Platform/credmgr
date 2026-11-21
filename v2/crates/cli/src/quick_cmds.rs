@@ -207,7 +207,8 @@ pub(crate) fn cmd_recover(mut args: Vec<String>) -> Result<(), String> {
         println!("export CREDMGR_TOKEN={token}");
         println!(
             "# CREDMGR_TOKEN opens every project in this vault until it locks - \
-             keep it out of any shell an AI agent runs in"
+             keep it out of any shell an AI agent runs in. (Unlocked from inside a project's folder it \
+             reaches that project only, and only from that folder.)"
         );
     }
     wipe_strings(&mut value);

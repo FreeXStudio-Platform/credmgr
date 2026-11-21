@@ -290,11 +290,11 @@ against the one it needs.
 | Capability | Grants | Status of the ops behind it |
 |---|---|---|
 | `list` | entry names, refs, types, counts — no values, no field labels | **built** — gates `entry.list`, `search`, `node.list`, `graph.snapshot`, `audit.tail` |
-| `read` | full metadata incl. field **labels**, still no values | **built** — gates `entry.get` (ADR-078: field ids, labels, types, masking and the entry's metadata, never a value; needs the node unlocked, so R1 → `vault_locked` / `node_locked` with no approval path) and `vault.pending_list`. `notes.read` gates on `notes`, not `read` (below) |
+| `read` | full metadata incl. field **labels**, still no values | **built** — gates `entry.get` (ADR-078: field ids, labels, types, masking and the entry's metadata, never a value; needs the node unlocked, so R1 → `vault_locked` / `node_locked` with no approval path) and `vault.pending_list`. `notes.read` gates on `notes`, not `read`, for a person (below); **an agent reads its own node's note under `read` (ADR-174)** |
 | `reveal` | the actual secret values | **built** — gates `entry.reveal`, `totp.code`, `totp.seed`, the last of which then requires a presence proof (ADR-098) and refuses with `presence_required` without one, same carve-out as three of the `admin` row's ops below (§4, §10.3) |
 | `create` | add a **new** entry (a name not already in the node) — **does not imply read** | **built** — gates `entry.create`, which works while locked and lands in the pending tray |
 | `update` | modify an existing entry or field | **built** — gates `entry.update`, `entry.rotate`, `entry.remove`, `entry.undo`, `entry.restore` and, since ADR-078, `field.add`, `field.update`, `field.remove`, `field.reorder`; **requires the vault unlocked**, via R1 |
-| `notes` | the node's markdown | **built** — gates `notes.read` and `notes.write` (ADR-072), resolved against the node; the note is sealed under the node key and bound to its manifest digest (`03_DATA_MODEL.md §4`). Evidence: `durable_vault.rs::a_note_is_sealed_capability_gated_digest_bound_and_survives_a_restart` |
+| `notes` | the node's markdown | **built** — gates `notes.read` and `notes.write` (ADR-072), resolved against the node; **an agent never holds it: it reads its own node's note under `read` (Open nodes only, under the high-sensitivity reveal rules, with the node's second factor asked as for a reveal) and cannot write (ADR-174)**; the note is sealed under the node key and bound to its manifest digest (`03_DATA_MODEL.md §4`). Evidence: `durable_vault.rs::a_note_is_sealed_capability_gated_digest_bound_and_survives_a_restart` |
 | `admin` | node lifecycle, grants, seal/restore, reparent | **built** — gates eighteen distinct op arms (eighteen `scope.holds(Capability::Admin)` call sites — `maintenance.doctor` checks it twice, once per internal path, and `node.update`/`node.policy` share one in `human_admin_on`, which also refuses `Origin::Agent`; recounted 2026-09-24 for ADR-071 — fifteen arms and sixteen sites before `node.set_workdirs`, ADR-066); three of the eighteen (`audit.get`, `node.reparent`, `grant.create`) then require a presence proof (ADR-098) and refuse with `presence_required` without one (§4, §6, §6a). A fourth, `maintenance.doctor --rebuild-registry`, refuses the same way but only on that one path — its ordinary path does not require presence. Together with `totp.seed` above, those are five of the broker's six `presence_required` return sites (§10.3); the sixth is `node.policy`'s refusal of a patch that widens reach (ADR-071, §10.1). |
 
 `notes` deliberately does **not** ride along with `read`. Context is separately sensitive
@@ -342,7 +342,10 @@ before, and `crates/core/src/access.rs` is unchanged — this is a broker-side c
 a new rule. The session ends at `lock()` (explicit, idle, sleep, restart) and, on its own clock,
 when unused for the vault idle timeout, even while agent traffic keeps the vault unlocked. The
 known risk it creates — a login exported into a shell an agent also runs in hands that agent every
-project — is K-6 (`PHASE8_AUDIT_REPORT.md §4`). Test:
+project — is K-6 (`PHASE8_AUDIT_REPORT.md §4`), **closed for an unlock made inside a project's folder by ADR-174:
+that login is a project login (`Origin::Cli`, the project's node only, no `notes`/`admin`, the folder recorded) and
+is honoured only from a process whose working directory is inside one of the project's registered folders;
+the owner's login from outside every project folder is unchanged.** Test:
 `crates/brokerd/tests/durable_vault.rs::the_owner_session_reaches_every_project_but_an_agent_and_a_fixture_claim_do_not`.
 
 ---

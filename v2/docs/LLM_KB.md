@@ -43,18 +43,24 @@ This file tells a model everything it needs to drive CredMgr without the app win
 
 ### Safety tiers
 
-- **Cosmetic** changes (appearance, layout) apply at once, for an agent too.
-- **Strengthening** changes (a stricter level, a shorter lock, protection on) apply at once, for an agent too.
+- **Who may change what.** The owner changes any setting. An agent changes only the settings of **its own node**: its own project's, and the vault-wide ones (`app.*`, `vault.*`) only when its scope is Global. It needs read-write access there (`node.agentAccess: read-write`, or an agent token that carries `update`); otherwise `credmgr_settings_set` answers `capability_not_held`. An agent in a project set to `agentAccess: none` cannot read the settings either. `settings.list` says, per setting, what **you** may do.
+- **Cosmetic** changes (appearance, layout) apply at once, for an agent on its own node too.
+- **Strengthening** changes (a stricter level, a shorter lock, protection on) apply at once, for an agent on its own node too.
 - **Weakening** changes (a longer or no auto-lock, a looser reveal policy, a lower security level, more agent access, protection off) from an agent become a **request**: `credmgr_settings_set` answers `state: "pending"` with a `request` id. The owner approves it on their own device after a fresh Touch ID or passphrase confirmation; the change then applies and is recorded. Poll with `credmgr_settings_request`. A request expires after 10 minutes.
-- An agent sees and changes project settings only for projects in its own scope.
+- An agent sees project settings only for projects in its own scope, and never asks for more agent access for its own project (`node.agentAccess`): that request is refused, not queued; the owner changes it.
 - Not on the switchboard (owner-only operations, unchanged): unlocking, Touch ID enrolment, second-factor enrolment, grants, creating or sealing projects, rotating the root key, deleting orphans, backups and exports.
 
 ### Examples
 
 ```json
+{"tool": "credmgr_settings_set", "arguments": {"id": "node.lockAfterSeconds", "node": "acme", "value": 900, "reason": "user wants acme to lock after 15 minutes"}}
+```
+→ `{"applied": true, "change": "strengthens", "changeId": "sc-…"}` (from an agent scoped to acme with read-write access)
+
+```json
 {"tool": "credmgr_settings_set", "arguments": {"id": "app.theme", "value": "dark", "reason": "user asked for dark mode"}}
 ```
-→ `{"applied": true, "change": "cosmetic", "changeId": "sc-…"}`
+→ from an agent scoped to a project: `capability_not_held` — a vault setting is Global's; tell the user to change it in CredMgr (Settings) or with their own login (`credmgr settings set app.theme '"dark"' --reason …`).
 
 ```json
 {"tool": "credmgr_settings_set", "arguments": {"id": "node.securityLevel", "node": "acme", "value": "open", "reason": "user wants no approvals on acme"}}
@@ -131,7 +137,7 @@ credmgr settings list --node acme
 
 ## 7. Every MCP tool
 
-`credmgr_whoami` · `credmgr_list` · `credmgr_search` · `credmgr_get` · `credmgr_get_metadata` · `credmgr_create` · `credmgr_update` · `credmgr_rotate` · `credmgr_field_add` · `credmgr_field_update` · `credmgr_field_remove` · `credmgr_remove` · `credmgr_undo` · `credmgr_totp_code` · `credmgr_recent_changes` · `credmgr_settings_list` · `credmgr_settings_get` · `credmgr_settings_set` · `credmgr_settings_revert` · `credmgr_settings_request` · `credmgr_kb`
+`credmgr_whoami` · `credmgr_list` · `credmgr_search` · `credmgr_get` · `credmgr_get_metadata` · `credmgr_notes_read` · `credmgr_create` · `credmgr_update` · `credmgr_rotate` · `credmgr_field_add` · `credmgr_field_update` · `credmgr_field_remove` · `credmgr_remove` · `credmgr_undo` · `credmgr_totp_code` · `credmgr_recent_changes` · `credmgr_settings_list` · `credmgr_settings_get` · `credmgr_settings_set` · `credmgr_settings_revert` · `credmgr_settings_request` · `credmgr_kb`
 
 Call `credmgr_whoami` first. A tool never widens your scope; if you need something outside it, ask the user.
 

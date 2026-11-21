@@ -6,12 +6,14 @@
 //! and re-signs every file that was HMAC'd or sealed under the old key — the
 //! registry, every manifest, the external rollback counter, the audit tips,
 //! the gate seed inside the registry, the seal archives, the removed-entry
-//! records and the rotation snapshots. In a plain rotation entry envelopes are
-//! **not** touched: they are sealed to node *public* keys, and the rotation
-//! re-wraps node private keys, it does not replace them. A passphrase change
-//! and a recovery ([`NodeKeys::Replace`], ADR-165 N5) also give every live node
-//! a new keypair and re-seal its envelopes, as more files in the same stage
-//! under the same commit record (`rotate/rekey_live.rs`).
+//! records and the rotation snapshots. Every rotation a person asks for — a plain
+//! one (ADR-174, closing ADR-165's N5-Q1), a passphrase change and a recovery
+//! ([`NodeKeys::Replace`], ADR-165 N5) — also gives every live node a new keypair
+//! and re-seals its envelopes, as more files in the same stage under the same
+//! commit record (`rotate/rekey_live.rs`); the orphan's cold keypair is replaced
+//! and its sealed copies re-sealed to the new one (ADR-174, N5-Q2). Only the
+//! machine-lock bind's own rotation re-wraps node private keys without replacing
+//! them ([`NodeKeys::Rewrap`]): its bind re-keys the nodes right after.
 //!
 //! **Crash safety** is `credmgr_store::rotation`'s: every replacement file is
 //! staged and fsynced first, one atomic commit record makes the set binding,
@@ -78,6 +80,7 @@ use credmgr_store::registry_file::ManifestBinding;
 use credmgr_store::{archive, audit, manifest, registry_file, rotation};
 
 use super::durable::{corrupt, ct_eq_32, NextState};
+use super::rekey::Resealed;
 use super::{hex_encode, sha256_of, BrokerState};
 pub use vault_lock::{VaultLock, RECOVER_LOCK_WAIT, ROTATE_LOCK_WAIT};
 
@@ -89,11 +92,12 @@ mod rekey_live_kinds {
 }
 
 /// Every kind of file that is signed or wrapped under the root key, and so is
-/// replaced by a rotation — `(what, where it lives, how it is bound)`. The
-/// complement is what a rotation must leave byte-for-byte alone: entry
-/// envelopes and notes (sealed to node *public* keys), the audit logs
-/// themselves (a hash chain; only each month's *tip* is signed), and the
-/// archived envelope copies.
+/// replaced by a rotation — `(what, where it lives, how it is bound)`. Since
+/// ADR-174 a rotation also re-seals every live node's envelopes and the orphan's
+/// sealed copies to their new keypairs (`rekey_live.rs`); what it must still
+/// leave byte-for-byte alone is the audit logs themselves (a hash chain; only
+/// each month's *tip* is signed) and a sealed node's archived envelopes (it keeps
+/// its keypair until it is restored).
 ///
 /// This table is documentation that a test holds to account: the
 /// `rotate_root.rs` file-diff test classifies every file in a populated vault,
@@ -114,7 +118,8 @@ pub const ROOT_BOUND_ARTEFACTS: &[(&str, &str, &str)] = &[
     (
         "wrapped node private keys",
         "keys/nodes/<id>.key",
-        "credmgr/v2/node-wrap/<id>; re-wrapped, the node keypair is unchanged",
+        "credmgr/v2/node-wrap/<id>; a live node's is a NEW keypair's private key (ADR-174), a sealed \
+         node's (and the bind's rotation's) is re-wrapped",
     ),
     (
         "registry + signature + previous pair",
@@ -139,7 +144,8 @@ pub const ROOT_BOUND_ARTEFACTS: &[(&str, &str, &str)] = &[
     (
         "orphan cold key",
         "keys/cold/orphan.key",
-        "credmgr/v2/orphan-cold/v1; re-sealed, the orphan keypair is unchanged (ADR-079)",
+        "credmgr/v2/orphan-cold/v1; a NEW orphan keypair, its sealed copies re-sealed to it (ADR-174); \
+         re-sealed with the keypair unchanged only when it does not open under the old RK",
     ),
     (
         "sealed-node archive metadata",
@@ -223,12 +229,13 @@ impl MachineLockIntent<'_> {
 /// What a rotation does with the node keypairs (ADR-165 N5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NodeKeys {
-    /// Re-wrap each node's private key under the new root key; the keypairs stay (ADR-076:
-    /// `maintenance.rotate_root`, and `keystore.bind`'s rotation, whose bind re-keys afterwards).
+    /// Re-wrap each node's private key under the new root key; the keypairs stay: `keystore.bind`'s
+    /// rotation only, whose bind re-keys afterwards with `node.rekey`'s protocol.
     Rewrap,
     /// Give every live node a new keypair and re-seal what it holds, in the same stage and under the same
-    /// commit record (`rekey_live.rs`): `vault.set_passphrase` and `vault.recover`, so a copy of the folder
-    /// from before the change plus the old passphrase or the old code opens nothing written after it.
+    /// commit record (`rekey_live.rs`): `maintenance.rotate_root` (ADR-174), `vault.set_passphrase` and
+    /// `vault.recover`, so a copy of the folder from before the change plus the old root key, passphrase or
+    /// code opens nothing written after it.
     Replace,
 }
 
@@ -296,14 +303,16 @@ pub struct RotationOutcome {
     pub audited: bool,
     /// ADR-165: whether the new passphrase wrap is sealed to this Mac's device key.
     pub machine_lock: super::machine_lock::RotationMachineLock,
-    /// ADR-165 (review P0-1): the bind's rotation gave the orphan node a new cold keypair. ADR-165 N5: so does
-    /// a passphrase change or a recovery, when the orphan holds no sealed copy.
+    /// ADR-165 (review P0-1): the bind's rotation gave the orphan node a new cold keypair. ADR-165 N5 and
+    /// ADR-174: so does every re-keying rotation (a plain one, a passphrase change, a recovery), its sealed
+    /// copies re-sealed to the new key; false only when the cold key could not be opened and was kept.
     pub orphan_key_replaced: bool,
     /// ADR-165 N5: the live nodes given a new keypair inside this rotation ([`NodeKeys::Replace`]); `None` for
     /// a rotation that re-wraps only.
     pub nodes_rekeyed: Option<Vec<String>>,
     /// ADR-165 N5: envelopes (entries, notes, merge memories, retained history, removed entries and
-    /// locked-write tray files) re-sealed to the new node keys.
+    /// locked-write tray files) re-sealed to the new node keys, and (ADR-174) the orphan's sealed copies
+    /// re-sealed to its new cold key.
     pub files_resealed: usize,
 }
 
@@ -515,12 +524,10 @@ impl BrokerState {
         } else {
             RotationAudit::ROTATE_ROOT
         };
-        // ADR-165 N5: a passphrase change re-keys every live node; a plain rotation re-wraps (ADR-076).
-        let node_keys = if new_passphrase.is_some() {
-            NodeKeys::Replace
-        } else {
-            NodeKeys::Rewrap
-        };
+        // ADR-165 N5: a passphrase change re-keys every live node. ADR-174 (N5-Q1): so does a plain rotation —
+        // "rotating the root key also replaces every project key" — so a copy from before it plus the old root
+        // (or its passphrase or code) opens nothing written after it.
+        let node_keys = NodeKeys::Replace;
         self.rotate_root_locked(
             &old_root,
             audit,
@@ -740,7 +747,7 @@ impl BrokerState {
         // `node.rekey` makes), and the registry names its new public key.
         if let Some(rk) = &live_rekey {
             for node in &rk.nodes {
-                let (rows, note, merge) = rekey_live::new_digests(node);
+                let (rows, note, merge) = rekey_live::new_digests(&node.files);
                 if let Some(body) = manifests.get_mut(&node.id) {
                     for row in body.entries.iter_mut() {
                         if let Some(sha) = rows.get(&row.id) {
@@ -766,65 +773,92 @@ impl BrokerState {
             .map_err(RotateRootError::Store)?;
         // ADR-165 (review P0-1): the bind's rotation gives the orphan node a new keypair instead of re-sealing the
         // old private half. The old one is in every pre-bind copy, sealed under the old root key; a project
-        // sealed after the bind must not be re-encrypted to it. The bind checked the orphan holds no entries,
-        // so nothing has to be re-sealed; the new cold file and the registry's new public key are staged
-        // together and take effect at the same commit point.
+        // sealed after the bind must not be re-encrypted to it. ADR-165 N5: a passphrase change or a recovery
+        // replaces it on the same terms, and ADR-174 (N5-Q1) a plain rotation too. ADR-174 (N5-Q2): even when it
+        // holds sealed copies — each is opened with the old cold key and sealed to the new one. The new cold
+        // file, the re-sealed copies, the orphan manifest's new digests and the registry's new public key are
+        // staged together and take effect at the same commit point.
         let mut new_orphan_public = None;
-        // ADR-165 N5: a passphrase change or a recovery replaces it on the same terms, when it holds no sealed
-        // copy; when it holds some, it is re-sealed as before and named.
-        let orphan_rows = manifests
-            .get(ORPHAN_ID)
-            .map(|m| m.entries.len())
-            .unwrap_or(0);
-        let rekey_orphan = live_rekey.is_some() && doc.nodes.contains_key(ORPHAN_ID);
-        if rekey_orphan && orphan_rows > 0 {
-            plan.skipped.push(rotation::Skipped {
-                kind: "rekey-orphan",
-                id: ORPHAN_ID.to_string(),
-                reason: format!(
-                    "the orphan node holds {orphan_rows} sealed {}, so its cold keypair was kept (re-sealed under \
-                     the new root key) rather than replaced",
-                    if orphan_rows == 1 { "copy" } else { "copies" }
-                ),
-            });
-        } else if rekey_orphan && !plan.resigned.iter().any(|r| r.kind == "orphan-cold-key") {
-            plan.skipped.push(rotation::Skipped {
-                kind: "rekey-orphan",
-                id: ORPHAN_ID.to_string(),
-                reason: "the orphan cold key did not open under the current root key, so it was not replaced"
-                    .to_string(),
-            });
-        } else if rekey_orphan {
-            let cold = plan
+        let mut orphan_resealed: Vec<Resealed> = Vec::new();
+        let replace_orphan =
+            (live_rekey.is_some() || intent.is_bind()) && doc.nodes.contains_key(ORPHAN_ID);
+        if replace_orphan {
+            let rows: Vec<String> = manifests
+                .get(ORPHAN_ID)
+                .map(|m| m.entries.iter().map(|e| e.id.clone()).collect())
+                .unwrap_or_default();
+            let bind_refuses = |why: &str| {
+                RotateRootError::Store(corrupt(
+                    self.paths.orphan_key(),
+                    &format!("{why}, so the bind cannot replace it; run `credmgr doctor`"),
+                ))
+            };
+            match plan
                 .resigned
-                .iter_mut()
-                .find(|r| r.kind == "orphan-cold-key")
-                .expect("checked above");
-            let (public, file) = credmgr_core::cold::generate_orphan_cold(new);
-            cold.bytes = file;
-            if let Some(node) = doc.nodes.get_mut(ORPHAN_ID) {
-                node.public_key = hex_encode(public.as_bytes());
-            }
-            new_orphan_public = Some(public);
-        }
-        if intent.is_bind() && doc.nodes.contains_key(ORPHAN_ID) {
-            let cold = plan
-                .resigned
-                .iter_mut()
-                .find(|r| r.kind == "orphan-cold-key")
-                .ok_or_else(|| {
-                    RotateRootError::Store(corrupt(
-                        self.paths.orphan_key(),
-                        "the orphan cold key did not open under the current root key, so the bind cannot \
-                         replace it; run `credmgr doctor`",
+                .iter()
+                .position(|r| r.kind == "orphan-cold-key")
+            {
+                None if intent.is_bind() => {
+                    return Err(bind_refuses(
+                        "the orphan cold key did not open under the current root key",
                     ))
-                })?;
-            let (public, file) = credmgr_core::cold::generate_orphan_cold(new);
-            cold.bytes = file;
-            if let Some(node) = doc.nodes.get_mut(ORPHAN_ID) {
-                node.public_key = hex_encode(public.as_bytes());
+                }
+                None => plan.skipped.push(rotation::Skipped {
+                    kind: "rekey-orphan",
+                    id: ORPHAN_ID.to_string(),
+                    reason:
+                        "the orphan cold key did not open under the current root key, so it was not replaced"
+                            .to_string(),
+                }),
+                // Nothing sealed: a new cold keypair and nothing to re-seal.
+                Some(at) if rows.is_empty() => {
+                    let (public, file) = credmgr_core::cold::generate_orphan_cold(new);
+                    plan.resigned[at].bytes = file;
+                    if let Some(node) = doc.nodes.get_mut(ORPHAN_ID) {
+                        node.public_key = hex_encode(public.as_bytes());
+                    }
+                    new_orphan_public = Some(public);
+                }
+                Some(at) => match self.plan_orphan_reseal(old, new, &rows) {
+                    Ok(orphan) => {
+                        let rekey_live::OrphanReseal {
+                            public,
+                            file,
+                            files,
+                            skipped,
+                        } = orphan;
+                        let (digests, _, _) = rekey_live::new_digests(&files);
+                        if let Some(body) = manifests.get_mut(ORPHAN_ID) {
+                            for row in body.entries.iter_mut() {
+                                if let Some(sha) = digests.get(&row.id) {
+                                    row.sha256.clone_from(sha);
+                                }
+                            }
+                            if !files.is_empty() {
+                                body.generation += 1;
+                            }
+                        }
+                        plan.resigned[at].bytes = file;
+                        if let Some(node) = doc.nodes.get_mut(ORPHAN_ID) {
+                            node.public_key = hex_encode(public.as_bytes());
+                        }
+                        plan.skipped.extend(skipped);
+                        new_orphan_public = Some(public);
+                        orphan_resealed = files;
+                    }
+                    Err(why) if intent.is_bind() => return Err(bind_refuses(&why)),
+                    Err(why) => plan.skipped.push(rotation::Skipped {
+                        kind: "rekey-orphan",
+                        id: ORPHAN_ID.to_string(),
+                        reason: format!(
+                            "{why}; its cold keypair was kept (re-sealed under the new root key), and the {} \
+                             sealed {} with it",
+                            rows.len(),
+                            if rows.len() == 1 { "copy" } else { "copies" }
+                        ),
+                    }),
+                },
             }
-            new_orphan_public = Some(public);
         }
         // ADR-098: the Touch ID unlock wrap is re-sealed to the same Secure Enclave key, silently. If it
         // cannot be (no helper here) the rotation refuses, changing nothing: a rotation that left it sealed
@@ -904,19 +938,25 @@ impl BrokerState {
         // digest; the rotation has just re-signed it under the new root (`plan.resigned`), and the envelope is
         // re-sealed below, so the record takes the new digest in the same staged file. A record the plan
         // skipped (it did not verify under the old root) stays as it was, still failing `credmgr verify`.
-        if let Some(rk) = &live_rekey {
-            for node in &rk.nodes {
-                for f in &node.files {
+        // ADR-174: the orphan's re-sealed files are handled exactly as a live node's.
+        let resealed_sets: Vec<(&str, &[Resealed])> = live_rekey
+            .iter()
+            .flat_map(|rk| rk.nodes.iter().map(|n| (n.id.as_str(), n.files.as_slice())))
+            .chain(std::iter::once((ORPHAN_ID, orphan_resealed.as_slice())))
+            .collect();
+        {
+            for (node_id, files) in &resealed_sets {
+                for f in files.iter() {
                     let (Some(entry), kind) = (f.entry.as_deref(), f.kind) else {
                         continue;
                     };
                     let (meta_path, plan_kind) = match (kind, f.generation) {
                         (rekey_live_kinds::HISTORY, Some(g)) => (
-                            self.paths.entry_history_meta(&node.id, entry, g),
+                            self.paths.entry_history_meta(node_id, entry, g),
                             "entry-history",
                         ),
                         (rekey_live_kinds::REMOVED, _) => (
-                            self.paths.removed_entry_meta(&node.id, entry),
+                            self.paths.removed_entry_meta(node_id, entry),
                             "removed-entry",
                         ),
                         _ => continue,
@@ -932,7 +972,7 @@ impl BrokerState {
                         credmgr_store::rotation_history::resign_bytes_with_sha256(
                             new,
                             &meta_path,
-                            &node.id,
+                            node_id,
                             &record.bytes,
                             &f.sha256,
                         )
@@ -981,6 +1021,12 @@ impl BrokerState {
                         .map_err(RotateRootError::Store)?;
                 }
             }
+        }
+        // ADR-174 (N5-Q2): the orphan's sealed copies, re-sealed to its new cold key, under the same record.
+        for f in &orphan_resealed {
+            stage
+                .stage_vault_file(&f.path, &f.bytes)
+                .map_err(RotateRootError::Store)?;
         }
         for (id, wrapped) in &wrapped_keys {
             stage
@@ -1103,10 +1149,11 @@ impl BrokerState {
             .as_ref()
             .map(rekey_live::LiveRekey::node_ids)
             .unwrap_or_default();
+        let orphan_rekeyed = !orphan_resealed.is_empty();
         {
             let mut live = self.manifests.write().expect("manifests poisoned");
             for (id, body) in manifests {
-                if rekeyed_ids.contains(&id) {
+                if rekeyed_ids.contains(&id) || (orphan_rekeyed && id == ORPHAN_ID) {
                     // ADR-165 N5: new digests and a new generation.
                     live.insert(id, body);
                 } else {
@@ -1150,6 +1197,7 @@ impl BrokerState {
             }
             plan.skipped.extend(rk.skipped);
         }
+        files_resealed += orphan_resealed.len();
         let orphan_key_replaced = new_orphan_public.is_some();
         if let Some(public) = new_orphan_public {
             self.seed_public_key_only(ORPHAN_ID, public);

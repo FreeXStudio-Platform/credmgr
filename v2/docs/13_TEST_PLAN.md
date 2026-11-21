@@ -271,7 +271,7 @@ comments is `v2/crates/` work and out of scope for this document.
 | **I-10** | Sealed node → orphan | Every transport except native-with-presence is denied; **names remain listable**; values unreachable via CLI, MCP and the non-HTTP UI path |
 | **I-11** | Agent process whose working directory sits under a directory registered to node `a`, presenting no token | Scope resolves to `a`; a reveal aimed at `b` is refused under `R8` or for want of the capability, whatever argument shape it is asked in |
 | **I-12** | Caller presents a token whose `boundWorkdir` ≠ its cwd | The request proceeds under the token, **and** an anomaly record is written to the audit log |
-| **I-13** | Enumerate **every** exported MCP tool | None can create a grant, return a TOTP seed, read orphan data, alter node policy, or purge audit — asserted over the live registry, so a newly added tool fails the test |
+| **I-13** | Enumerate **every** exported MCP tool | None can create a grant, return a TOTP seed, read orphan data, alter node policy, or purge audit — asserted over the live registry, so a newly added tool fails the test. Since the 2026-11-20 wiring audit (Q-3), `FORBIDDEN_OPS` must also name every op `docs/help/ops.json` classes `human_only`, so a newly dispatched owner-only op fails the test until it is listed (`the_forbidden_list_names_every_human_only_op`) |
 | **I-14** | Vault locked | Graph data (topology + counts) available; every `reveal` denied, routed to approval rather than answered |
 | **I-15** | Wrong passphrase at unlock | The hot key set is empty — asserted by inspecting broker internals through the crate's `test-utils` feature, not inferred from a subsequent request's failure |
 | **I-16** | 6 cross-node denials in 10 minutes | Anomaly event emitted |
@@ -324,6 +324,15 @@ Four test functions in `isolation.rs` under one claim: an agent token is the nar
 | # | Setup | Assert |
 |---|---|---|
 | **I-30** | An agent token for a sub-node of the fixture graph that holds a grant (its parent, global, the grant's target, a sibling and an unrelated project around it), then revoked, rotated, expired; nodes set to Guarded and Sealed (shown as "Strict"); the node's `agentAccess` narrowed | `i30a`: the token lists, reads, reveals and writes on its own node only — every other node (global, parent, child, sibling, a grant's source) is denied (R8) for list, reveal and create, and search matches in its own node only; `i30b`: it calls no owner op (`node.policy`, `grant.create`, `maintenance.*`, …) and mints, rotates, lists or revokes no token, its own included; `i30c`: after revoke and after expiry the next request is `session_expired`, never the cwd or global scope, and is audited as `Agent:a_…(revoked\|expired)`; `i30d`: Guarded holds a high reveal as an approval and Sealed (shown as "Strict") holds every reveal; a token carrying `list` only cannot reveal whatever the node allows, and a narrowed `agentAccess` narrows the token at the next request; `i30e` (review P1-1): sealing the node ends its tokens, with no request in between, and a restore does not revive them (`Agent:a_…(node_gone)`); `i30f` (review P2-10): a token presented from another node's folder still reaches only its own node and writes `anomaly.agent_token_workdir_mismatch` naming its public id, but neither the other node nor the folder |
+
+### 4.3e Added with the 2026-11-20 wiring audit — I-32 (ADR-155 amendment, Q-1)
+
+Three test functions in `isolation.rs`, every request through the real server wiring from a working folder (no token), so
+the scope is the one `resolve_scope` gives a cwd agent. Claim: the switchboard keeps to an agent's capability ceiling.
+
+| # | Setup | Assert |
+|---|---|---|
+| **I-32** | The fixture graph with a folder registered to project `a` and one to its sub-node `x`; `a`'s `agentAccess` set to `none`, `read-only` or `read-write` | `i32a`: with `none` (`whoami`: no capabilities) every `settings.list`/`get`/`set`/`revert`/`request_get` answers `capability_not_held` — its own project, Global, the vault, another project and one that does not exist alike — no request is filed and no policy byte changes (`settings.kb`, static text, still answers); `i32b`: with `read-write` a stricter value on its own node applies (also from the sub-node), but Global's node setting, a stricter, cosmetic or weaker vault setting, its parent's (R4) and a shared sibling's (R6) settings answer `capability_not_held` (`update`), an unreachable project `not_found`, nothing outside its own node changes and no request is filed; `settings.list` says `read only` for the vault's settings; `i32c`: a `read-only` agent asking to raise its own access to `read-write` is refused and nothing is queued; a `read-write` agent's weakening change to its own project still becomes a pending request (ADR-155 unchanged) |
 
 ### 4.3c Added with the 2026-10-24 backend wave — names, second factor, factors, K-7
 

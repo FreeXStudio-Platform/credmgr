@@ -95,6 +95,8 @@ use crate::state::{
 const NOTE_ENVELOPE_ID: &str = "notes";
 /// ADR-073: the most entries one `entry.create_batch` call may create.
 const BATCH_MAX: usize = 500;
+/// ADR-174 (6): the longest a single-entry grant may last — 90 days from its creation.
+const ENTRY_GRANT_MAX_SECONDS: i64 = 90 * 86_400;
 /// A note is context, not a document store: 64 KiB of markdown.
 const NOTE_MAX_BYTES: usize = 64 * 1024;
 
@@ -308,6 +310,63 @@ fn notes_gate(
             rule_name(decision),
             now,
         ));
+    }
+    Ok(())
+}
+
+/// ADR-174 (2): what an agent needs to read ITS OWN node's note. Not the `notes` capability (an agent never
+/// holds it, `06 §3`; `notes.write` still needs it, so an agent cannot write): the node must be the agent's
+/// own, the agent must hold `read` and resolve it there, and the node's security level must not ask the
+/// owner's approval for a HIGH-sensitivity value (a note is free text that often holds what a value would,
+/// ADR-156, so it follows the high-sensitivity reveal rules; there is no approval path for a note, so on a
+/// Guarded or Strict node the note is the owner's to read and only an Open node hands it to an agent). The
+/// caller also meets the node's second factor as a reveal does (`GateKind::Reveal`, at the call site). Another
+/// node's note is refused with nothing said of it, a grant included.
+fn agent_notes_read_gate(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    target_node: &str,
+    now: i64,
+) -> Result<(), OpError> {
+    if target_node != scope.node_id {
+        return Err(access_denied_error(
+            state,
+            scope,
+            target_node,
+            Capability::Notes,
+            "own_node",
+            now,
+        ));
+    }
+    if !scope.holds(Capability::Read) {
+        return Err(OpError::CapabilityNotHeld {
+            capability: Capability::Read,
+        });
+    }
+    let decision = resolve_capability(state, scope, target_node, Capability::Read, now);
+    if !decision.is_allow() {
+        return Err(access_denied_error(
+            state,
+            scope,
+            target_node,
+            Capability::Read,
+            rule_name(decision),
+            now,
+        ));
+    }
+    let level = security_level_of(state, target_node);
+    if level.reveal_needs_approval(credmgr_core::inference::Sensitivity::High) {
+        return Err(OpError::NodeAccessDenied {
+            subject: scope.node_id.clone(),
+            target: target_node.to_string(),
+            capability: Capability::Notes,
+            rule: "L1",
+            message: format!(
+                "Node '{target_node}' is {}: its note is read by the owner, not by an agent.",
+                level.as_str()
+            ),
+            remedy: "The owner can read the note, or lower the node's security level.".to_string(),
+        });
     }
     Ok(())
 }
@@ -545,6 +604,8 @@ fn presence_reason(op: &str) -> Option<&'static str> {
         ("device.enrol", "Turn on Touch ID unlock"),
         ("device.remove", "Turn off Touch ID unlock"),
         ("keystore.unbind", "Turn off the machine lock"),
+        // ADR-174 O-5: each phase that can change the vault (prepare, commit) when a presence key is enrolled.
+        ("keystore.bind", "Turn on the machine lock"),
         ("orphan.reveal", "Read a sealed entry"),
         ("node.rekey", "Replace a project's encryption key"),
         ("entry.move", "Move an entry to another project"),
@@ -639,6 +700,14 @@ fn machine_lock_status_json(st: &crate::state::MachineLockStatus) -> Value {
              opens the vault; the recovery code does). Turn the lock off and on again to settle it"
                 .to_string(),
         )
+    } else if let (true, Some(found)) = (st.bound, st.synced_folder) {
+        // ADR-174 O-3: bound before the check existed, or the folder was moved into a synced one since.
+        Some(format!(
+            "this vault folder is in {}, which another Mac can open too: there the passphrase does not open it, the \
+             recovery code does, and a recovery moves the lock to that Mac and retires the code. Move the vault to \
+             a folder that is not synced",
+            found.label()
+        ))
     } else if st.in_folder_archives > 0 {
         Some(format!(
             "{} CredMgr backup archive{} still in the vault folder's backups/ (from before the machine lock, or \
@@ -659,6 +728,14 @@ fn machine_lock_status_json(st: &crate::state::MachineLockStatus) -> Value {
             if st.pre_bind_nodes.len() == 1 { "has" } else { "have" },
             if st.pre_bind_nodes.len() == 1 { "it" } else { "them" },
         ))
+    } else if st.bound && st.device_key_time_machine_excluded == Some(false) {
+        // ADR-174 O-2: the exclusion is set at every bind and unlock; when it did not hold, say what that means.
+        Some(
+            "this Mac's device key is not excluded from Time Machine (the exclusion could not be set): a Time \
+             Machine backup then carries the key with the vault folder, and the passphrase alone opens it. It is \
+             tried again at the next unlock"
+                .to_string(),
+        )
     } else {
         None
     };
@@ -683,21 +760,45 @@ fn machine_lock_status_json(st: &crate::state::MachineLockStatus) -> Value {
         "inFolderArchives": st.in_folder_archives,
         // ADR-165 M5: a bind record on this Mac names this folder under another vault id.
         "recordDetached": st.record_detached.is_some(),
+        // ADR-174 O-2: the device key carries Time Machine's exclusion (null: no key, or not macOS).
+        "deviceKeyTimeMachineExcluded": st.device_key_time_machine_excluded,
+        // ADR-174 O-3: the sync service the vault folder sits in (null: none found); bind refuses it.
+        "syncedFolder": st.synced_folder.map(|f| f.label()),
+        // ADR-174 O-2: a Time Machine backup is covered only by a key made already excluded (never in a backup).
+        "deviceKeyTimeMachineCovered": st.device_key_time_machine_covered,
+        // ADR-174 O-5: what turning the lock on asks for beyond the passphrase and the recovery codes.
+        "bindProof": st.bind_proof,
         "warning": warning,
-        "protects": if st.bound {
-            "a copy of the vault folder alone (a synced folder, a copied directory, a USB disk) made after the \
-             lock was turned on cannot be opened with the passphrase on another computer; it needs this Mac's \
-             device key or the recovery code"
+        "protects": if st.bound && st.device_key_time_machine_covered {
+            "a copy of the vault folder alone (a copied directory, a USB disk, a Time Machine backup, which leaves \
+             the device key out) made after the lock was turned on cannot be opened with the passphrase on another \
+             computer; it needs this Mac's device key or the recovery code of its day"
+        } else if st.bound {
+            "a copy of the vault folder alone (a copied directory, a USB disk) made after the lock was turned on \
+             cannot be opened with the passphrase on another computer; it needs this Mac's device key or the \
+             recovery code of its day"
         } else {
             "nothing extra: the passphrase alone opens a copy of the vault folder on any computer"
         },
-        "doesNotProtect": "a stolen or unlocked Mac (its disk holds the vault folder and the device key; FileVault \
-             and a locked screen protect that); Time Machine, whole-disk images and Migration Assistant, which \
-             carry the device key with the folder; what a copy made before the lock was turned on already held; \
-             CredMgr backup archives, which hold the passphrase file unsealed inside their own encryption and \
-             open with their backup passphrase and the vault passphrase (while the lock is on they are written \
-             outside the vault folder, in CredMgr's state folder, so a copy of the vault folder does not carry \
-             them; one copied elsewhere is not covered); anyone holding the recovery code",
+        "doesNotProtect": format!(
+            "a stolen or unlocked Mac (its disk holds the vault folder and the device key; FileVault and a locked \
+             screen protect that); whole-disk images and Migration Assistant, which carry the device key with the \
+             folder; {}what a copy made before the lock was turned on already held; CredMgr backup archives, which \
+             hold the passphrase file unsealed inside their own encryption and open with their backup passphrase \
+             and the vault passphrase (while the lock is on they are written outside the vault folder, in CredMgr's \
+             state folder, so a copy of the vault folder does not carry them; one copied elsewhere is not covered); \
+             anyone holding the recovery code",
+            if st.bound
+                && !st.device_key_time_machine_covered
+                && st.device_key_time_machine_excluded.is_some()
+            {
+                "Time Machine backups that may hold this Mac's device key (it was made before it was kept out of \
+                 Time Machine, or its exclusion did not hold; turn the lock off and on again to replace it with \
+                 one no backup ever held); "
+            } else {
+                ""
+            }
+        ),
     })
 }
 
@@ -744,6 +845,14 @@ fn machine_lock_op_error(e: crate::state::MachineLockOpError) -> OpError {
              carry it; move the state directory (CREDMGR_STATE_DIR) outside the vault folder first",
             path.display()
         )),
+        // ADR-174 O-3: the owner's decision — never tie a folder two Macs share to one of them.
+        E::SyncedFolder(found) => OpError::Malformed(format!(
+            "the machine lock was not turned on (nothing changed): the vault folder is in {}, which another Mac \
+             can open too. A lock tied to this Mac would make every other Mac need the recovery code, and a \
+             recovery there would move the lock and retire the code. Move the vault to a folder that is not \
+             synced, then turn the lock on",
+            found.label()
+        )),
         E::MachineLock(m) => machine_lock_refused(&m),
         E::Store(e) => OpError::Internal(format!(
             "the machine lock was not changed (the passphrase file is as it was): {e}"
@@ -756,6 +865,23 @@ pub(crate) fn machine_lock_refused(
     e: &credmgr_keystore::machine_lock::MachineLockError,
 ) -> OpError {
     OpError::MachineLockRefused { reason: e.reason() }
+}
+
+/// ADR-174 O-5 (the owner's decision): "Turning the machine lock on needs Touch ID or your authenticator code."
+/// Each phase of `keystore.bind` that can change the vault (`prepare`, `commit`) needs a presence proof for exactly
+/// that request when a presence key is enrolled; otherwise a fresh vault second factor when a gate is enrolled;
+/// with neither, nothing more than the passphrase and the recovery codes each phase already proves. Checked after
+/// every refusal that needs no finger, so a request that would be refused anyway never costs a prompt.
+fn require_bind_proof(
+    state: &BrokerState,
+    scope: &BrokerScope,
+    params: &Value,
+    now: i64,
+) -> Result<(), OpError> {
+    if !state.presence_keys().is_empty() {
+        return require_presence(state, scope, "keystore.bind", params, now);
+    }
+    require_fresh_second_factor(state, now)
 }
 
 /// A second factor is fresh when a gate is enrolled; else nothing to ask (the same shape
@@ -2408,6 +2534,20 @@ fn all_capabilities() -> Vec<Capability> {
     ]
 }
 
+/// ADR-174 (3): the project a login would belong to: the caller carries no token, is the cwd-scoped agent kind
+/// the broker gives a process in a registered folder, and that folder resolves (against the registry as it is
+/// NOW, loaded by this very unlock) to a node other than Global. `None` means the owner's login.
+fn project_login_node(state: &BrokerState, scope: &BrokerScope) -> Option<String> {
+    if scope.token_id.is_some() || scope.origin != Origin::Agent {
+        return None;
+    }
+    let cwd = scope.bound_workdir.as_deref()?;
+    let registry = state.registry.read().expect("registry poisoned");
+    crate::scope::match_workdir(&registry, cwd)
+        .filter(|node| *node != GLOBAL_ID)
+        .map(str::to_string)
+}
+
 /// ADR-056: a successful full unlock — either `vault.unlock` with no gate
 /// enrolled, or `vault.gate_verify` completing one that is — mints the real,
 /// non-fixture token `ADR-047` found nothing on any transport could ever
@@ -2420,7 +2560,34 @@ fn all_capabilities() -> Vec<Capability> {
 /// every `cd` as a workdir-mismatch anomaly would train the operator to
 /// ignore the signal that matters). Registered with `state` so `lock()` can
 /// revoke it — a login session does not outlive the unlock it came from.
-fn mint_session_token(state: &BrokerState, now: i64) -> Value {
+///
+/// **ADR-174 (3), closing PHASE8 K-6.** A login handed to a caller that has no token and whose working
+/// directory is inside a registered project folder (where an agent runs, and where `credmgr unlock` prints the
+/// `export CREDMGR_TOKEN=...` an agent in that shell then inherits) is a **project login**, not the owner's
+/// whole-vault login: `Origin::Cli`, that project's node only (so its ancestors and Global by the ordinary rules,
+/// never a sibling project), `list`/`read`/`reveal`/`create`/`update` (never `notes` or `admin`), the folder
+/// recorded, and honoured only from a process whose working directory is inside one of that project's registered
+/// folders (`scope::resolve_scope_at`); from anywhere else it is `session_expired` and an
+/// `anomaly.project_login_wrong_folder` record. It dies at lock and on its own idle clock like any login. An
+/// unlock from outside every project folder (a terminal in `~`, the desktop app) mints the owner's login exactly
+/// as before.
+fn mint_session_token(state: &BrokerState, scope: &BrokerScope, now: i64) -> Value {
+    if let Some(node) = project_login_node(state, scope) {
+        let token = state.tokens.issue(
+            node,
+            vec![
+                Capability::List,
+                Capability::Read,
+                Capability::Reveal,
+                Capability::Create,
+                Capability::Update,
+            ],
+            Origin::Cli,
+            scope.bound_workdir.clone(),
+        );
+        state.register_session_token(&token.id, now);
+        return json!(token.id);
+    }
     let token = state
         .tokens
         .issue(GLOBAL_ID, all_capabilities(), Origin::HumanUi, None);
@@ -2541,7 +2708,7 @@ pub fn recover_response(
     response["recovered"] = json!(true);
     if opened {
         response["locked"] = json!(false);
-        response["token"] = json!(mint_session_token(state, now));
+        response["token"] = json!(mint_session_token(state, scope, now));
     } else {
         // Review P2-a: the rotation committed but the vault is locked — its file move is pending, or the node
         // keys could not be opened and the vault was locked again (which revoked every token). No login is
@@ -2579,7 +2746,7 @@ fn rotation_response(outcome: crate::state::RotationOutcome) -> Value {
             .map(|s| json!({ "kind": s.kind, "id": s.id, "reason": s.reason }))
             .collect::<Vec<_>>(),
     });
-    // ADR-165 N5: a passphrase change or a recovery replaced every live node's keypair.
+    // ADR-165 N5 and ADR-174: a rotation, a passphrase change or a recovery replaced every live node's keypair.
     if let Some(nodes) = &outcome.nodes_rekeyed {
         // The ids, as `keystore.bind` answers them.
         response["nodesRekeyed"] = json!(nodes);
@@ -2786,7 +2953,9 @@ fn dispatch_op(
                 }
             };
             match outcome? {
-                false => Ok(json!({ "locked": false, "token": mint_session_token(state, now) })),
+                false => {
+                    Ok(json!({ "locked": false, "token": mint_session_token(state, scope, now) }))
+                }
                 // `07 §3` steps 2-3: factor 1 passed, a confirmed gate exists —
                 // the caller must complete `vault.gate_verify` next. No token
                 // yet — the login isn't complete until the second factor lands.
@@ -3136,6 +3305,11 @@ fn dispatch_op(
                                 .into(),
                         ));
                     };
+                    // ADR-174 O-5: Touch ID, else a fresh second factor, after every check that needs neither.
+                    state
+                        .machine_lock_bind_precheck()
+                        .map_err(machine_lock_op_error)?;
+                    require_bind_proof(state, scope, params, now)?;
                     let prepared = state
                         .machine_lock_bind_prepare(
                             secrecy::SecretBox::new(Box::new(passphrase.to_string())),
@@ -3158,6 +3332,14 @@ fn dispatch_op(
                         .get("recoveryCode")
                         .and_then(Value::as_str)
                         .filter(|c| !c.trim().is_empty());
+                    // ADR-174 O-5: the commit is what changes the vault, so it asks again (a second Touch ID, or a
+                    // second factor still fresh). With nothing prepared the commit refuses on its own, at no prompt.
+                    if state.machine_lock_bind_commit_would_proceed(&session, now) {
+                        state
+                            .machine_lock_bind_precheck()
+                            .map_err(machine_lock_op_error)?;
+                        require_bind_proof(state, scope, params, now)?;
+                    }
                     let bound = state
                         .machine_lock_bind_commit(typed, &session, now)
                         .map_err(machine_lock_op_error)?;
@@ -3169,6 +3351,8 @@ fn dispatch_op(
                     body["phase"] = json!("commit");
                     body["changed"] = json!(!bound.already);
                     body["deviceKeyCreated"] = json!(bound.device_key_created);
+                    // ADR-174 O-2: an older key that may be in Time Machine was put aside for a fresh one.
+                    body["deviceKeyReplaced"] = json!(bound.device_key_replaced);
                     body["nodesRekeyed"] = json!(bound.nodes_rekeyed);
                     body["rekeyFailed"] = json!(bound
                         .rekey_failed
@@ -3251,15 +3435,32 @@ fn dispatch_op(
         // definition; the two factors *are* the authorisation, and
         // `server.rs` puts this op behind the same per-uid auth backoff as
         // `vault.unlock`. Which factor failed is never said.
+        // Never an agent (wiring audit Q-2, ADR-064/ADR-163 amendment): like
+        // `vault.recover`, the other token-less last door, a caller the broker
+        // identifies as an agent is refused before either factor is read, and
+        // again once a freshly started broker has loaded the project folders.
         "vault.gate_recover" => {
+            if is_identified_agent(state, scope) {
+                return Err(OpError::CapabilityNotHeld {
+                    capability: Capability::Admin,
+                });
+            }
             let passphrase = params["passphrase"]
                 .as_str()
                 .ok_or_else(|| OpError::Malformed("params.passphrase is required".into()))?;
             let code = params["recoveryCode"]
                 .as_str()
                 .ok_or_else(|| OpError::Malformed("params.recoveryCode is required".into()))?;
-            match state.gate_recover(SecretBox::new(Box::new(passphrase.to_string())), code, now) {
+            match state.gate_recover(
+                scope,
+                SecretBox::new(Box::new(passphrase.to_string())),
+                code,
+                now,
+            ) {
                 Ok(had_gate) => Ok(json!({ "gateReset": had_gate })),
+                Err(GateRecoverError::Agent) => Err(OpError::CapabilityNotHeld {
+                    capability: Capability::Admin,
+                }),
                 Err(GateRecoverError::WrongFactors) => Err(OpError::WrongPassphrase),
                 Err(GateRecoverError::MachineLock(m)) => Err(machine_lock_refused(&m)),
                 Err(GateRecoverError::Store(e)) => Err(OpError::Internal(format!(
@@ -3335,7 +3536,9 @@ fn dispatch_op(
                 };
             }
             match state.gate_verify(GATE_SCOPE_VAULT, code, now) {
-                Ok(()) => Ok(json!({ "locked": false, "token": mint_session_token(state, now) })),
+                Ok(()) => {
+                    Ok(json!({ "locked": false, "token": mint_session_token(state, scope, now) }))
+                }
                 Err(GateVerifyError::NoChallengePending | GateVerifyError::WrongCode) => {
                     Err(OpError::GateVerificationFailed)
                 }
@@ -4004,6 +4207,19 @@ fn dispatch_op(
             });
             if let Some(entries_metadata) = entries_metadata {
                 body["entries"] = Value::Array(entries_metadata);
+            } else {
+                // ADR-174 (1): an agent that may list a node also sees each listed entry's tags, as it
+                // already sees them through `entry.get` (ADR-167). Only the same `visible` entries, only
+                // when some carry tags (so an untagged node keeps the pre-ADR-077 shape), and never on a
+                // node that hides its names (that branch returned above).
+                let tagged: serde_json::Map<String, Value> = visible
+                    .iter()
+                    .filter(|e| !e.tags.is_empty())
+                    .map(|e| (e.id.clone(), json!(e.tags)))
+                    .collect();
+                if !tagged.is_empty() {
+                    body["tags"] = Value::Object(tagged);
+                }
             }
             if let Some(tag) = tag {
                 body["tag"] = json!(tag);
@@ -6402,8 +6618,21 @@ fn dispatch_op(
             let target_node = params["node"]
                 .as_str()
                 .ok_or_else(|| OpError::Malformed("params.node is required".into()))?;
-            notes_gate(state, scope, target_node, now)?;
-            second_factor_gate(state, scope, target_node, GateKind::Read, now)?;
+            // An agent that holds `notes` explicitly (a grant's reach, `06 §3`) keeps the old gate; every real
+            // agent scope lacks it (`capabilities_for_agent_access`) and reads its own node's note by ADR-174.
+            if is_agent_caller(scope) && !scope.holds(Capability::Notes) {
+                agent_notes_read_gate(state, scope, target_node, now)?;
+            } else {
+                notes_gate(state, scope, target_node, now)?;
+            }
+            // ADR-174 (2): an agent's note read meets the same second factor as revealing a high-sensitivity
+            // value; a person's read keeps the read-level gate.
+            let kind = if is_agent_caller(scope) {
+                GateKind::Reveal
+            } else {
+                GateKind::Read
+            };
+            second_factor_gate(state, scope, target_node, kind, now)?;
             let Some(node_priv) = state.hot_node_key(target_node) else {
                 return Err(locked_refusal(state, target_node));
             };
@@ -7110,6 +7339,31 @@ fn dispatch_op(
                     Some(t)
                 }
             };
+            // ADR-174 (6): a single-entry grant must expire, at most 90 days ahead. Node grants keep an
+            // optional expiry (`03 §6`).
+            if matches!(to, GrantTarget::Entry { .. }) {
+                match expires_at {
+                    None => {
+                        return Err(OpError::Malformed(
+                            "an entry-level grant must expire: give params.expiresAt (epoch seconds, at most \
+                             90 days ahead)"
+                                .into(),
+                        ))
+                    }
+                    Some(t) if t - now > ENTRY_GRANT_MAX_SECONDS => {
+                        return Err(OpError::Malformed(
+                            "an entry-level grant may last at most 90 days: params.expiresAt is further ahead \
+                             than that"
+                                .into(),
+                        ))
+                    }
+                    Some(_) => {}
+                }
+            }
+            // ADR-174 (5): creating a grant needs the authenticator code as well as Touch ID — a fresh vault
+            // second factor when one is enrolled (as `maintenance.rotate_root`, `presence.enrol` and the
+            // other high-risk acts), asked before the presence proof so a refusal here spends no finger.
+            require_fresh_second_factor(state, now)?;
             require_presence(state, scope, "grant.create", params, now)?;
             let mut registry = state.registry.write().expect("registry poisoned");
             if !registry.nodes.contains_key(from) {
@@ -7458,7 +7712,7 @@ fn dispatch_op(
                 Err(e) => {
                     return Ok(json!({
                         "applied": false, "fixCount": 0, "fixes": [],
-                        "unfixable": [{ "node": Value::Null, "detail": format!("{e} — restore the vault and state directories from a copy; rebuildRegistry needs presence, which no transport provides yet") }],
+                        "unfixable": [{ "node": Value::Null, "detail": format!("{e} — restore the vault and state directories from a copy, or rebuild the registry from a backup with rebuildRegistry (needs Touch ID)") }],
                     }))
                 }
             };

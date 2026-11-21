@@ -90,7 +90,7 @@ but does not yet do everything its document specifies), **`planned`** (does not 
 | Presence proof (Secure Enclave key, single-use broker challenge) and the presence-gated operations; Touch ID unlock | `built` (macOS) | `ADR-098`, `crates/core/src/presence.rs`, `crates/keystore/src/secure_enclave.rs`, `crates/brokerd/tests/presence.rs`, `scripts/e2e-presence.sh`; the sensor itself is checked by a human (`RELEASE_VERIFICATION.md`) |
 | Live vault — passphrase unlock, load from disk, write-through | `built` | `ADR-063`, `crates/brokerd/src/state/durable.rs`, `durable_vault.rs` |
 | CLI, 27 top-level subcommands | `built` | `crates/cli/src/main.rs` |
-| MCP server, 21 tools (six are the ADR-155 switchboard) | `built` | `crates/mcp/src/tools.rs`; the LLM knowledge base `docs/LLM_KB.md` |
+| MCP server, 22 tools (six are the ADR-155 switchboard, one is the read-only `credmgr_notes_read` of ADR-174) | `built` | `crates/mcp/src/tools.rs`; the LLM knowledge base `docs/LLM_KB.md` |
 | Two-factor gate (TOTP + recovery codes), persisted, with the last door | `built` | `crates/brokerd/`, `phase5_gate.rs`, `durable_vault.rs` (`ADR-064`) |
 | Session login (`vault.unlock` mints a real token that reaches every node but Orphaned) | `built` | `ADR-056`, `ADR-065`, `session_login.rs`, `durable_vault.rs` |
 | Node isolation suite | `partial` | `isolation.rs` runs I-1…I-25 and I-27…I-29 (27 tests; I-26 was never written); **I-10 is implemented nowhere** — accepted risk K-1 |

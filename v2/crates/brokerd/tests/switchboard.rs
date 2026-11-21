@@ -4,8 +4,10 @@
 //!   for projects it reaches;
 //! * the owner changes any setting; widening a project's reach needs Touch ID; loosening the reveal policy needs a fresh
 //!   confirmation; the change survives a restart;
-//! * an agent's cosmetic or strengthening change applies at once; a weakening one becomes a request that only the owner
-//!   decides, after a fresh confirmation; an agent cannot decide or list requests;
+//! * an agent changes only its own node's settings (a vault setting only when its scope is Global), holding `update`
+//!   there (ADR-155 amendment, Q-1; the refusals are proven in `isolation.rs` I-32); there, a cosmetic or strengthening
+//!   change applies at once and a weakening one becomes a request that only the owner decides, after a fresh
+//!   confirmation; an agent cannot decide or list requests;
 //! * every change is recorded with the value it replaced and can be reverted under the same rules;
 //! * a lock drops waiting requests; values outside the table are refused.
 
@@ -21,12 +23,20 @@ use credmgr_core::registry::Capability;
 
 use f1_support::*;
 
+/// An agent scoped to `node` with read-write access there (`agentAccess: read-write`'s capabilities). The switchboard
+/// lets it change `node`'s own settings, and the vault's only when `node` is Global (ADR-155 amendment, Q-1).
 fn agent(state: &BrokerState, node: &str) -> BrokerScope {
     let token = state
         .tokens
         .issue(
             node,
-            vec![Capability::List, Capability::Read, Capability::Reveal],
+            vec![
+                Capability::List,
+                Capability::Read,
+                Capability::Reveal,
+                Capability::Create,
+                Capability::Update,
+            ],
             Origin::Agent,
             None,
         )
@@ -106,6 +116,21 @@ fn list_describes_every_setting_with_the_callers_rule() {
         .find(|s| s["id"] == "node.securityLevel")
         .unwrap();
     assert_eq!(level["you"], "direct when stricter; approval when weaker");
+    let rule = |id: &str| {
+        mine["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == id)
+            .unwrap()["you"]
+            .clone()
+    };
+    // Q-1: its own access is never its request, and a vault setting is Global's, not a project agent's.
+    assert_eq!(
+        rule("node.agentAccess"),
+        "direct when stricter; never weaker (the owner's)"
+    );
+    assert_eq!(rule("app.autoLockMins"), "read only");
     // Another project is indistinguishable from one that does not exist.
     let other = call(&state, &a, NOW, "settings.list", json!({ "node": "beta" }));
     assert!(matches!(other, Err(OpError::NotFound(_))), "{other:?}");
@@ -244,8 +269,20 @@ fn owner_weakening_follows_the_existing_step_ups() {
 fn an_agent_applies_cosmetic_and_stricter_changes_directly() {
     let (_v, state, owner) = setup();
     let a = agent(&state, "acme");
-    let r = set(&state, &a, "app.theme", None, json!("light")).unwrap();
+    let g = agent(&state, "global");
+    let r = set(&state, &g, "app.theme", None, json!("light")).unwrap();
     assert_eq!(r["applied"], true);
+    // Q-1: a vault setting is Global's; a project agent may not change it, not even to something cosmetic.
+    let r = set(&state, &a, "app.theme", None, json!("dark"));
+    assert!(
+        matches!(
+            r,
+            Err(OpError::CapabilityNotHeld {
+                capability: Capability::Update
+            })
+        ),
+        "{r:?}"
+    );
     let r = set(
         &state,
         &a,
@@ -256,7 +293,7 @@ fn an_agent_applies_cosmetic_and_stricter_changes_directly() {
     .unwrap();
     assert_eq!(r["change"], "strengthens");
     assert_eq!(r["applied"], true);
-    let r = set(&state, &a, "app.autoLockMins", None, json!(5)).unwrap();
+    let r = set(&state, &g, "app.autoLockMins", None, json!(5)).unwrap();
     assert_eq!(r["applied"], true);
     assert_eq!(
         value_of(&state, &owner, "node.securityLevel", Some("acme")),
@@ -273,10 +310,52 @@ fn an_agent_applies_cosmetic_and_stricter_changes_directly() {
     assert!(matches!(r, Err(OpError::NotFound(_))), "{r:?}");
 }
 
+/// Q-1 backstop: even a scope that somehow holds `update` above its node's agent access (here a fixture token, which
+/// skips the ceiling a real cwd agent or agent token gets) cannot file a request that raises its own access: it is
+/// refused, not queued, and nothing changes. The owner raises it themselves.
+#[test]
+fn an_agent_never_asks_for_more_of_its_own_access() {
+    let (_v, state, owner) = setup();
+    set(
+        &state,
+        &owner,
+        "node.agentAccess",
+        Some("acme"),
+        json!("read-only"),
+    )
+    .unwrap();
+    let a = agent(&state, "acme");
+    let r = set(
+        &state,
+        &a,
+        "node.agentAccess",
+        Some("acme"),
+        json!("read-write"),
+    );
+    assert!(
+        matches!(
+            r,
+            Err(OpError::CapabilityNotHeld {
+                capability: Capability::Admin
+            })
+        ),
+        "{r:?}"
+    );
+    assert!(state.setting_requests_all().is_empty(), "nothing queued");
+    assert_eq!(
+        value_of(&state, &owner, "node.agentAccess", Some("acme")),
+        "read-only"
+    );
+    // Narrowing itself further is still its to do.
+    let r = set(&state, &a, "node.agentAccess", Some("acme"), json!("none")).unwrap();
+    assert_eq!(r["applied"], true);
+}
+
 #[test]
 fn an_agents_weakening_change_waits_for_the_owner_who_confirms_first() {
     let (_v, state, owner) = setup();
-    let a = agent(&state, "acme");
+    // A vault setting: the agent whose scope is Global may ask.
+    let a = agent(&state, "global");
     let r = set(&state, &a, "app.autoLockMins", None, json!(0)).unwrap();
     assert_eq!(r["applied"], false);
     assert_eq!(r["state"], "pending");
@@ -381,7 +460,8 @@ fn an_agents_weakening_change_waits_for_the_owner_who_confirms_first() {
 fn a_denied_request_changes_nothing_and_a_lock_drops_waiting_ones() {
     let (_v, state, owner) = setup();
     let a = agent(&state, "acme");
-    let id = set(&state, &a, "app.captureProtection", None, json!(false)).unwrap()["request"]
+    let g = agent(&state, "global");
+    let id = set(&state, &g, "app.captureProtection", None, json!(false)).unwrap()["request"]
         .as_str()
         .unwrap()
         .to_string();
@@ -407,7 +487,7 @@ fn a_denied_request_changes_nothing_and_a_lock_drops_waiting_ones() {
     );
     // read-write is the default: the same value, nothing to ask.
     assert_eq!(id2.unwrap()["change"], "same");
-    let id3 = set(&state, &a, "app.revealWindowSecs", None, json!(60)).unwrap()["request"]
+    let id3 = set(&state, &g, "app.revealWindowSecs", None, json!(60)).unwrap()["request"]
         .as_str()
         .unwrap()
         .to_string();
@@ -428,7 +508,7 @@ fn a_denied_request_changes_nothing_and_a_lock_drops_waiting_ones() {
 #[test]
 fn every_change_is_recorded_and_can_be_reverted_under_the_same_rules() {
     let (_v, state, owner) = setup();
-    let a = agent(&state, "acme");
+    let a = agent(&state, "global");
     // The agent makes things stricter; its revert would weaken, so it becomes a request.
     let c = set(&state, &a, "app.autoLockMins", None, json!(5)).unwrap()["changeId"]
         .as_str()
@@ -476,7 +556,7 @@ fn every_change_is_recorded_and_can_be_reverted_under_the_same_rules() {
 #[test]
 fn nothing_is_changed_while_the_vault_is_locked() {
     let (_v, state, owner) = setup();
-    let a = agent(&state, "acme");
+    let a = agent(&state, "global");
     state.lock();
     for scope in [&owner, &a] {
         let r = set(&state, scope, "app.theme", None, json!("dark"));

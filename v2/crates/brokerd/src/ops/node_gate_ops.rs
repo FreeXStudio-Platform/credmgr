@@ -129,12 +129,16 @@ pub(super) fn remove(
     let had = match (passphrase, recovery_code) {
         (Some(pass), Some(code)) => state
             .gate_recover_scope(
+                scope,
                 secrecy::SecretBox::new(Box::new(pass.to_string())),
                 code,
                 target_node,
                 now,
             )
             .map_err(|e| match e {
+                GateRecoverError::Agent => OpError::CapabilityNotHeld {
+                    capability: credmgr_core::registry::Capability::Admin,
+                },
                 GateRecoverError::WrongFactors => OpError::WrongPassphrase,
                 GateRecoverError::MachineLock(m) => crate::ops::machine_lock_refused(&m),
                 GateRecoverError::Store(e) => {

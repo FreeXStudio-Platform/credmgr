@@ -249,7 +249,10 @@ pub(super) fn content_search(
         .collect();
     node_ids.sort();
     if let Some(only) = only_node {
-        if !node_ids.iter().any(|n| n == only) {
+        // Wiring audit 2026-11-20 (F-6, I-22): a caller that does not hold the whole vault must not learn whether
+        // a node it cannot reach exists. A node that is not there answers exactly as one it may not search: no
+        // results. Only the owner's login, which reaches every node anyway, is told `not_found`.
+        if !node_ids.iter().any(|n| n == only) && state.is_owner_session(scope) {
             return Err(OpError::NotFound(format!("no node {only}")));
         }
         node_ids.retain(|n| n == only);

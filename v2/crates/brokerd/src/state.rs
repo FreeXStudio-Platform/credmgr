@@ -545,6 +545,9 @@ pub struct BrokerState {
     /// ADR-165 (review N1): a machine-lock bind prepared and waiting for its new recovery code to be typed
     /// back. Memory only; emptied by `lock()`.
     machine_lock_pending: Mutex<Option<machine_lock::PendingBind>>,
+    /// ADR-174 O-3's seam: the home folder the synced-folder check reads instead of `$HOME`.
+    #[cfg(feature = "test-utils")]
+    sync_home_for_test: RwLock<Option<std::path::PathBuf>>,
     /// ADR-130…134: state of the 2.0.0 broker features (content-search rate window, crash seams).
     pub stable: crate::stable::StableState,
     /// ADR-150: per login session (by its public id), when the person last confirmed it was them (Touch ID
@@ -718,6 +721,8 @@ impl BrokerState {
             #[cfg(feature = "test-utils")]
             machine_lock_touches: std::sync::atomic::AtomicUsize::new(0),
             machine_lock_pending: Mutex::new(None),
+            #[cfg(feature = "test-utils")]
+            sync_home_for_test: RwLock::new(None),
             stable: crate::stable::StableState::default(),
             reveal_confirmations: RwLock::new(HashMap::new()),
             unaudited_recoveries: Mutex::new(recover::UnauditedRecoveries::default()),
@@ -772,6 +777,20 @@ impl BrokerState {
     /// registers an id here.
     pub fn is_owner_session(&self, scope: &crate::scope::BrokerScope) -> bool {
         scope.origin == credmgr_core::access::Origin::HumanUi
+            && scope.token_id.as_ref().is_some_and(|id| {
+                self.session_tokens
+                    .read()
+                    .expect("session tokens poisoned")
+                    .contains(id)
+            })
+    }
+
+    /// ADR-174 (3): a live project login — a session minted by an unlock made inside a project's folder, which
+    /// reaches that project only and is honoured only from its folders. Not an owner session.
+    pub fn is_project_login(&self, scope: &crate::scope::BrokerScope) -> bool {
+        scope.origin == credmgr_core::access::Origin::Cli
+            && scope.bound_workdir.is_some()
+            && scope.node_id != credmgr_core::registry::GLOBAL_ID
             && scope.token_id.as_ref().is_some_and(|id| {
                 self.session_tokens
                     .read()
@@ -851,6 +870,29 @@ impl BrokerState {
     #[cfg(feature = "test-utils")]
     pub fn set_state_dir_for_test(&self, dir: std::path::PathBuf) {
         *self.state_dir.write().expect("state dir poisoned") = dir;
+    }
+
+    /// ADR-174 O-3: the home folder the synced-folder check reads (`~/Library/Mobile Documents`,
+    /// `~/Library/CloudStorage`) instead of `$HOME`, so a test stands one up in a temporary directory.
+    #[cfg(feature = "test-utils")]
+    pub fn set_sync_home_for_test(&self, home: Option<std::path::PathBuf>) {
+        *self.sync_home_for_test.write().expect("sync home poisoned") = home;
+    }
+
+    /// The user's home folder for the synced-folder check (ADR-174 O-3).
+    pub(crate) fn sync_home(&self) -> Option<std::path::PathBuf> {
+        #[cfg(feature = "test-utils")]
+        if let Some(home) = self
+            .sync_home_for_test
+            .read()
+            .expect("sync home poisoned")
+            .clone()
+        {
+            return Some(home);
+        }
+        std::env::var_os("HOME")
+            .filter(|h| !h.is_empty())
+            .map(std::path::PathBuf::from)
     }
 
     // --- test/bootstrap seeding -------------------------------------------------

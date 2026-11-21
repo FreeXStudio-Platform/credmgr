@@ -57,7 +57,9 @@ use credmgr_core::recovery::{
     unwrap_root_with_recovery_code, RootRecoveryWrap, RECOVERY_CODE_LEN,
 };
 use credmgr_core::registry::ORPHAN_ID;
-use credmgr_keystore::machine_lock::{self, DeviceKey, KeyFileHealth, MachineLockError, WrapForm};
+use credmgr_keystore::machine_lock::{
+    self, DeviceKey, KeyFileHealth, MachineLockError, SyncedFolder, WrapForm,
+};
 use credmgr_keystore::software::SoftwareKeystore;
 use credmgr_keystore::{KeystoreId, PlatformKeystore, WrappedKey};
 use credmgr_store::atomic;
@@ -104,6 +106,18 @@ pub struct MachineLockStatus {
     /// ADR-165 M5: a bind record on this Mac names this folder under another vault id (see
     /// [`DetachedBindRecord`]).
     pub record_detached: Option<DetachedBindRecord>,
+    /// ADR-174 O-2: this Mac's device key file carries Time Machine's exclusion. `None` when there is no key
+    /// file or it cannot be told (not macOS).
+    pub device_key_time_machine_excluded: Option<bool>,
+    /// ADR-174 O-2: a Time Machine backup of the vault folder is covered: bound, the wrap sealed to this Mac's
+    /// key, that key made already excluded from Time Machine (its provenance says so) and still excluded. A key
+    /// made before ADR-174 may be in older backups, so it is never claimed.
+    pub device_key_time_machine_covered: bool,
+    /// ADR-174 O-3: the vault folder sits in a folder a sync service shares with other Macs; bind refuses it.
+    pub synced_folder: Option<SyncedFolder>,
+    /// ADR-174 O-5: what each phase of turning the lock on asks for beyond the passphrase and the recovery codes:
+    /// `"presence"` (a presence key is enrolled), `"secondFactor"` (a gate is, and no presence key) or `"none"`.
+    pub bind_proof: &'static str,
 }
 
 impl MachineLockStatus {
@@ -208,6 +222,9 @@ pub struct MachineLockBound {
     pub already: bool,
     /// A device key was made by this call (first bind on this Mac).
     pub device_key_created: bool,
+    /// ADR-174 O-2: an older device key that may be in Time Machine was put aside (`machine/retired/`) and the
+    /// key made by this call replaces it.
+    pub device_key_replaced: bool,
     /// The device key id the wrap is sealed to.
     pub key_id: Option<String>,
     /// The bind's root rotation (its new recovery code, once). `None` when `already`.
@@ -282,6 +299,8 @@ pub enum MachineLockOpError {
     NoRecoveryCode,
     /// Bind only: the device key would sit inside the vault folder, where every copy of the folder carries it.
     KeyInsideVault(PathBuf),
+    /// Bind only (ADR-174 O-3): the vault folder is in a folder a sync service shares with other Macs.
+    SyncedFolder(SyncedFolder),
     /// The device key or the sealed wrap could not be used.
     MachineLock(MachineLockError),
     /// A file could not be read or written.
@@ -328,6 +347,11 @@ impl std::fmt::Display for MachineLockOpError {
                 "the device key would be stored inside the vault folder ({}), where every copy of \
                  the folder would carry it",
                 p.display()
+            ),
+            MachineLockOpError::SyncedFolder(found) => write!(
+                f,
+                "the vault folder is in {}, which another Mac can open too",
+                found.label()
             ),
             MachineLockOpError::MachineLock(e) => write!(f, "{e}"),
             MachineLockOpError::Store(e) => write!(f, "{e}"),
@@ -780,12 +804,29 @@ impl BrokerState {
             _ => (false, false, None),
         };
         let key_path = self.device_key_path();
-        let (device_key_present, device_key_id, device_key_unreadable) =
+        let (device_key_present, device_key_id, device_key_unreadable, born_excluded) =
             match DeviceKey::load(&key_path) {
-                Ok(Some(k)) => (true, Some(machine_lock::key_id_hex(&k.id())), false),
-                Ok(None) => (false, None, false),
-                Err(_) => (false, None, true),
+                Ok(Some(k)) => (
+                    true,
+                    Some(machine_lock::key_id_hex(&k.id())),
+                    false,
+                    machine_lock::key_born_excluded(&key_path, &k.id()),
+                ),
+                Ok(None) => (false, None, false, false),
+                Err(_) => (false, None, true, false),
             };
+        // ADR-174 O-2: Time Machine coverage is claimed only for the key the wrap is sealed to, made already
+        // excluded (so no backup ever held it) and still excluded now.
+        let excluded = if device_key_present {
+            machine_lock::backup_excluded(&key_path)
+        } else {
+            None
+        };
+        let time_machine_covered = bound
+            && excluded == Some(true)
+            && device_key_id.is_some()
+            && device_key_id == sealed_key_id
+            && born_excluded;
         let record = self.read_bind_record();
         let plain_while_bound = record.is_some() && form == Some(WrapForm::Plain);
         let pre_bind_nodes = match (&record, bound) {
@@ -811,7 +852,116 @@ impl BrokerState {
             key_file: machine_lock::key_file_health(&key_path),
             in_folder_archives,
             record_detached: self.detached_bind_record(),
+            device_key_time_machine_excluded: excluded,
+            device_key_time_machine_covered: time_machine_covered,
+            synced_folder: self.vault_synced_folder(),
+            bind_proof: if !self.presence_keys().is_empty() {
+                "presence"
+            } else if self.is_gate_confirmed(super::GATE_SCOPE_VAULT) {
+                "secondFactor"
+            } else {
+                "none"
+            },
         }
+    }
+
+    /// ADR-174 O-5: what a bind phase checks before it asks for Touch ID or the second factor (so a request that
+    /// is refused anyway never costs a prompt): the vault is open and its folder is not shared by a sync service.
+    pub fn machine_lock_bind_precheck(&self) -> Result<(), MachineLockOpError> {
+        self.require_open_for_machine_lock()?;
+        self.refuse_synced_folder_if_plain()
+    }
+
+    /// ADR-174 O-2: whether a bind record on this Mac names another vault (a non-pending record for another vault
+    /// id and another folder; a record for this folder under an old id is this vault's own, detached). Such a
+    /// vault may be sealed under this Mac's device key, so the key is never put aside for it.
+    fn another_vault_bound_here(&self) -> bool {
+        let dir = self.state_dir().join("machine").join("vaults");
+        let current = self.vault_id();
+        let here = self.paths.root();
+        let here_text = here.display().to_string();
+        let here_canon = std::fs::canonicalize(here).ok();
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return false;
+        };
+        entries.flatten().any(|e| {
+            let Ok(bytes) = atomic::read(&e.path()) else {
+                return false;
+            };
+            let Ok(record) = serde_json::from_slice::<BindRecord>(&bytes) else {
+                // An unreadable record may be another vault's: keep the key (the conservative side).
+                return true;
+            };
+            let same_folder = record.vault == here_text
+                || (here_canon.is_some()
+                    && std::fs::canonicalize(&record.vault).ok() == here_canon);
+            !record.pending && current.as_deref() != Some(record.vault_id.as_str()) && !same_folder
+        })
+    }
+
+    /// ADR-174 O-2: at a bind of a plain vault, put this Mac's device key aside when it may already be in Time
+    /// Machine — on a Mac with Time Machine, a key whose provenance does not say it was made already excluded
+    /// (made before ADR-174, or its exclusion failed) — unless another vault on this Mac is bound and may be
+    /// sealed under it. Answers whether it was put aside. Crash-safe: this vault is plain, so until the bind's
+    /// rotation commits no wrap of it needs any key, and the old key is renamed, never deleted.
+    fn retire_device_key_if_it_may_be_in_time_machine(
+        &self,
+        key_path: &Path,
+    ) -> Result<bool, MachineLockOpError> {
+        let Some(existing) = DeviceKey::load(key_path).map_err(MachineLockOpError::MachineLock)?
+        else {
+            return Ok(false);
+        };
+        let time_machine_here = machine_lock::backup_excluded(key_path).is_some();
+        if !time_machine_here
+            || machine_lock::key_born_excluded(key_path, &existing.id())
+            || self.another_vault_bound_here()
+        {
+            return Ok(false);
+        }
+        machine_lock::retire_device_key(key_path, &existing)
+            .map_err(MachineLockOpError::MachineLock)?;
+        Ok(true)
+    }
+
+    /// ADR-174 O-3: whether the vault folder sits in iCloud Drive, a CloudStorage provider, a Dropbox folder or a
+    /// File Provider domain, where another Mac can open the same folder.
+    pub fn vault_synced_folder(&self) -> Option<SyncedFolder> {
+        machine_lock::synced_folder(self.paths.root(), self.sync_home().as_deref())
+    }
+
+    /// ADR-174 O-3: a bind that would tie a plain vault to this Mac refuses a shared folder, before anything is
+    /// proven or written. A vault already bound is not refused here (its "bind again" only finishes re-keying).
+    fn refuse_synced_folder_if_plain(&self) -> Result<(), MachineLockOpError> {
+        let plain = atomic::read(&self.paths.root_wrap_pass())
+            .ok()
+            .is_some_and(|b| machine_lock::classify(&b) == WrapForm::Plain);
+        if plain {
+            if let Some(found) = self.vault_synced_folder() {
+                return Err(MachineLockOpError::SyncedFolder(found));
+            }
+        }
+        Ok(())
+    }
+
+    /// ADR-174 O-2: keep this Mac's device key out of Time Machine. Called when a bind or a rotation has made or
+    /// used the key, and on every passphrase unlock of a sealed vault (re-asserted, since a restore from another
+    /// tool or a copy can drop the attribute). Never fatal: a failure is logged name-free (the diagnostic log
+    /// holds static words only) and `keystore.status` says so in its warning until a later call succeeds.
+    pub(super) fn exclude_device_key_from_time_machine(
+        &self,
+    ) -> Result<bool, machine_lock::BackupExcludeError> {
+        let result = machine_lock::exclude_from_backups(&self.device_key_path());
+        if let Err(e) = result {
+            crate::diag_log::event(
+                "machine_lock_time_machine_exclusion",
+                &[
+                    ("result", crate::diag_log::Value::Str("failed")),
+                    ("reason", crate::diag_log::Value::Str(e.reason())),
+                ],
+            );
+        }
+        result
     }
 
     /// Called by the root rotation with the new plain passphrase wrap: seal it when the vault is bound now
@@ -853,6 +1003,10 @@ impl BrokerState {
         }
         match DeviceKey::load_or_create(&key_path) {
             Ok((key, created)) => {
+                // ADR-174 O-2 (not for the bind's own rotation: its commit has just done it).
+                if !force {
+                    let _ = self.exclude_device_key_from_time_machine();
+                }
                 if record.is_none() && !force {
                     // (Not for the bind's own rotation: its commit writes and finishes its record, review M2.)
                     // A recovery that kept a vault bound on a Mac that had no record of it (a new Mac): from
@@ -913,6 +1067,8 @@ impl BrokerState {
         if self.pending_bind_held_elsewhere(&session, now) {
             return Err(MachineLockOpError::BindElsewhere);
         }
+        // ADR-174 O-3: a folder another Mac can open is refused before anything is proven, drawn or written.
+        self.refuse_synced_folder_if_plain()?;
         self.tidy_pending_bind_record();
 
         // A lockout guard (review P1-1): the code the owner holds must open the recovery wrap to the root key
@@ -1045,6 +1201,9 @@ impl BrokerState {
         let _auth = self.auth_lock.lock().expect("auth lock poisoned");
         self.require_open_for_machine_lock()?;
         let session_root = self.session_root_copy()?;
+        // ADR-174 O-3, again at the commit (the folder may have become synced since the prepare). The prepared
+        // bind keeps waiting; nothing was written.
+        self.refuse_synced_folder_if_plain()?;
 
         let pending = {
             let mut slot = self
@@ -1105,6 +1264,8 @@ impl BrokerState {
             // The vault was bound at the prepare: finish any re-key an interrupted bind (or a later restore
             // of a sealed project) left.
             let key_id = self.open_sealed_here(&stored)?;
+            // ADR-174 O-2: verified on every bind; a failure is a status warning, never a refusal.
+            let _ = self.exclude_device_key_from_time_machine();
             let record = match self.read_bind_record() {
                 Some(r) => r,
                 None => {
@@ -1122,6 +1283,7 @@ impl BrokerState {
             return Ok(MachineLockBound {
                 already: true,
                 device_key_created: false,
+                device_key_replaced: false,
                 key_id: Some(key_id),
                 rotation: None,
                 nodes_rekeyed,
@@ -1138,8 +1300,14 @@ impl BrokerState {
         // The vault may have changed between the phases (a node locked, a write queued): refuse again.
         let live = self.bind_preflight()?;
 
+        // ADR-174 O-2: a key that may already be in Time Machine (made before ADR-174, or its exclusion never
+        // held) is put aside and a fresh one, excluded before it reaches its path, is made: this vault is plain,
+        // so no wrap of it needs the old key. Not when another vault on this Mac is sealed under it.
+        let device_key_replaced = self.retire_device_key_if_it_may_be_in_time_machine(&key_path)?;
         let (key, created) =
             DeviceKey::load_or_create(&key_path).map_err(MachineLockOpError::MachineLock)?;
+        // The exclusion verified (and set, for a key kept); a failure is a status warning, never a refusal.
+        let _ = self.exclude_device_key_from_time_machine();
         // Review M2: the record (with the pre-bind public keys) is durable before the rotation, but marked
         // pending: it counts only once the passphrase file is sealed, so a crash before the rotation commits
         // leaves no record that matters (no false `plainWhileBound`, no re-lock at the next rotation).
@@ -1187,6 +1355,7 @@ impl BrokerState {
             return Ok(MachineLockBound {
                 already: false,
                 device_key_created: created,
+                device_key_replaced,
                 key_id: Some(machine_lock::key_id_hex(&key.id())),
                 rotation: Some(rotation),
                 nodes_rekeyed: Vec::new(),
@@ -1217,6 +1386,7 @@ impl BrokerState {
         Ok(MachineLockBound {
             already: false,
             device_key_created: created,
+            device_key_replaced,
             key_id: Some(machine_lock::key_id_hex(&key.id())),
             rotation: Some(rotation),
             nodes_rekeyed,
@@ -1233,6 +1403,26 @@ impl BrokerState {
             .expect("machine lock pending poisoned")
             .as_ref()
             .is_some_and(|p| now <= p.expires_at)
+    }
+
+    /// ADR-174 O-5: whether this login's commit would go past its own checks (a bind prepared by this login, not
+    /// expired, under the root key the vault runs under now). Only then does the commit ask for Touch ID or the
+    /// second factor; any other commit refuses on its own, at no prompt. Reads memory only.
+    pub fn machine_lock_bind_commit_would_proceed(&self, session: &str, now: i64) -> bool {
+        let session = sha256_of(session.as_bytes());
+        let Ok(root) = self.session_root_copy() else {
+            return false;
+        };
+        let digest = sha256_of(root.expose_secret());
+        self.machine_lock_pending
+            .lock()
+            .expect("machine lock pending poisoned")
+            .as_ref()
+            .is_some_and(|p| {
+                now <= p.expires_at
+                    && ct_eq_32(&p.session, &session)
+                    && ct_eq_32(&p.root_digest, &digest)
+            })
     }
 
     /// `keystore.bind` `cancel`: forget this login's prepared bind. Nothing durable was changed by it. Another

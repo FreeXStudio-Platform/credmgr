@@ -422,9 +422,10 @@ fn cli(fixture: &Fixture, args: &[&str], stdin: &str, token: Option<&str>) -> St
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
-/// ADR-155, end to end from a real MCP client: an agent discovers every setting, reads the KB, changes a cosmetic and a
-/// stricter setting at once, and asks for a weakening one, which waits until the owner — through the real CLI, with a
-/// fresh confirmation — approves it; the agent then sees it applied.
+/// ADR-155, end to end from a real MCP client: an agent discovers every setting, reads the KB, changes a stricter setting
+/// of its own project at once, is refused a vault setting (Global's, not a project agent's: the ADR-155 amendment, Q-1),
+/// and asks for a weakening change to its own project, which waits until the owner — through the real CLI, with a fresh
+/// confirmation — approves it; the agent then sees it applied.
 #[test]
 fn the_switchboard_end_to_end_from_a_real_mcp_client() {
     let fixture = start_fixture_broker();
@@ -447,7 +448,7 @@ fn the_switchboard_end_to_end_from_a_real_mcp_client() {
             call_tool(
                 6,
                 "credmgr_settings_set",
-                json!({ "id": "app.autoLockMins", "value": 0, "reason": "user asked never to auto-lock" }),
+                json!({ "id": "node.requireTwoFactor", "node": "acme", "value": "never", "reason": "user asked not to be asked for codes" }),
             ),
         ],
     );
@@ -464,7 +465,16 @@ fn the_switchboard_end_to_end_from_a_real_mcp_client() {
         .as_str()
         .unwrap()
         .contains("## 4. The switchboard"));
-    assert_eq!(tool_answer(&r[3])["applied"], true);
+    // A vault setting is Global's: a project agent is refused, even for something cosmetic.
+    assert_eq!(r[3]["result"]["isError"], true, "{:?}", r[3]);
+    assert!(
+        r[3]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("capability_not_held"),
+        "{:?}",
+        r[3]
+    );
     let stricter = tool_answer(&r[4]);
     assert_eq!(stricter["applied"], true);
     assert_eq!(stricter["change"], "strengthens");
@@ -530,13 +540,13 @@ fn the_switchboard_end_to_end_from_a_real_mcp_client() {
             call_tool(
                 2,
                 "credmgr_settings_get",
-                json!({ "id": "app.autoLockMins" }),
+                json!({ "id": "node.requireTwoFactor", "node": "acme" }),
             ),
         ],
     );
     assert_eq!(tool_answer(&r[0])["state"], "approved");
     let got = tool_answer(&r[1]);
-    assert_eq!(got["value"], 0);
+    assert_eq!(got["value"], "never");
     assert_eq!(got["recentChanges"][0]["request"], request.as_str());
     // An agent tool to decide does not exist.
     let r = run_mcp_session(

@@ -328,3 +328,55 @@ fn a_node_that_hides_its_names_hides_its_tags_and_refuses_a_filtered_list() {
     // The owner still sees them.
     assert_eq!(list_names(&state, &owner, "acme", "prod"), vec!["database"]);
 }
+
+/// ADR-174 (1): an agent that may list a node sees each listed entry's tags on the list, never another node's,
+/// and never on a node that hides its names.
+#[test]
+fn an_agent_sees_the_tags_of_the_entries_it_lists_and_no_others() {
+    let (_v, state) = created_vault(None);
+    let owner = login(&state);
+    create_node(&state, &owner, "acme");
+    create_node(&state, &owner, "beta");
+    let a = create_entry(&state, &owner, "acme", "acme-db", "tags-a-Pq31");
+    let a2 = create_entry(&state, &owner, "acme", "acme-plain", "tags-a2-Rs52");
+    let b = create_entry(&state, &owner, "beta", "beta-db", "tags-b-Uv73");
+    tag_set(&state, &owner, "acme", &a, json!(["prod", "db"])).unwrap();
+    tag_set(&state, &owner, "beta", &b, json!(["secret-beta"])).unwrap();
+
+    let bot = agent("acme", vec![Capability::List]);
+    let list = call(&state, &bot, NOW, "entry.list", json!({ "node": "acme" })).unwrap();
+    assert_eq!(list["tags"][&a], json!(["prod", "db"]), "{list}");
+    assert!(
+        list["tags"].get(&a2).is_none(),
+        "an untagged entry has no row: {list}"
+    );
+    assert!(
+        list.get("entries").is_none(),
+        "no other metadata for an agent: {list}"
+    );
+    assert!(!list.to_string().contains("secret-beta"), "{list}");
+
+    // Another node's list is refused and names nothing of beta's.
+    let cross = call(&state, &bot, NOW, "entry.list", json!({ "node": "beta" }));
+    let err = cross.expect_err("acme's agent cannot list beta");
+    assert!(!format!("{err:?}").contains("secret-beta"), "{err:?}");
+
+    // A node with no tagged entry keeps the pre-ADR-077 shape.
+    let plain = agent("beta", vec![Capability::List]);
+    tag_set(&state, &owner, "beta", &b, json!([])).unwrap();
+    let list = call(&state, &plain, NOW, "entry.list", json!({ "node": "beta" })).unwrap();
+    assert!(list.get("tags").is_none(), "{list}");
+
+    // privateNames hides the tags with the names.
+    call(
+        &state,
+        &owner,
+        NOW,
+        "node.policy",
+        json!({ "node": "acme", "reason": "hide names", "policy": { "privateNames": true } }),
+    )
+    .expect("node.policy");
+    let hidden = call(&state, &bot, NOW, "entry.list", json!({ "node": "acme" })).unwrap();
+    assert!(hidden.get("tags").is_none(), "{hidden}");
+    assert!(!hidden.to_string().contains("prod"), "{hidden}");
+}

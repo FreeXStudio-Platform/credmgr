@@ -150,6 +150,10 @@ pub enum GateRecoverError {
     /// Both factors were right, but the vault failed an integrity check, or
     /// the reset could not be written.
     Store(StoreError),
+    /// Wiring audit Q-2 (ADR-064/ADR-163 amendment): the caller is an agent — an agent token, or no token from
+    /// inside a registered project folder. `ops.rs` asks before either factor is read; this is the second asking,
+    /// once a freshly started broker has loaded the registry that names the project folders.
+    Agent,
 }
 
 /// Where the test suite can make [`BrokerState::persist`] "die" part-way
@@ -289,14 +293,27 @@ impl BrokerState {
         // it gave does not open the vault — an older, pre-bind wrap was put back. Say that (the recovery code
         // opens it), rather than an integrity failure or a wrong passphrase: the passphrase was right.
         let plain_while_bound = self.plain_wrap_while_bound();
-        self.complete_unlock_locked(root, now).map_err(|e| match e {
+        let opened = self.complete_unlock_locked(root, now).map_err(|e| match e {
             UnlockError::Integrity(_) | UnlockError::WrongPassphrase if plain_while_bound => {
                 UnlockError::MachineLock(
                     credmgr_keystore::machine_lock::MachineLockError::PlainWhileBound,
                 )
             }
             other => other,
-        })
+        });
+        // ADR-174 O-2: a sealed vault just opened with this Mac's device key; keep that key out of Time Machine
+        // (re-asserted at every unlock). Never fails the unlock: a failure is logged and shown by status.
+        if opened.is_ok()
+            && self.wrapped_root_pass().is_some_and(|w| {
+                matches!(
+                    credmgr_keystore::machine_lock::classify(&w.bytes),
+                    credmgr_keystore::machine_lock::WrapForm::Sealed { .. }
+                )
+            })
+        {
+            let _ = self.exclude_device_key_from_time_machine();
+        }
+        opened
     }
 
     /// ADR-098: the unlock that starts from a root key already in hand — the Touch ID path. Everything
@@ -929,19 +946,23 @@ impl BrokerState {
     /// recovery code costs the same Argon2id derivation a wrong passphrase
     /// does (review L7). It resets; it does not unlock. Returns whether a
     /// gate was actually in force to reset.
+    ///
+    /// Never an agent (wiring audit Q-2): `scope` is the caller, refused as `vault.recover` refuses it (ADR-163).
     pub fn gate_recover(
         &self,
+        scope: &crate::scope::BrokerScope,
         passphrase: SecretBox<String>,
         root_recovery_code: &str,
         now: i64,
     ) -> Result<bool, GateRecoverError> {
-        self.gate_recover_scope(passphrase, root_recovery_code, GATE_SCOPE_VAULT, now)
+        self.gate_recover_scope(scope, passphrase, root_recovery_code, GATE_SCOPE_VAULT, now)
     }
 
     /// [`BrokerState::gate_recover`] for any gate scope: the vault's (`global`) or one node's own second
     /// factor (ADR-135). The factors are the same two; only the gate that is reset differs.
     pub fn gate_recover_scope(
         &self,
+        scope: &crate::scope::BrokerScope,
         passphrase: SecretBox<String>,
         root_recovery_code: &str,
         gate_scope: &str,
@@ -973,6 +994,14 @@ impl BrokerState {
 
         if !self.is_durable() && self.paths.registry().exists() {
             self.load_from_disk(root).map_err(GateRecoverError::Store)?;
+        }
+
+        // Never an agent (wiring audit Q-2, as `vault.recover`'s review P1-1). `ops.rs` asked before either factor
+        // was read, but on a broker that had not loaded the vault the registry was empty then, so a token-less agent
+        // inside a project folder looked like a person's terminal. The registry is in memory now; ask again before
+        // anything is reset. The vault stays locked: the load opened nothing.
+        if self.is_identified_agent(scope) {
+            return Err(GateRecoverError::Agent);
         }
 
         let had_gate = self

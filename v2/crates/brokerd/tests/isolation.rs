@@ -4,8 +4,9 @@
 //!
 //! **Coverage in THIS file:** I-1, I-2, I-3, I-4, I-5, I-6, I-7, I-8, I-9,
 //! I-10, I-11, I-12, I-14, I-15, I-16, I-18, I-19, I-20, I-21, I-22, I-23,
-//! I-24, I-25, (ADR-078, the multi-field entry model) I-27, I-28, I-29, and
-//! (ADR-164, node-scoped agent tokens) I-30.
+//! I-24, I-25, (ADR-078, the multi-field entry model) I-27, I-28, I-29,
+//! (ADR-164, node-scoped agent tokens) I-30, and (the 2026-11-20 wiring audit's
+//! Q-1, the switchboard's agent ceiling) I-32.
 //!
 //! **Elsewhere in the workspace** (this list is the whole suite's index — keep
 //! it true, a coverage note that lags the code is how a gap hides in plain
@@ -2742,4 +2743,635 @@ fn merge_never_crosses_a_node_boundary() {
         f1_support::generation(&state, &owner, "beta"),
         beta_generation
     );
+}
+
+// ---------------------------------------------------------------------------
+// I-31 — the side doors (wiring audit 2026-11-20). Every op below reaches entries or nodes by a route other than
+// `entry.list` / `entry.reveal`, which I-1…I-30 already pin. Each must keep the same boundary.
+
+fn agent_scope(node_id: &str, caps: &[Capability]) -> BrokerScope {
+    BrokerScope {
+        node_id: node_id.to_string(),
+        capabilities: caps.to_vec(),
+        origin: Origin::Agent,
+        token_id: None,
+        bound_workdir: None,
+    }
+}
+
+/// I-31a. `search.content` with `params.node` answered `not_found` for a node that does not exist and an empty
+/// result for one that exists out of scope, so an agent could test node ids one by one (F-6, I-22: a node out
+/// of scope is not named, counted or implied). Both now answer the same; the owner's login, which reaches every
+/// node, is still told a missing node is missing.
+#[test]
+fn i31a_search_content_never_tells_an_agent_whether_an_unreachable_node_exists() {
+    let f = build_fixture();
+    f.state.unlock(0).expect("unlock");
+    let agent = agent_scope("a", FULL);
+    let search = |scope: &BrokerScope, node: &str| {
+        ops::dispatch(
+            &f.state,
+            scope,
+            NOW,
+            "search.content",
+            &serde_json::json!({ "term": "secret-value", "node": node }),
+        )
+    };
+    let own = search(&agent, "a").expect("its own node is searched");
+    assert!(own.to_string().contains("e_a1"), "{own}");
+    let out_of_scope = search(&agent, "b").expect("an unreachable node answers");
+    let missing = search(&agent, "no-such-node").expect("a missing node answers the same way");
+    let orphan = search(&agent, ORPHAN_ID).expect("orphan answers the same way");
+    assert_eq!(out_of_scope, missing, "existence leaked");
+    assert_eq!(out_of_scope, orphan, "orphan's presence leaked");
+    assert_eq!(out_of_scope["results"], serde_json::json!([]));
+
+    // An agent token, confined to its one node, gets the same.
+    let (token, _) = f
+        .state
+        .tokens
+        .issue_agent("x", FULL.to_vec(), "i31a", NOW, 3600)
+        .unwrap();
+    for node in ["a", "b", "no-such-node"] {
+        let r = with_token(
+            &f,
+            &token,
+            NOW,
+            "search.content",
+            serde_json::json!({ "term": "secret-value", "node": node }),
+        )
+        .expect("answers");
+        assert_eq!(r["results"], serde_json::json!([]), "{node}: {r}");
+    }
+
+    // The owner's login: a typo is still a typo.
+    let owner = f.state.tokens.issue(
+        GLOBAL_ID,
+        vec![
+            Capability::List,
+            Capability::Read,
+            Capability::Reveal,
+            Capability::Create,
+            Capability::Update,
+            Capability::Notes,
+            Capability::Admin,
+        ],
+        Origin::HumanUi,
+        None,
+    );
+    f.state.register_session_token(&owner.id, NOW);
+    let owner_scope = BrokerScope {
+        node_id: GLOBAL_ID.to_string(),
+        capabilities: owner.capabilities.clone(),
+        origin: Origin::HumanUi,
+        token_id: Some(owner.id.clone()),
+        bound_workdir: None,
+    };
+    assert!(matches!(
+        search(&owner_scope, "no-such-node"),
+        Err(OpError::NotFound(_))
+    ));
+    assert!(search(&owner_scope, "b")
+        .expect("the owner searches b")
+        .to_string()
+        .contains("e_b1"));
+}
+
+/// I-31b. ADR-172: an entry-level reveal grant opens exactly its entry. None of the side doors — the value search,
+/// the in-node name search, the near-name check, the vault-wide reference lookup — may show the node's other entry.
+#[test]
+fn i31b_an_entry_grant_never_widens_through_the_value_search_or_the_name_lookups() {
+    let f = build_fixture();
+    let root_key = SecretBox::new(Box::new([7u8; 32]));
+    {
+        let mut manifests = f.state.manifests.write().expect("manifests poisoned");
+        let body = manifests.get_mut("a").unwrap();
+        let mut second = body.entries[0].clone();
+        second.id = "e_a2".to_string();
+        second.name = "a_OTHER_SECRET".to_string();
+        second.r#ref = 2;
+        second.sha256 = "1".repeat(64);
+        body.entries.push(second);
+        body.counts.entries = 2;
+    }
+    let node_pub = f.state.seed_node_key(&root_key, "a");
+    for (entry_id, plaintext) in [
+        ("e_a1", b"a-secret-value".as_slice()),
+        ("e_a2", b"a-other-secret-value".as_slice()),
+    ] {
+        let envelope = credmgr_core::envelope::seal(plaintext, &node_pub, "a", entry_id)
+            .expect("seal of a small fixed payload cannot fail");
+        credmgr_store::atomic::write(&f.state.paths.entry_env("a", entry_id), &envelope)
+            .expect("writing the fixture envelope");
+    }
+    f.state
+        .registry
+        .write()
+        .expect("registry poisoned")
+        .grants
+        .push(Grant {
+            id: "g_b_to_a1_reveal".to_string(),
+            from: "b".to_string(),
+            to: GrantTarget::Entry {
+                node_id: "a".to_string(),
+                entry_id: "e_a1".to_string(),
+            },
+            direction: Direction::OneWay,
+            scope: vec![Capability::Reveal],
+            expires_at: None,
+            reason: "I-31b fixture".to_string(),
+        });
+    f.state.unlock(0).expect("unlock");
+    let b = agent_scope("b", FULL);
+    let call = |op: &str, params: serde_json::Value| ops::dispatch(&f.state, &b, NOW, op, &params);
+
+    // The value search matches the granted entry and never the sibling, whose value also contains the term.
+    let found = call(
+        "search.content",
+        serde_json::json!({ "term": "secret-value", "node": "a" }),
+    )
+    .expect("search.content answers");
+    let text = found.to_string();
+    assert!(
+        text.contains("e_a1"),
+        "the granted entry is searchable: {found}"
+    );
+    assert!(
+        !text.contains("e_a2") && !text.contains("a_OTHER_SECRET"),
+        "the sibling leaked through search.content: {found}"
+    );
+    let unscoped = call(
+        "search.content",
+        serde_json::json!({ "term": "other-secret" }),
+    )
+    .expect("an unscoped value search answers");
+    assert_eq!(unscoped["results"], serde_json::json!([]), "{unscoped}");
+
+    // The in-node name search lists exactly what the grant lists.
+    let named = call(
+        "entry.search",
+        serde_json::json!({ "node": "a", "term": "SECRET" }),
+    )
+    .expect("entry.search answers through the grant");
+    assert!(named.to_string().contains("e_a1"), "{named}");
+    assert!(!named.to_string().contains("a_OTHER_SECRET"), "{named}");
+
+    // The near-name check reads the node's whole inventory: refused, not narrowed.
+    assert!(matches!(
+        call(
+            "entry.similar",
+            serde_json::json!({ "node": "a", "name": "a_OTHER" })
+        ),
+        Err(OpError::NodeAccessDenied { .. })
+    ));
+    // The vault-wide reference lookup finds the granted entry and never the sibling (ref 2).
+    match call("entry.get_by_ref", serde_json::json!({ "reference": 2 })) {
+        Err(OpError::NotFound(_)) => {}
+        other => panic!("the sibling's reference must look like no entry at all: {other:?}"),
+    }
+}
+
+/// I-31c. ADR-164 decision 2: an agent token reaches exactly its node. The graph, the node list, the value
+/// search, a project's settings and the pending tray of another node are side doors that must keep to it.
+#[test]
+fn i31c_an_agent_token_reaches_no_other_node_through_the_graph_the_settings_or_the_tray() {
+    let f = build_fixture();
+    f.state.unlock(0).expect("unlock");
+    // `x` is a sub-node of `a` holding a grant to `b`; a cwd agent in `x` would read `a`, `b` (list+read) and Global.
+    let (token, _) = f
+        .state
+        .tokens
+        .issue_agent("x", FULL.to_vec(), "i31c", NOW, 3600)
+        .unwrap();
+    let call = |op: &str, params: serde_json::Value| with_token(&f, &token, NOW, op, params);
+
+    let graph = call("graph.snapshot", serde_json::json!({})).expect("graph.snapshot answers");
+    let ids: Vec<&str> = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["x"], "{graph}");
+    let listed = call("node.list", serde_json::json!({})).expect("node.list answers");
+    assert_eq!(listed["nodes"], serde_json::json!(["x"]), "{listed}");
+
+    let values = call(
+        "search.content",
+        serde_json::json!({ "term": "secret-value" }),
+    )
+    .expect("search.content answers");
+    for r in values["results"].as_array().unwrap() {
+        assert_eq!(
+            r["node"], "x",
+            "the value search left the token's node: {values}"
+        );
+    }
+
+    for node in ["a", GLOBAL_ID, "b"] {
+        assert!(
+            matches!(
+                call("settings.list", serde_json::json!({ "node": node })),
+                Err(OpError::NotFound(_))
+            ),
+            "settings.list {node}"
+        );
+        assert!(
+            matches!(
+                call(
+                    "settings.set",
+                    serde_json::json!({ "id": "node.lockAfterSeconds", "node": node, "value": 60, "reason": "i31c" })
+                ),
+                Err(OpError::NotFound(_))
+            ),
+            "settings.set {node}"
+        );
+        assert!(
+            matches!(
+                call("vault.pending_list", serde_json::json!({ "node": node })),
+                Err(OpError::NodeAccessDenied { rule: "R8", .. })
+            ),
+            "vault.pending_list {node}"
+        );
+    }
+    // Nothing was written to another node's policy.
+    let registry = f.state.registry.read().expect("registry poisoned");
+    for node in ["a", GLOBAL_ID, "b"] {
+        assert_eq!(
+            registry.nodes[node].policy.lock_after_seconds, None,
+            "{node}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// I-32 (wiring audit 2026-11-20, Q-1; ADR-155 amendment) — the switchboard keeps to an agent's capability ceiling.
+// Every request goes through the real server wiring from a working folder (`server::handle_request_at`, no token),
+// so the scope is the one `resolve_scope` gives a cwd agent: its project's node, with that node's `agentAccess`.
+
+const I32_FOLDER_A: &str = "/srv/i32/projects/a";
+const I32_FOLDER_X: &str = "/srv/i32/projects/a-sub-x";
+
+/// The fixture, unlocked, with a folder registered to `a` and one to its sub-node `x`, and `a`'s agent access set.
+fn i32_fixture(access_a: credmgr_core::registry::AgentAccess) -> Fixture {
+    let f = build_fixture();
+    f.state.unlock(0).expect("unlock");
+    {
+        let mut registry = f.state.registry.write().expect("registry poisoned");
+        let a = registry.nodes.get_mut("a").unwrap();
+        a.workdirs.push(I32_FOLDER_A.to_string());
+        a.policy.agent_access = access_a;
+        registry
+            .nodes
+            .get_mut("x")
+            .unwrap()
+            .workdirs
+            .push(I32_FOLDER_X.to_string());
+    }
+    f
+}
+
+fn from_folder(
+    f: &Fixture,
+    cwd: &str,
+    op: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, OpError> {
+    let request = credmgr_brokerd::protocol::Request {
+        id: "r".to_string(),
+        op: op.to_string(),
+        token: None,
+        params,
+    };
+    let peer = credmgr_brokerd::peer::PeerInfo {
+        uid: 501,
+        pid: 1,
+        cwd: Some(format!("{cwd}/src")),
+    };
+    server::handle_request_at(&f.state, &peer, &request, NOW, std::time::Instant::now()).0
+}
+
+/// The policies an I-32 test must leave exactly as they were, on every node it aims at.
+fn i32_policy_snapshot(f: &Fixture) -> String {
+    let registry = f.state.registry.read().expect("registry poisoned");
+    let mut out = String::new();
+    for node in [GLOBAL_ID, "a", "b", "x", "y"] {
+        out.push_str(&serde_json::to_string(&registry.nodes[node].policy).unwrap());
+    }
+    out
+}
+
+fn i32_set(
+    f: &Fixture,
+    cwd: &str,
+    id: &str,
+    node: Option<&str>,
+    value: serde_json::Value,
+) -> Result<serde_json::Value, OpError> {
+    let mut p = serde_json::json!({ "id": id, "value": value, "reason": "i32" });
+    if let Some(n) = node {
+        p["node"] = serde_json::json!(n);
+    }
+    from_folder(f, cwd, "settings.set", p)
+}
+
+/// I-32a. `scope.rs`: "`none` gets nothing, full stop." An agent in a project set to `agentAccess: none` reads no
+/// setting, changes none — not even to something stricter, on its own project, on Global or on the vault — reverts
+/// none and files no request, its own access included. Every answer is `capability_not_held`, the same for its own
+/// project, another one and one that does not exist.
+#[test]
+fn i32a_an_agent_with_no_access_reads_and_changes_no_setting_and_files_no_request() {
+    let f = i32_fixture(credmgr_core::registry::AgentAccess::None);
+    let before = i32_policy_snapshot(&f);
+    let call = |op: &str, params: serde_json::Value| from_folder(&f, I32_FOLDER_A, op, params);
+    let set = |id: &str, node: Option<&str>, value: serde_json::Value| {
+        i32_set(&f, I32_FOLDER_A, id, node, value)
+    };
+    let who = call("whoami", serde_json::json!({})).expect("whoami answers");
+    assert_eq!(who["node"], "a", "{who}");
+    assert_eq!(who["capabilities"], serde_json::json!([]), "{who}");
+
+    let attempts = [
+        (
+            "own project, stricter",
+            set("node.lockAfterSeconds", Some("a"), serde_json::json!(60)),
+        ),
+        (
+            "own project, its own access raised",
+            set(
+                "node.agentAccess",
+                Some("a"),
+                serde_json::json!("read-write"),
+            ),
+        ),
+        (
+            "Global's node setting, stricter",
+            set(
+                "node.requireTwoFactor",
+                Some(GLOBAL_ID),
+                serde_json::json!("always"),
+            ),
+        ),
+        (
+            "a vault setting, stricter",
+            set(
+                "vault.confirmBeforeReveal.mode",
+                None,
+                serde_json::json!("everyTime"),
+            ),
+        ),
+        (
+            "a vault setting, cosmetic",
+            set("app.theme", None, serde_json::json!("dark")),
+        ),
+        (
+            "another project",
+            set("node.lockAfterSeconds", Some("b"), serde_json::json!(60)),
+        ),
+        (
+            "no such project",
+            set("node.lockAfterSeconds", Some("nope"), serde_json::json!(60)),
+        ),
+        (
+            "list, own project",
+            call("settings.list", serde_json::json!({ "node": "a" })),
+        ),
+        ("list, vault", call("settings.list", serde_json::json!({}))),
+        (
+            "list, another project",
+            call("settings.list", serde_json::json!({ "node": "b" })),
+        ),
+        (
+            "get, own project",
+            call(
+                "settings.get",
+                serde_json::json!({ "id": "node.agentAccess", "node": "a" }),
+            ),
+        ),
+        (
+            "get, vault",
+            call(
+                "settings.get",
+                serde_json::json!({ "id": "app.autoLockMins" }),
+            ),
+        ),
+        (
+            "revert",
+            call(
+                "settings.revert",
+                serde_json::json!({ "change": "sc-0000000000000000" }),
+            ),
+        ),
+        (
+            "request_get",
+            call(
+                "settings.request_get",
+                serde_json::json!({ "request": "sr-0000000000000000" }),
+            ),
+        ),
+    ];
+    for (what, answer) in attempts {
+        assert!(
+            matches!(answer, Err(OpError::CapabilityNotHeld { .. })),
+            "{what}: {answer:?}"
+        );
+    }
+    assert!(
+        f.state.setting_requests_all().is_empty(),
+        "no request was filed"
+    );
+    assert_eq!(i32_policy_snapshot(&f), before, "no setting changed");
+    // The static knowledge base holds no vault state; it stays readable, as `ops.json` is.
+    call("settings.kb", serde_json::json!({})).expect("settings.kb answers");
+}
+
+/// I-32b. An agent that holds `update` changes settings only of its own node: a stricter value on its own project
+/// applies, but Global's settings (a node setting on Global, or a vault setting), its parent's, a shared sibling's and
+/// an unrelated project's are refused — reaching a node through the access graph is entry access, never a say over
+/// that node's policy. Nothing outside its own node changes and no request is filed for any of them.
+#[test]
+fn i32b_an_agent_changes_settings_only_of_its_own_node() {
+    let f = i32_fixture(credmgr_core::registry::AgentAccess::ReadWrite);
+    let own = i32_set(
+        &f,
+        I32_FOLDER_A,
+        "node.lockAfterSeconds",
+        Some("a"),
+        serde_json::json!(60),
+    )
+    .expect("a stricter value on its own project applies");
+    assert_eq!(own["applied"], true, "{own}");
+    let own_sub = i32_set(
+        &f,
+        I32_FOLDER_X,
+        "node.lockAfterSeconds",
+        Some("x"),
+        serde_json::json!(120),
+    )
+    .expect("the sub-node's agent tightens its own node");
+    assert_eq!(own_sub["applied"], true, "{own_sub}");
+
+    let before = i32_policy_snapshot(&f);
+    let not_held = |what: &str, answer: Result<serde_json::Value, OpError>| {
+        assert!(
+            matches!(
+                answer,
+                Err(OpError::CapabilityNotHeld {
+                    capability: Capability::Update
+                })
+            ),
+            "{what}: {answer:?}"
+        );
+    };
+    not_held(
+        "Global's node setting from a project agent",
+        i32_set(
+            &f,
+            I32_FOLDER_A,
+            "node.requireTwoFactor",
+            Some(GLOBAL_ID),
+            serde_json::json!("always"),
+        ),
+    );
+    not_held(
+        "a vault setting (stricter) from a project agent",
+        i32_set(
+            &f,
+            I32_FOLDER_A,
+            "vault.confirmBeforeReveal.mode",
+            None,
+            serde_json::json!("everyTime"),
+        ),
+    );
+    not_held(
+        "a vault setting (cosmetic) from a project agent",
+        i32_set(
+            &f,
+            I32_FOLDER_A,
+            "app.theme",
+            None,
+            serde_json::json!("dark"),
+        ),
+    );
+    not_held(
+        "a vault setting (weaker) from a project agent: refused, not queued",
+        i32_set(
+            &f,
+            I32_FOLDER_A,
+            "app.autoLockMins",
+            None,
+            serde_json::json!(0),
+        ),
+    );
+    not_held(
+        "its parent's setting (an ancestor it reads, R4)",
+        i32_set(
+            &f,
+            I32_FOLDER_X,
+            "node.lockAfterSeconds",
+            Some("a"),
+            serde_json::json!(30),
+        ),
+    );
+    not_held(
+        "a shared sibling's setting (R6)",
+        i32_set(
+            &f,
+            I32_FOLDER_X,
+            "node.lockAfterSeconds",
+            Some("y"),
+            serde_json::json!(30),
+        ),
+    );
+    // A project it cannot reach still answers as one that does not exist.
+    let other = i32_set(
+        &f,
+        I32_FOLDER_A,
+        "node.lockAfterSeconds",
+        Some("b"),
+        serde_json::json!(30),
+    );
+    assert!(matches!(other, Err(OpError::NotFound(_))), "{other:?}");
+    assert_eq!(
+        i32_policy_snapshot(&f),
+        before,
+        "nothing outside its own node changed"
+    );
+    assert!(
+        f.state.setting_requests_all().is_empty(),
+        "no request was filed"
+    );
+
+    // `settings.list` says so: its own project's settings are its to change, the vault's are read only.
+    let mine = from_folder(
+        &f,
+        I32_FOLDER_A,
+        "settings.list",
+        serde_json::json!({ "node": "a" }),
+    )
+    .unwrap();
+    let rule = |id: &str| {
+        mine["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == id)
+            .unwrap()["you"]
+            .clone()
+    };
+    assert_eq!(
+        rule("node.lockAfterSeconds"),
+        "direct when stricter; approval when weaker"
+    );
+    assert_eq!(rule("app.autoLockMins"), "read only");
+}
+
+/// I-32c. An agent never files a request that raises its own access. In a read-only project it holds no `update`, so
+/// asking for `read-write` is refused outright (the request the audit saw pending is never created); a read-write
+/// agent's weakening change to another of its own project's settings still waits for the owner (ADR-155 unchanged).
+#[test]
+fn i32c_an_agent_never_files_a_request_that_raises_its_own_access() {
+    let f = i32_fixture(credmgr_core::registry::AgentAccess::ReadOnly);
+    let ask = i32_set(
+        &f,
+        I32_FOLDER_A,
+        "node.agentAccess",
+        Some("a"),
+        serde_json::json!("read-write"),
+    );
+    assert!(
+        matches!(ask, Err(OpError::CapabilityNotHeld { .. })),
+        "{ask:?}"
+    );
+    assert!(
+        f.state.setting_requests_all().is_empty(),
+        "no request was filed"
+    );
+    assert_eq!(
+        f.state.registry.read().unwrap().nodes["a"]
+            .policy
+            .agent_access,
+        credmgr_core::registry::AgentAccess::ReadOnly
+    );
+
+    // With read-write access, a weakening change to its own project waits for the owner, as ADR-155 decided.
+    f.state
+        .registry
+        .write()
+        .unwrap()
+        .nodes
+        .get_mut("a")
+        .unwrap()
+        .policy
+        .agent_access = credmgr_core::registry::AgentAccess::ReadWrite;
+    let weaker = i32_set(
+        &f,
+        I32_FOLDER_A,
+        "node.requireTwoFactor",
+        Some("a"),
+        serde_json::json!("never"),
+    )
+    .expect("a weakening change from an agent is a request");
+    assert_eq!(weaker["state"], "pending", "{weaker}");
+    assert_eq!(f.state.setting_requests_all().len(), 1);
 }

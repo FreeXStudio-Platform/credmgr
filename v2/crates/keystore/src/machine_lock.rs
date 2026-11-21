@@ -277,6 +277,10 @@ impl DeviceKey {
             let _ = fs::remove_file(&tmp);
             return Err(MachineLockError::Io(e.to_string()));
         }
+        // ADR-174 O-2: the key is excluded from Time Machine **before** it appears at its path (the attribute is
+        // on the inode, which the hard link shares), so no Time Machine backup can ever hold it. A failure is not
+        // fatal; the provenance file then says the key was not born excluded.
+        let born_excluded = exclude_from_backups(&tmp) == Ok(true);
         let linked = fs::hard_link(&tmp, path);
         let _ = fs::remove_file(&tmp);
         match linked {
@@ -288,6 +292,11 @@ impl DeviceKey {
         sync_dir(dir).map_err(|e| MachineLockError::Io(e.to_string()))?;
         let on_disk = Self::load(path)?.ok_or(MachineLockError::DeviceKeyMissing)?;
         let created = on_disk.id == made.id;
+        if created {
+            // Durable before any wrap is sealed under the key. Best effort: a key with no provenance is treated
+            // as one that may be in Time Machine (replaced at the next bind of a plain vault, never claimed).
+            let _ = write_key_provenance(path, &on_disk.id, born_excluded);
+        }
         Ok((on_disk, created))
     }
 }
@@ -477,6 +486,388 @@ pub fn open(key: &DeviceKey, sealed: &[u8]) -> Result<Vec<u8>, MachineLockError>
     }
 }
 
+// ---- ADR-174 O-2: the device key stays out of Time Machine ----------------------------------------------------
+
+/// The extended attribute Time Machine reads for a sticky exclusion (what `tmutil addexclusion` writes).
+pub const BACKUP_EXCLUDE_XATTR: &str = "com.apple.metadata:com_apple_backup_excludeItem";
+
+/// Its value: the binary property list of the one string `com.apple.backupd`, byte for byte what
+/// `tmutil addexclusion` writes (checked against it on macOS by a test).
+pub const BACKUP_EXCLUDE_VALUE: [u8; 61] = *b"bplist00_\x10\x11com.apple.backupd\x08\
+\x00\x00\x00\x00\x00\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00\x01\
+\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x1c";
+
+/// The system's own `xattr` tool. The workspace forbids `unsafe`, so the attribute is read and written by this
+/// fixed binary with fixed arguments and the path, never through a shell (ADR-174 O-2).
+#[cfg(target_os = "macos")]
+const XATTR_TOOL: &str = "/usr/bin/xattr";
+
+/// Why the device key could not be marked as excluded from Time Machine. Name-free: it carries no path and no
+/// tool output, so it can be logged and shown as it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupExcludeError {
+    /// The system tool could not be started.
+    ToolUnavailable,
+    /// The tool ran and refused (a read-only volume, a file system without extended attributes).
+    Refused,
+    /// The attribute was written, but reading it back did not give the value written.
+    NotVerified,
+}
+
+impl BackupExcludeError {
+    /// A stable word for logs and answers.
+    pub fn reason(self) -> &'static str {
+        match self {
+            BackupExcludeError::ToolUnavailable => "tool_unavailable",
+            BackupExcludeError::Refused => "refused",
+            BackupExcludeError::NotVerified => "not_verified",
+        }
+    }
+}
+
+impl std::fmt::Display for BackupExcludeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BackupExcludeError::ToolUnavailable => {
+                write!(f, "the system xattr tool could not be started")
+            }
+            BackupExcludeError::Refused => {
+                write!(
+                    f,
+                    "the file system refused the Time Machine exclusion attribute"
+                )
+            }
+            BackupExcludeError::NotVerified => write!(
+                f,
+                "the Time Machine exclusion attribute did not read back as written"
+            ),
+        }
+    }
+}
+
+/// The path as an argument the tool cannot read as an option: absolute paths already start with `/`.
+#[cfg(target_os = "macos")]
+fn tool_path_arg(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        Path::new(".").join(path)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn xattr_tool() -> std::process::Command {
+    let mut cmd = std::process::Command::new(XATTR_TOOL);
+    cmd.env_clear()
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    cmd
+}
+
+#[cfg(target_os = "macos")]
+fn decode_hex_loose(text: &str) -> Option<Vec<u8>> {
+    let digits: Vec<u8> = text.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+    if digits.len() % 2 != 0 {
+        return None;
+    }
+    let nibble = |c: u8| -> Option<u8> {
+        match c {
+            b'0'..=b'9' => Some(c - b'0'),
+            b'a'..=b'f' => Some(c - b'a' + 10),
+            b'A'..=b'F' => Some(c - b'A' + 10),
+            _ => None,
+        }
+    };
+    digits
+        .chunks(2)
+        .map(|p| Some((nibble(p[0])? << 4) | nibble(p[1])?))
+        .collect()
+}
+
+/// Whether `path` carries Time Machine's sticky exclusion with exactly [`BACKUP_EXCLUDE_VALUE`]. `None` where it
+/// cannot be told: not macOS, or the tool could not be started. The link itself is read, never its target.
+pub fn backup_excluded(path: &Path) -> Option<bool> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = xattr_tool()
+            .args(["-s", "-p", "-x", BACKUP_EXCLUDE_XATTR])
+            .arg(tool_path_arg(path))
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            // No such attribute (or no such file): not excluded.
+            return Some(false);
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+        Some(decode_hex_loose(&text).as_deref() == Some(&BACKUP_EXCLUDE_VALUE[..]))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// ADR-174 O-2: mark the device key at `path` excluded from Time Machine (the sticky exclusion `tmutil
+/// addexclusion` writes), and check that it reads back. `Ok(true)` when it is excluded now (written by this call
+/// or already there), `Ok(false)` where there is nothing to do (not macOS). Never fatal for a caller: a refusal is
+/// a [`BackupExcludeError`] to log and show, and the key is still the key.
+pub fn exclude_from_backups(path: &Path) -> Result<bool, BackupExcludeError> {
+    #[cfg(target_os = "macos")]
+    {
+        match backup_excluded(path) {
+            Some(true) => return Ok(true),
+            Some(false) => {}
+            None => return Err(BackupExcludeError::ToolUnavailable),
+        }
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut hex = String::with_capacity(BACKUP_EXCLUDE_VALUE.len() * 2);
+        for b in BACKUP_EXCLUDE_VALUE {
+            hex.push(char::from(HEX[usize::from(b >> 4)]));
+            hex.push(char::from(HEX[usize::from(b & 0x0f)]));
+        }
+        let status = xattr_tool()
+            .stdout(std::process::Stdio::null())
+            .args(["-s", "-w", "-x", BACKUP_EXCLUDE_XATTR])
+            .arg(hex)
+            .arg(tool_path_arg(path))
+            .status()
+            .map_err(|_| BackupExcludeError::ToolUnavailable)?;
+        if !status.success() {
+            return Err(BackupExcludeError::Refused);
+        }
+        match backup_excluded(path) {
+            Some(true) => Ok(true),
+            _ => Err(BackupExcludeError::NotVerified),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        Ok(false)
+    }
+}
+
+/// `<dir>/lock.key.provenance.json`: when the device key beside it was made, whether it was already excluded from
+/// Time Machine (ADR-174 O-2). Holds the key's id (not secret) and a flag; never the key.
+pub fn key_provenance_path(key_path: &Path) -> PathBuf {
+    let mut name = key_path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(".provenance.json");
+    key_path.with_file_name(name)
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KeyProvenance {
+    v: u32,
+    key_id: String,
+    born_excluded: bool,
+}
+
+/// Write the provenance of the key `id` at `key_path`: a unique temporary file, fsynced, renamed into place, the
+/// directory fsynced.
+pub fn write_key_provenance(
+    key_path: &Path,
+    id: &[u8; KEY_ID_LEN],
+    born_excluded: bool,
+) -> std::io::Result<()> {
+    let path = key_provenance_path(key_path);
+    let body = serde_json::to_vec(&KeyProvenance {
+        v: 1,
+        key_id: key_id_hex(id),
+        born_excluded,
+    })
+    .map_err(std::io::Error::other)?;
+    let tmp = tmp_path(&path);
+    let mut opts = OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let written = (|| -> std::io::Result<()> {
+        let mut f = opts.open(&tmp)?;
+        f.write_all(&body)?;
+        f.sync_all()?;
+        fs::rename(&tmp, &path)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    written?;
+    if let Some(dir) = path.parent() {
+        sync_dir(dir)?;
+    }
+    Ok(())
+}
+
+/// ADR-174 O-2: whether the key `id` at `key_path` was made already excluded from Time Machine (its provenance
+/// file names this id and says so). A key with no provenance (made before ADR-174) or another id's is `false`.
+pub fn key_born_excluded(key_path: &Path, id: &[u8; KEY_ID_LEN]) -> bool {
+    let Ok(bytes) = fs::read(key_provenance_path(key_path)) else {
+        return false;
+    };
+    serde_json::from_slice::<KeyProvenance>(&bytes)
+        .is_ok_and(|p| p.born_excluded && p.key_id == key_id_hex(id))
+}
+
+/// ADR-174 O-2 (review of the first build): put a device key that may already be in Time Machine aside, so the
+/// next [`DeviceKey::load_or_create`] makes a fresh one that never was. The old key is first excluded (so no later
+/// backup takes it again), then renamed — never deleted, since a copy sealed under it may still need it — to
+/// `<dir>/retired/<key id>.key`, and the directories are fsynced. Its provenance file goes with it. Only for a
+/// key no live wrap needs: the caller binds a plain vault and has checked that no other vault on this Mac uses it.
+pub fn retire_device_key(key_path: &Path, key: &DeviceKey) -> Result<PathBuf, MachineLockError> {
+    let io = |e: std::io::Error| MachineLockError::Io(e.to_string());
+    let dir = key_path
+        .parent()
+        .ok_or_else(|| MachineLockError::Io("the device key path has no parent".into()))?;
+    let retired = dir.join("retired");
+    create_private_dir(&retired)?;
+    let _ = exclude_from_backups(key_path);
+    let target = retired.join(format!("{}.key", key_id_hex(&key.id)));
+    fs::rename(key_path, &target).map_err(io)?;
+    let _ = fs::remove_file(key_provenance_path(key_path));
+    sync_dir(&retired).map_err(io)?;
+    sync_dir(dir).map_err(io)?;
+    Ok(target)
+}
+
+// ---- ADR-174 O-3: no machine lock on a folder two Macs share ---------------------------------------------------
+
+/// A sync service that would let another Mac open the same vault folder (ADR-174 O-3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncedFolder {
+    /// Under `~/Library/Mobile Documents` (iCloud Drive).
+    ICloudDrive,
+    /// Under `~/Library/CloudStorage/<provider>` (Dropbox, Google Drive, OneDrive, Box, ... on File Provider).
+    CloudStorage(&'static str),
+    /// The folder or one of its parents holds a `.dropbox` marker (a Dropbox folder outside CloudStorage).
+    Dropbox,
+    /// The folder or one of its parents carries a File Provider or iCloud attribute (iCloud Drive's Desktop &
+    /// Documents sync keeps `~/Desktop` and `~/Documents` in place, marked this way).
+    FileProvider,
+}
+
+impl SyncedFolder {
+    /// A stable word for answers and tests.
+    pub fn reason(self) -> &'static str {
+        match self {
+            SyncedFolder::ICloudDrive => "icloud_drive",
+            SyncedFolder::CloudStorage(_) => "cloud_storage",
+            SyncedFolder::Dropbox => "dropbox",
+            SyncedFolder::FileProvider => "file_provider",
+        }
+    }
+
+    /// The service, in a person's words. Never a path or an account name (a CloudStorage folder's name can
+    /// carry an e-mail address, so only its provider prefix is used).
+    pub fn label(self) -> &'static str {
+        match self {
+            SyncedFolder::ICloudDrive => "iCloud Drive",
+            SyncedFolder::CloudStorage(provider) => provider,
+            SyncedFolder::Dropbox => "Dropbox",
+            SyncedFolder::FileProvider => {
+                "iCloud Drive (Desktop & Documents) or another file-syncing service"
+            }
+        }
+    }
+}
+
+fn cloud_storage_provider(folder: &std::ffi::OsStr) -> &'static str {
+    let name = folder.to_string_lossy();
+    for (prefix, label) in [
+        ("Dropbox", "Dropbox"),
+        ("GoogleDrive", "Google Drive"),
+        ("OneDrive", "OneDrive"),
+        ("Box", "Box"),
+        ("iCloudDrive", "iCloud Drive"),
+    ] {
+        if name.starts_with(prefix) {
+            return label;
+        }
+    }
+    "a cloud storage service"
+}
+
+/// The extended-attribute names that say a folder belongs to a File Provider domain or to iCloud.
+fn is_sync_xattr(name: &str) -> bool {
+    name.starts_with("com.apple.fileprovider")
+        || name.starts_with("com.apple.file-provider")
+        || name.starts_with("com.apple.icloud")
+}
+
+/// The extended-attribute names on `path` itself (not a link's target). Empty where they cannot be read.
+pub fn xattr_names(path: &Path) -> Vec<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let Ok(out) = xattr_tool().arg("-s").arg(tool_path_arg(path)).output() else {
+            return Vec::new();
+        };
+        if !out.status.success() {
+            return Vec::new();
+        }
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        Vec::new()
+    }
+}
+
+/// ADR-174 O-3: whether `vault_dir` sits in a folder a sync service shares with other Macs. `home` is the user's
+/// home folder (injected, so a test can stand one up in a temporary directory). Checked, in order: the folder
+/// (as written and resolved) under `<home>/Library/Mobile Documents` or `<home>/Library/CloudStorage/*`; a
+/// `.dropbox` marker in the folder or any parent; a File Provider or iCloud extended attribute on the folder
+/// or any parent. Reads only; a parent that cannot be read is passed over.
+pub fn synced_folder(vault_dir: &Path, home: Option<&Path>) -> Option<SyncedFolder> {
+    let resolved = vault_dir
+        .canonicalize()
+        .unwrap_or_else(|_| vault_dir.to_path_buf());
+    let candidates = [vault_dir.to_path_buf(), resolved.clone()];
+    if let Some(home) = home {
+        let homes = [
+            home.to_path_buf(),
+            home.canonicalize().unwrap_or_else(|_| home.to_path_buf()),
+        ];
+        for h in &homes {
+            let mobile = h.join("Library").join("Mobile Documents");
+            let cloud = h.join("Library").join("CloudStorage");
+            for c in &candidates {
+                if c.starts_with(&mobile) {
+                    return Some(SyncedFolder::ICloudDrive);
+                }
+                if let Ok(rest) = c.strip_prefix(&cloud) {
+                    if let Some(first) = rest.components().next() {
+                        return Some(SyncedFolder::CloudStorage(cloud_storage_provider(
+                            first.as_os_str(),
+                        )));
+                    }
+                }
+            }
+        }
+    }
+    for dir in resolved.ancestors() {
+        if fs::symlink_metadata(dir.join(".dropbox")).is_ok() {
+            return Some(SyncedFolder::Dropbox);
+        }
+    }
+    for dir in resolved.ancestors() {
+        if xattr_names(dir).iter().any(|n| is_sync_xattr(n)) {
+            return Some(SyncedFolder::FileProvider);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -556,7 +947,8 @@ mod tests {
         let strays: Vec<_> = fs::read_dir(path.parent().unwrap())
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_name() != "lock.key")
+            // ADR-174 O-2: the key's provenance file sits beside it.
+            .filter(|e| e.file_name() != "lock.key" && e.file_name() != "lock.key.provenance.json")
             .collect();
         assert!(strays.is_empty(), "temporary files left: {strays:?}");
 
@@ -592,8 +984,16 @@ mod tests {
             let on_disk = DeviceKey::load(&path).unwrap().unwrap().id();
             assert!(answers.iter().all(|(id, _)| *id == on_disk), "{answers:?}");
             assert_eq!(answers.iter().filter(|(_, created)| *created).count(), 1);
-            let entries = fs::read_dir(path.parent().unwrap()).unwrap().count();
-            assert_eq!(entries, 1, "only lock.key is left");
+            let mut entries: Vec<_> = fs::read_dir(path.parent().unwrap())
+                .unwrap()
+                .filter_map(|e| e.ok().map(|e| e.file_name()))
+                .collect();
+            entries.sort();
+            assert_eq!(
+                entries,
+                ["lock.key", "lock.key.provenance.json"],
+                "only the key and its provenance (written by the one creator) are left"
+            );
         }
     }
 
@@ -665,5 +1065,199 @@ mod tests {
         assert!(looks_like_truncated_seal(cut));
         assert!(!looks_like_truncated_seal(&plain()));
         assert!(!looks_like_truncated_seal(&sealed));
+    }
+
+    /// ADR-174 O-2: the value is exactly what `tmutil addexclusion` writes, the exclusion reads back, Time
+    /// Machine itself reports the file excluded, and marking twice changes nothing.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_device_key_is_excluded_from_time_machine_with_the_value_tmutil_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let by_tmutil = dir.path().join("by-tmutil");
+        fs::write(&by_tmutil, b"x").unwrap();
+        let ran = std::process::Command::new("/usr/bin/tmutil")
+            .arg("addexclusion")
+            .arg(&by_tmutil)
+            .status();
+        if ran.is_ok_and(|s| s.success()) {
+            assert_eq!(
+                backup_excluded(&by_tmutil),
+                Some(true),
+                "tmutil writes exactly BACKUP_EXCLUDE_VALUE"
+            );
+        }
+        let key = dir.path().join("lock.key");
+        fs::write(&key, [7u8; DEVICE_KEY_LEN]).unwrap();
+        assert_eq!(backup_excluded(&key), Some(false));
+        assert_eq!(exclude_from_backups(&key), Ok(true));
+        assert_eq!(backup_excluded(&key), Some(true));
+        assert_eq!(exclude_from_backups(&key), Ok(true), "idempotent");
+        let isexcluded = std::process::Command::new("/usr/bin/tmutil")
+            .arg("isexcluded")
+            .arg(&key)
+            .output();
+        if let Ok(out) = isexcluded {
+            if out.status.success() {
+                assert!(
+                    String::from_utf8_lossy(&out.stdout).contains("[Excluded]"),
+                    "Time Machine reads the exclusion"
+                );
+            }
+        }
+        // The key's bytes are untouched.
+        assert_eq!(fs::read(&key).unwrap(), [7u8; DEVICE_KEY_LEN]);
+        // A missing file cannot be marked, and says so without a path.
+        let missing = dir.path().join("missing");
+        let e = exclude_from_backups(&missing).unwrap_err();
+        assert!(!e.to_string().contains("missing"), "{e}");
+    }
+
+    /// ADR-174 O-2: a key made now is excluded before it reaches its path and says so in its provenance; a key
+    /// found with no provenance (made before ADR-174) is not claimed; retiring one excludes it and keeps it.
+    #[test]
+    fn a_new_key_is_born_excluded_and_an_older_key_is_retired_not_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("machine").join("lock.key");
+        let (key, created) = DeviceKey::load_or_create(&path).unwrap();
+        assert!(created);
+        let on_macos = cfg!(target_os = "macos");
+        assert_eq!(key_born_excluded(&path, &key.id()), on_macos);
+        if on_macos {
+            assert_eq!(backup_excluded(&path), Some(true));
+        }
+        let other = DeviceKey::generate();
+        assert!(
+            !key_born_excluded(&path, &other.id()),
+            "provenance is per key id"
+        );
+
+        // An older key: no provenance.
+        fs::remove_file(key_provenance_path(&path)).unwrap();
+        assert!(!key_born_excluded(&path, &key.id()));
+        let bytes = fs::read(&path).unwrap();
+        let retired = retire_device_key(&path, &key).unwrap();
+        assert!(!path.exists());
+        assert_eq!(fs::read(&retired).unwrap(), bytes, "kept, byte for byte");
+        assert!(retired.ends_with(format!("retired/{}.key", key_id_hex(&key.id()))));
+        if on_macos {
+            assert_eq!(backup_excluded(&retired), Some(true));
+        }
+        let (fresh, created) = DeviceKey::load_or_create(&path).unwrap();
+        assert!(created);
+        assert_ne!(fresh.id(), key.id());
+        assert_eq!(key_born_excluded(&path, &fresh.id()), on_macos);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn time_machine_exclusion_is_a_no_op_off_macos() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = dir.path().join("lock.key");
+        fs::write(&key, [7u8; DEVICE_KEY_LEN]).unwrap();
+        assert_eq!(backup_excluded(&key), None);
+        assert_eq!(exclude_from_backups(&key), Ok(false));
+    }
+
+    /// ADR-174 O-3: iCloud Drive, a CloudStorage provider (named without the account), and a `.dropbox` marker in
+    /// a parent are each found; an ordinary folder is not.
+    #[test]
+    fn a_vault_folder_inside_a_sync_service_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let plain = home.join("vaults").join("mine");
+        fs::create_dir_all(&plain).unwrap();
+        assert_eq!(synced_folder(&plain, Some(&home)), None);
+        assert_eq!(synced_folder(&plain, None), None);
+
+        let icloud = home
+            .join("Library")
+            .join("Mobile Documents")
+            .join("com~apple~CloudDocs")
+            .join("vault");
+        fs::create_dir_all(&icloud).unwrap();
+        assert_eq!(
+            synced_folder(&icloud, Some(&home)),
+            Some(SyncedFolder::ICloudDrive)
+        );
+        // A folder not made yet is judged by where it would be.
+        assert_eq!(
+            synced_folder(&icloud.join("later"), Some(&home)),
+            Some(SyncedFolder::ICloudDrive)
+        );
+
+        for (folder, label) in [
+            ("Dropbox", "Dropbox"),
+            ("GoogleDrive-someone@example.com", "Google Drive"),
+            ("OneDrive-Personal", "OneDrive"),
+            ("SomethingElse", "a cloud storage service"),
+        ] {
+            let v = home
+                .join("Library")
+                .join("CloudStorage")
+                .join(folder)
+                .join("v");
+            fs::create_dir_all(&v).unwrap();
+            let found = synced_folder(&v, Some(&home)).expect(folder);
+            assert_eq!(found.reason(), "cloud_storage");
+            assert_eq!(found.label(), label);
+            assert!(!found.label().contains('@'));
+        }
+
+        // A symlink from an ordinary place into iCloud Drive is found through its target.
+        #[cfg(unix)]
+        {
+            let link = home.join("vaults").join("linked");
+            std::os::unix::fs::symlink(&icloud, &link).unwrap();
+            assert_eq!(
+                synced_folder(&link, Some(&home)),
+                Some(SyncedFolder::ICloudDrive)
+            );
+        }
+
+        let dropbox_root = home.join("Dropbox");
+        let deep = dropbox_root.join("work").join("vault");
+        fs::create_dir_all(&deep).unwrap();
+        assert_eq!(synced_folder(&deep, Some(&home)), None);
+        fs::write(dropbox_root.join(".dropbox"), b"{}").unwrap();
+        assert_eq!(synced_folder(&deep, None), Some(SyncedFolder::Dropbox));
+    }
+
+    /// ADR-174 O-3: a File Provider or iCloud attribute on the folder or a parent (how Desktop & Documents sync
+    /// marks `~/Desktop`) is found; other attributes are not.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_file_provider_attribute_on_a_parent_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let set = |name: &str, on: &Path| {
+            let ok = std::process::Command::new("/usr/bin/xattr")
+                .args(["-w", name, "1"])
+                .arg(on)
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "set {name}");
+        };
+        let desktop = dir.path().join("Desktop");
+        let vault = desktop.join("projects").join("vault");
+        fs::create_dir_all(&vault).unwrap();
+        set("com.example.unrelated", &desktop);
+        assert_eq!(synced_folder(&vault, None), None);
+        set("com.apple.fileprovider.detached#B", &desktop);
+        assert_eq!(
+            synced_folder(&vault, None),
+            Some(SyncedFolder::FileProvider)
+        );
+        assert!(xattr_names(&desktop)
+            .iter()
+            .any(|n| n == "com.apple.fileprovider.detached#B"));
+
+        let documents = dir.path().join("Documents");
+        let other = documents.join("vault");
+        fs::create_dir_all(&other).unwrap();
+        set("com.apple.icloud.itemName", &documents);
+        assert_eq!(
+            synced_folder(&other, None),
+            Some(SyncedFolder::FileProvider)
+        );
     }
 }
